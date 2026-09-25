@@ -78,6 +78,6 @@ If the checkpoint must be abandoned before publication, do not rewrite published
 - [x] `.gitignore`, `.env.example`, and `README.md` reviewed.
 - [x] Consistency review complete.
 - [x] Git remote verified.
-- [ ] Checkpoint commit created.
-- [ ] Push verified or blocked status recorded.
-- [ ] User review requested before Phase 01.
+- [x] Checkpoint commit created.
+- [x] Push verified or blocked status recorded.
+- [x] User review requested before Phase 01.

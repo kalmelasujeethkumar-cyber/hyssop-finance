@@ -16,6 +16,9 @@ Prompt 01 created documentation, Git metadata, and safe root files only. There i
 | Ignore-rule review | Complete | `.env`, dependencies, build output, tests, logs, local uploads, local database artifacts, and secret file types are ignored; `.env.example` remains visible |
 | Secret and placeholder review | Complete | No high-confidence credential patterns found; `.env.example` contains placeholders only and no personal data is present |
 | Git whitespace check | Complete | `git diff --check` reported no errors before staging |
+| Staged file and diff review | Complete | Exactly 37 intended documentation/config files staged; no generated or unrelated files |
+| Checkpoint commit | Complete | `64245b74a78eb86ff12bb602d7c025ac9e7f1389` |
+| Push verification | Complete | `main` pushed to `origin/main`; local and remote hashes match |
 | Lint | Not run | No application code |
 | Typecheck | Not run | No application code |
 | Unit tests | Not run | No application code |
