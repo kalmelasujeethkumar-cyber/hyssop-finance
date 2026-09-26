@@ -11,14 +11,16 @@
 
 **No current blockers are known.**
 
-Prompt 01 and the Prompt 01B documentation review have not encountered an unresolved locked-requirement conflict, an unsafe operation, a required secret, or an authorization need. This statement is limited to documentation work; it is not a claim that future implementation will be free of defects.
+Phase 01 completed its quality gate with two open advisories that do not block the phase: the Nest CLI's Node engine warning (`ISSUE-011`) and the NestJS internal legacy-route advisory (`ISSUE-012`). Both are recorded below with the condition that would escalate them. No locked-requirement conflict, unsafe operation, required secret, or authorization need has occurred.
 
 ## Issue log
 
 | ID | Status | Phase | Problem | Evidence | Attempts | User action required |
 |---|---|---|---|---|---|---|
+| `ISSUE-011` | OPEN (advisory) | `PHASE-01-FOUNDATION` | `npm install` warns that `@angular-devkit/schematics` and `@angular-devkit/core` (transitive Nest CLI dependencies) declare Node `^22.22.3 \|\| ^24.15.0 \|\| >=26.0.0`, while the approved runtime is Node `22.19.0`. | Install output; `nest build`, typecheck, and Jest all pass on `22.19.0`; `jsdom` was downgraded to `26.1.0` for the same reason and installs cleanly | Selected NestJS `11.2.6` so the CLI remains on a line compatible with CommonJS output; verified the build, test, and generation-free workflows | None now. If a later phase needs `nest generate` on a runtime that rejects the CLI, ask before changing the Node version |
+| `ISSUE-012` | OPEN (advisory) | `PHASE-01-FOUNDATION` | NestJS logs `LegacyRouteConverter: Unsupported route path "/api/*"` for its internal versioned catch-all route, an Express 5 `path-to-regexp` advisory. | API startup log during `npm run test:e2e`; all 49 API tests and 2 browser tests pass, and the 404 envelope is verified by integration test | None; the route belongs to NestJS version-prefixed 404 handling and is auto-converted upstream | None. Revisit only if a NestJS upgrade removes the advisory |
 
-The log is intentionally empty. Do not fabricate problems to make this document look active.
+The log is intentionally small. Do not fabricate problems to make this document look active.
 
 ## Stop-condition reminder
 
@@ -26,12 +28,13 @@ Record a `BLOCKED` entry, then stop, when any condition in `AGENTS.md` or `08-PE
 
 ## Known unverified areas
 
-These are not current blockers; they are simply unverified because implementation has not started.
+These are not current blockers; they are simply unverified because the owning phase has not run.
 
-- Exact NestJS, Vite, Tailwind, Prisma, and test tool versions.
-- Docker/Compose local database behavior.
-- Current Netlify and backend free-tier capabilities.
-- Production object storage and malware scanning.
+- Prisma and PostgreSQL versions, migrations, and the local database container.
+- Session, CSRF, and authentication behavior (Phase 03).
+- Document upload, traversal, and object-storage behavior (Phase 06 and Phase 12).
+- Chart rendering and dashboard density (Phase 08).
+- Exact hosted platform capabilities for the frontend and backend (Phase 12).
 
 They become issues only if they conflict with a locked requirement, require unsafe action, or cannot be safely resolved within an approved phase.
 

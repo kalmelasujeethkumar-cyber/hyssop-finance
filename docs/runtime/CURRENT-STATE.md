@@ -15,10 +15,13 @@
 
 ## Current stage
 
-- Current stage: **Documentation Hardening — Prompt 01B COMPLETE, awaiting external review**
-- Current prompt: **Prompt 01B**
-- Application implementation: **NOT STARTED**
-- Documentation: Prompt 01 baseline pushed; Prompt 01B ownership, stable identifiers, traceability, and phase contracts are committed and pushed
+- Current stage: **PHASE 01 — FOUNDATION**
+- Current phase: `PHASE-01-FOUNDATION`
+- Status: **QUALITY GATE PASSED; GIT GATE PENDING**
+- Next gate: commit, push, verify the remote hash, record the evidence, then stop for external review
+- Phase 02: **NOT STARTED**
+- Application implementation: **PHASE 01 COMPLETE** (foundation only)
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 implementation and evidence recorded
 - Database migrations: **NOT STARTED**
 - External services: **NOT CONFIGURED**
 
@@ -26,11 +29,13 @@
 
 Prompt 01 established the project constitution, specifications, phase plan, runtime tracking, Git safety, and verification framework. Its checkpoint commit `64245b74a78eb86ff12bb602d7c025ac9e7f1389` and evidence commit `2c0e56586f286cd074c8fb581e6721c6555d148c` were pushed to `origin/main`.
 
-Prompt 01B reread the full specification, phase, and runtime set; added the document ownership map and per-document responsibility boundaries; introduced 119 stable `REQ-*` and 24 stable `TEST-*` identifiers; created and audited `docs/14-TRACEABILITY-MATRIX.md`; defined the canonical financial calculation layer; and resolved phase dependency overlaps. The final audit corrected one undefined mapped requirement, one shared clause line, one unreferenced test identifier, and one phase ownership count before passing. No application feature code, dependency installation, migration, authentication, or deployment has been created.
+Prompt 01B reread the full specification, phase, and runtime set; added the document ownership map and per-document responsibility boundaries; introduced 119 stable `REQ-*` and 24 stable `TEST-*` identifiers; created and audited `docs/14-TRACEABILITY-MATRIX.md`; defined the canonical financial calculation layer; and resolved phase dependency overlaps.
+
+Phase 01 is approved and its implementation is finished. It owns `REQ-AUTH-001`, `REQ-AUTH-006`, and `REQ-FIN-026` and implements only the technical foundation: npm workspace, pinned toolchain, validated configuration, `apps/api` with structured logging, security headers, explicit CORS, the global error envelope, request IDs, and `GET /api/v1/health`; `apps/web` with design tokens, routing, an honest error boundary, and a real connectivity check; `packages/contracts`; and lint, typecheck, test, build, and browser-smoke harnesses. Lint, typecheck, 68 unit and integration tests, both production builds, formatting, and 2 browser acceptance tests pass. No financial feature, database schema, or authentication behavior exists yet.
 
 ## Next planned step
 
-Wait for external review and explicit user approval. Phase 01 does not start until that approval is given. The next approved work is the Phase 01 foundation bootstrap defined in `docs/phases/PHASE-01-FOUNDATION.md`.
+Close the Phase 01 Git gate: commit the intended files, push to `origin/main`, verify the remote hash, record the evidence in `TEST-RESULTS.md` and `PHASE-HISTORY.md`, and then stop for external review without beginning Phase 02.
 
 ## Blockers
 

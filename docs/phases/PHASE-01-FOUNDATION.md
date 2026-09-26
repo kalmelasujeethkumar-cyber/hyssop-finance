@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires documentation approval.
+- Status: `IMPLEMENTED`; quality gate passed on 2026-09-26, Git gate pending recorded evidence.
 - Preconditions: Phase 00 complete and user approval recorded.
 - Handoff rule: no required control may be presented as working until its real path is implemented and tested.
 
@@ -45,7 +45,8 @@ Create the maintainable project foundation after the user approves the bootstrap
 
 ## Implementation requirements
 
-- Use React, TypeScript, Vite, Tailwind, React Router, TanStack Query, Recharts, Node.js, NestJS, REST, and the locked testing tools.
+- Use React, TypeScript, Vite, Tailwind, React Router, TanStack Query, Node.js, NestJS, REST, and the locked testing tools.
+- A library with no Phase 01 consumer, `recharts` in particular, is introduced by the phase that renders the first real chart; the technology direction stays as recorded in `02-ARCHITECTURE.md` and `DEC-042`.
 - Keep financial logic out of the shell.
 - Fail fast on missing or unsafe configuration.
 - Provide reproducible install, lint, typecheck, test, and production build commands.
@@ -86,9 +87,9 @@ Revert only the phase's own uncommitted changes or create a corrective commit. D
 
 ## Completion checklist
 
-- [ ] Layout and scripts established.
-- [ ] Configuration validation implemented.
-- [ ] Frontend and backend shells run.
-- [ ] Lint, typecheck, unit tests, and build pass.
-- [ ] Documentation and decisions updated.
-- [ ] Git gate passed and hash recorded.
+- [x] Layout and scripts established — `package.json` workspaces, `tsconfig.base.json`, `eslint.config.mjs`, `.prettierrc.json`, `apps/api`, `apps/web`, `packages/contracts`.
+- [x] Configuration validation implemented — `apps/api/src/config/environment.ts` fails fast; `apps/web/src/lib/env.ts` fails the production build when the API base URL is missing.
+- [x] Frontend and backend shells run — `npm run dev` starts both; `GET /api/v1/health` answers 200 through a real process.
+- [x] Lint, typecheck, unit tests, and build pass — see the Phase 01 gate table in `docs/runtime/TEST-RESULTS.md`.
+- [x] Documentation and decisions updated — `docs/06-API-SPEC.md` health contract, `DEC-041`–`DEC-052`, `ISSUES.md`, `TEST-RESULTS.md`, `README.md`.
+- [ ] Git gate passed and hash recorded — pending the commit, push, and remote verification.

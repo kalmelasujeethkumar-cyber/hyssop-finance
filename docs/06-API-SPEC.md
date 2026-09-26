@@ -34,6 +34,24 @@ All financial aggregate responses are projections of the canonical calculation l
 
 Use stable machine codes and safe human messages. Do not return stack traces, SQL details, secrets, session tokens, or local filesystem paths.
 
+## Health and connectivity
+
+- `GET /api/v1/health` — unauthenticated connectivity check for the running API process. It performs no financial calculation and reads no business data.
+
+```json
+{
+  "data": {
+    "status": "ok",
+    "service": "hyssop-finance-api",
+    "version": "0.1.0",
+    "uptimeSeconds": 42,
+    "timestamp": "2026-09-26T09:15:00.000Z"
+  }
+}
+```
+
+The response includes an `x-request-id` response header like every other endpoint. It never returns configuration values, environment variables, dependency versions, filesystem paths, or credentials. A later readiness check may verify its database dependency; until that dependency exists, `status` reflects only the API process itself.
+
 ## Authentication endpoints
 
 - `POST /api/v1/auth/login` — requires a pre-authentication CSRF token, accepts `identifier` and `password`, verifies Argon2id, sets the secure session cookie, and returns the Admin profile plus a rotated CSRF token. Failed attempts return a generic message.

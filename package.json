@@ -1,0 +1,49 @@
+{
+  "name": "hyssop-finance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HYSSOP FINANCE — church financial management workspace root",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.9.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently --names contracts,api,web --prefix-colors blue,green,magenta \"npm:dev:contracts\" \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:contracts": "npm run dev --workspace @hyssop/contracts",
+    "dev:api": "npm run start:dev --workspace @hyssop/api",
+    "dev:web": "npm run dev --workspace @hyssop/web",
+    "build": "npm run build:contracts && npm run build:api && npm run build:web",
+    "build:contracts": "npm run build --workspace @hyssop/contracts",
+    "build:api": "npm run build --workspace @hyssop/api",
+    "build:web": "npm run build --workspace @hyssop/web",
+    "build:web:smoke": "npm run build --workspace @hyssop/web -- --mode smoke",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "npm run build:contracts && npm run typecheck --workspace @hyssop/api && npm run typecheck --workspace @hyssop/web",
+    "test": "npm run test --workspace @hyssop/api && npm run test --workspace @hyssop/web",
+    "test:api": "npm run test --workspace @hyssop/api",
+    "test:web": "npm run test --workspace @hyssop/web",
+    "pretest:e2e": "npm run build:contracts && npm run build:api && npm run build:web:smoke",
+    "test:e2e": "playwright test --config apps/web/playwright.config.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build && npm run format:check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.4",
+    "concurrently": "10.0.5",
+    "eslint": "10.11.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1"
+  }
+}
