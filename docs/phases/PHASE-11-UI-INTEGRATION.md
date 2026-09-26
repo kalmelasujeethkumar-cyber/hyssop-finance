@@ -1,5 +1,23 @@
 # PHASE 11 — UI INTEGRATION
 
+## Document Responsibility
+
+- Owns: final route and page composition, navigation, interaction states, accessibility, responsive behavior, and integration of already-owned feature contracts.
+- Does not own: new business behavior, authoritative calculations, API contracts, database rules, or requirement definitions.
+- Primary owned requirements: `REQ-RESP-001`–`REQ-RESP-013`.
+- Consumed requirements: all implemented `REQ-AUTH-*`, `REQ-MEM-*`, `REQ-CONTRIB-*`, `REQ-INCOME-*`, `REQ-EXP-*`, `REQ-DOC-*`, `REQ-DASH-*`, `REQ-REPORT-*`, `REQ-SEARCH-*`, `REQ-AUDIT-*`, `REQ-SETTINGS-*`, `REQ-EXPORT-*`, and `REQ-FIN-*` feature contracts.
+- Authority references: `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `03-UI-UX-RULES.md`, `04-DESIGN-TOKENS.md`, `07-SECURITY-RULES.md`, `10-TEST-PLAN.md`, and `14-TRACEABILITY-MATRIX.md`.
+- Deliverables: complete Admin workflow, accessible responsive UI, working print/export integration, and no dead controls.
+- Out of scope: client-side financial authority, removing failing required functionality, or adding unapproved features.
+- Handoff: Phase 12 receives a complete, buildable application for adversarial QA and deployment verification.
+- Acceptance evidence: `TEST-E2E-001`, `TEST-E2E-002`, `TEST-RESP-001`, `TEST-RESP-002`, and `TEST-SEC-001`.
+
+## Phase Metadata
+
+- Status: `NOT STARTED`; requires all feature phases to be complete or their contracts explicitly accepted.
+- Preconditions: Phases 01–10 complete; API contracts stable or deviations recorded.
+- Handoff rule: every visible required control must call a real authorized path or be removed from the completed experience.
+
 ## Objective
 
 Integrate all implemented modules into a coherent, responsive, accessible application and remove every dead or misleading control before final QA.

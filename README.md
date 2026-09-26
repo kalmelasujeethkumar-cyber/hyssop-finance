@@ -1,15 +1,15 @@
 # HYSSOP FINANCE
 
-HYSSOP FINANCE is a planned financial-management demo for one church. This repository currently contains the project constitution, specifications, phase plan, and runtime documentation created during Prompt 01.
+HYSSOP FINANCE is a planned financial-management demo for one church. This repository currently contains the project constitution, specifications, phase plan, traceability matrix, and runtime documentation created during Prompt 01 and hardened during Prompt 01B.
 
 ## Current status
 
-- Stage: Documentation Bootstrap
-- Prompt: Prompt 01
+- Stage: Documentation Hardening
+- Prompt: Prompt 01B
 - Application implementation: **Not started**
 - Database migrations: **Not started**
 - React/NestJS application code: **Not started**
-- Next step: user review and approval of the Phase 00 bootstrap before Phase 01
+- Next step: user review and approval of the documentation checkpoint before Phase 01
 
 The demo will eventually use React, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query where appropriate, Recharts, Node.js, NestJS, REST, PostgreSQL, Prisma, and real backend authentication. It will use a modular monolith and may later become production-ready only through explicit validation.
 
@@ -30,6 +30,7 @@ The demo will eventually use React, TypeScript, Vite, Tailwind CSS, React Router
 - `docs/11-DEFINITION-OF-DONE.md` — completion criteria
 - `docs/12-DEPLOYMENT-PLAN.md` — free-tier deployment direction
 - `docs/13-DEMO-DATA-SPEC.md` — fictional data requirements
+- `docs/14-TRACEABILITY-MATRIX.md` — requirement-to-phase-to-test mapping and audit counts
 - `docs/phases/` — phase specifications 00 through 12
 - `docs/runtime/` — current state, decisions, issues, evidence, and history
 

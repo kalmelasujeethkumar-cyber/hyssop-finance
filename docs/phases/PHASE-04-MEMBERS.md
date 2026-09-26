@@ -1,5 +1,23 @@
 # PHASE 04 — Members
 
+## Document Responsibility
+
+- Owns: member identity, references, contact validation, search, editing, contribution periods, and derived contribution status for member views.
+- Does not own: income or expense transaction creation, dashboard aggregation, or requirement definitions.
+- Primary owned requirements: `REQ-MEM-001`–`REQ-MEM-006`, `REQ-CONTRIB-001`–`REQ-CONTRIB-004`.
+- Consumed requirements: `REQ-AUTH-*`, `REQ-CONTRIB-005`, `REQ-CONTRIB-006`, `REQ-DASH-014`, `REQ-RESP-004`, and `REQ-RESP-005`.
+- Authority references: `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `05-DATABASE-SPEC.md`, `06-API-SPEC.md`, `10-TEST-PLAN.md`, and `14-TRACEABILITY-MATRIX.md`.
+- Deliverables: member create/read/update, reference allocation, member search, period configuration, and derived status/history projections.
+- Out of scope: member deletion/deactivation, income creation, and full report aggregation.
+- Handoff: Phase 05 creates member-contribution income against these periods; Phase 08 consumes the same derived status.
+- Acceptance evidence: `TEST-MEM-001`, `TEST-CONTRIB-001`, and the member portion of `TEST-E2E-001`.
+
+## Phase Metadata
+
+- Status: `NOT STARTED`; requires authenticated API and Phase 02 persistence.
+- Preconditions: Phases 01–03 complete; no real personal data.
+- Handoff rule: “CRUD” in this phase means create, read, and update; financial history is never deleted.
+
 ## Objective
 
 Implement member records, human-readable IDs, search, editing, and month-wise contribution expectations and derived status.
@@ -31,8 +49,8 @@ Implement member records, human-readable IDs, search, editing, and month-wise co
 - Persist only identity, contact, and notes; do not store a permanent payment amount as the transaction history replacement.
 - Enforce reference uniqueness and safe phone validation consistently.
 - Derive received and remaining amounts from active member-contribution transactions.
-- Use the default monthly contribution from the `app_setting` record created in Phase 02 when opening a new period. The full Settings interface is delivered in Phase 10.
-- Record member edits in audit history.
+- Use the default monthly contribution from the initialized `app_setting` record when opening a new period. The full Settings interface is delivered in Phase 10.
+- Record member edits in audit history and enforce the member `revision` optimistic-lock value on updates.
 
 ## Prohibited shortcuts
 
@@ -46,7 +64,7 @@ Implement member records, human-readable IDs, search, editing, and month-wise co
 - The Admin can create, search, view, and edit a member.
 - Periods can be created or updated with an expected amount.
 - PAID, PARTIALLY PAID, and NOT PAID states match active transaction totals.
-- Member history and reports agree with the database.
+- Member history and the canonical contribution projection agree with the database; full report reconciliation is verified in Phase 09.
 - Invalid names, phones, periods, and references are rejected clearly.
 
 ## Tests required

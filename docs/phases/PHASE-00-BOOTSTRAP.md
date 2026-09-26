@@ -1,5 +1,23 @@
 # PHASE 00 — Documentation Bootstrap
 
+## Document Responsibility
+
+- Owns: the documentation bootstrap checkpoint, constitution, ownership model, traceability matrix, and runtime tracking initialization.
+- Does not own: any `REQ-*` product requirement or application acceptance result; phases reference requirements rather than redefining them.
+- Primary owned requirements: none; this phase establishes the documents that own them.
+- Consumed requirements: all `REQ-*` identifiers, recorded as the baseline for later phases.
+- Authority references: `AGENTS.md`, `docs/00`–`docs/14`, `docs/runtime/`, and `09-GIT-RULES.md`.
+- Deliverables: owned specifications, consistent phase contracts, traceability audit, and a verified documentation checkpoint.
+- Out of scope: React, NestJS, Prisma, dependencies, migrations, credentials, deployment, and Phase 01 implementation.
+- Handoff: user review and approval of the documentation checkpoint before Phase 01.
+- Acceptance evidence: documentation coverage, duplication, contradiction, whitespace, and secret-safety checks; application test evidence remains explicitly not run.
+
+## Phase Metadata
+
+- Status: `COMPLETE` for Prompt 01; Prompt 01B documentation hardening is in progress.
+- Preconditions: opened workspace, authorized `origin`, no application code required.
+- Handoff rule: the next phase starts only after the documentation gate and user approval.
+
 ## Objective
 
 Establish the permanent operating system for HYSSOP FINANCE: project constitution, complete specifications, phase plan, runtime tracking, Git safety, and verification framework. This phase is documentation-only.

@@ -1,5 +1,23 @@
 # PHASE 07 — DOCUMENTS
 
+## Document Responsibility
+
+- Owns: the reusable `DocumentStorage` abstraction, local adapter, document metadata lifecycle, upload/preview/download/removal behavior, and missing-receipt presentation.
+- Does not own: business formulas, income/expense command rules, dashboard aggregation, or requirement definitions.
+- Primary owned requirements: `REQ-DOC-001`, `REQ-DOC-002`, `REQ-DOC-004`–`REQ-DOC-009`.
+- Consumed requirements: `REQ-AUTH-*`, `REQ-EXP-003`, `REQ-INCOME-*`, `REQ-RESP-005`, `REQ-RESP-006`, `REQ-RESP-008`, and `REQ-FIN-025`.
+- Authority references: `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `05-DATABASE-SPEC.md`, `06-API-SPEC.md`, `07-SECURITY-RULES.md`, `10-TEST-PLAN.md`, `12-DEPLOYMENT-PLAN.md`, and `14-TRACEABILITY-MATRIX.md`.
+- Deliverables: storage interface, safe local adapter, validated document flows, authorized access, removal audit, and deployment limitation record.
+- Out of scope: raw bytes in PostgreSQL, a public upload directory, and hosted object storage before Phase 12.
+- Handoff: Phases 05, 06, 08, 09, and 10 consume the same document metadata and access contract.
+- Acceptance evidence: `TEST-DOC-001`, `TEST-DOC-002`, `TEST-SEC-001`, and the missing-receipt portion of `TEST-E2E-001`.
+
+## Phase Metadata
+
+- Status: `NOT STARTED`; requires Phases 01–06 complete.
+- Preconditions: shared document metadata and audit persistence exist; storage path is project-local and ignored by Git.
+- Handoff rule: no earlier phase may bypass this adapter or create a duplicate upload path.
+
 ## Objective
 
 Implement transaction documents through a replaceable storage abstraction with safe local demo storage, multiple files per transaction, authenticated preview/open/download, controlled removal, and a visible missing-receipt state.
@@ -33,7 +51,7 @@ Implement transaction documents through a replaceable storage abstraction with s
 - Generate opaque storage keys; never use user filenames for paths.
 - Require authentication and transaction authorization for every read.
 - Support multiple documents and safe inline or attachment responses per format.
-- Preserve metadata and audit history on controlled removal, including the removal reason.
+- Preserve metadata and audit history on controlled removal, including the removal reason, `REMOVED` state, `410 Gone` content behavior, and controlled cleanup retry after storage failure.
 - Make the storage path configuration explicit and replaceable for production.
 
 ## Prohibited shortcuts
@@ -51,12 +69,12 @@ Implement transaction documents through a replaceable storage abstraction with s
 - Preview is offered only where supported; other valid files open or download safely.
 - Missing expense evidence is clearly labeled **Receipt Missing**.
 - Invalid, oversized, and unauthorized uploads are rejected.
-- Files persist after application restart and remain outside Git.
+- Files persist after application restart and remain outside Git; after controlled removal, metadata remains while content is inaccessible and physical deletion is tracked.
 
 ## Tests required
 
 - Storage-path, content-signature, and validation unit tests.
-- Upload, list, stream, preview, download, removal, and authorization integration tests.
+- Upload, list, stream, preview, download, removal, post-removal access, storage-failure compensation, and authorization integration tests.
 - Restart-persistence test.
 - Path traversal, MIME spoofing, oversized upload, and unauthorized access tests.
 - Browser tests for upload, multiple files, preview, download, removal confirmation, and missing receipt.

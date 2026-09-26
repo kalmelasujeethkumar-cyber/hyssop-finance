@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — UI/UX Rules
 
+## Document Responsibility
+
+- Owns: interaction behavior, accessibility, responsive behavior, feedback, dialogs, and state honesty.
+- Does not own: business formulas, persistence rules, server authorization, or exact token values.
+- Referenced by: `04-DESIGN-TOKENS.md`, phase documents, and the test plan.
+- Change rule: interaction changes must remain consistent with the locked requirements and verified through the applicable tests.
+
 ## Product experience
 
 The interface is a calm, professional financial workspace for a non-technical church administrator. It must make the current period, record type, amount, status, and next safe action obvious. It is light-only and must not look like a gaming product, an experimental dashboard, or a dense developer tool.

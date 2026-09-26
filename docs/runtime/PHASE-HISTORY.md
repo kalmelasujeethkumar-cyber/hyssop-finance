@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — Phase History
 
+## Document Responsibility
+
+- Owns: chronological phase and prompt checkpoints, verified commit hashes, push results, and status transitions.
+- Does not own: current blockers, detailed test procedures, or decision reasoning.
+- Referenced by: `AGENTS.md`, `09-GIT-RULES.md`, and `docs/runtime/FINAL-REPORT.md`.
+- Change rule: add one factual entry per checkpoint; record a hash only after the push is verified.
+
 ## Entries
 
 | Date | Phase or prompt | Status | Commit | Notes |

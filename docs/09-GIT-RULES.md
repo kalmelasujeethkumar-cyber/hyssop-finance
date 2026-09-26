@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — Git Rules
 
+## Document Responsibility
+
+- Owns: repository identity, authorized remote, Git safety, staged-file review, commit, push, history, and the phase Git gate.
+- Does not own: product acceptance, runtime status, or test specifications.
+- Referenced by: `AGENTS.md`, `11-DEFINITION-OF-DONE.md`, and `docs/runtime/PHASE-HISTORY.md`.
+- Change rule: a Git or remote change requires explicit user instruction; published history is never rewritten.
+
 ## Repository
 
 - Local repository root: the opened `HYSSOP-FINANCE` workspace.
@@ -35,7 +42,7 @@ A phase may be committed as complete only after:
 7. A meaningful commit message describes the completed phase.
 8. Push to `origin` is attempted only after the gate passes.
 9. The push is verified.
-10. The commit hash is recorded in `docs/runtime/PHASE-HISTORY.md`.
+10. The implementation/test commit hash is recorded in `docs/runtime/PHASE-HISTORY.md`. A later evidence-only commit may record the verified hash and push result without changing the implementation verdict.
 
 Do not hide a known failure merely to obtain a clean status. A failing gate is a stop-and-fix condition.
 

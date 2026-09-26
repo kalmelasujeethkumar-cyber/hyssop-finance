@@ -1,8 +1,19 @@
 # HYSSOP FINANCE — Security Rules
 
+## Document Responsibility
+
+- Owns: application authentication, sessions, CSRF, CORS, input and upload safety, data protection, and security verification obligations.
+- Does not own: agent filesystem permissions, Git procedure, product scope, or deployment implementation.
+- Referenced by: the API, architecture, database, deployment, and test documents.
+- Change rule: a security control may be weakened only through explicit user approval; verification failures block the phase gate.
+
 ## Security posture
 
 Security requirements are mandatory and outrank convenience. The demo must use real authentication, safe defaults, least privilege, and evidence-based verification. No security prompt, permission control, OS protection, GitHub authentication mechanism, browser control, or database protection may be bypassed to make progress.
+
+## Security responsibility and references
+
+This document implements the security obligations for `REQ-AUTH-*`, `REQ-DOC-*`, `REQ-FIN-015` through `REQ-FIN-020`, `REQ-FIN-022` through `REQ-FIN-024`, `REQ-SEARCH-002`, `REQ-AUDIT-002`, `REQ-SETTINGS-006` and `REQ-SETTINGS-007`, and `REQ-RESP-010` through `REQ-RESP-013`. The product behavior remains in `01-REQUIREMENTS.md`. API enforcement points are defined in `06-API-SPEC.md`; persistence protections are defined in `05-DATABASE-SPEC.md`.
 
 ## Trust boundaries
 
@@ -24,7 +35,7 @@ Security requirements are mandatory and outrank convenience. The demo must use r
 
 ## CSRF, CORS, and headers
 
-- The demo uses cookie-based sessions, so every state-changing request requires CSRF protection. Removing that requirement is a stop-and-ask decision, not an implementation detail.
+- The demo uses cookie-based sessions, so every state-changing request requires CSRF protection, including the unauthenticated login request. Before login, the API issues a short-lived CSRF cookie and matching token bound to the trusted origin; login presents the token and the server rotates it after session creation. Removing this protection is a stop-and-ask decision, not an implementation detail.
 - CORS must allow only the configured frontend origin and required methods and headers. Never use `*` with credentials.
 - Set a restrictive Content Security Policy, HSTS on HTTPS deployments, `X-Content-Type-Options: nosniff`, a restrictive referrer policy, and an appropriate frame policy.
 - Do not expose internal error stacks, SQL, environment values, or local paths in responses.
@@ -44,7 +55,7 @@ Security requirements are mandatory and outrank convenience. The demo must use r
 - Voided transactions are excluded from active totals but retained for audit.
 - Edits record before and after values, actor, action, and timestamp in the same transaction as the change.
 - Use idempotency keys for financial creates and safe retries. A network retry must not create a second record.
-- Reject attempts to change identity or status through unvalidated patch payloads.
+- Reject attempts to change identity, transaction type, creator, reference, status, or void fields through unvalidated patch payloads. Allowed edits are explicitly allow-listed and use revision checks.
 
 ## Document security
 
@@ -54,7 +65,7 @@ Security requirements are mandatory and outrank convenience. The demo must use r
 - Reject path traversal, archive extraction, embedded scripts, and unexpected file signatures.
 - Serve downloads and previews only after authentication and transaction authorization.
 - Apply a safe download response policy; do not serve untrusted HTML or SVG.
-- Controlled removal requires confirmation, a non-empty reason, and an audit event. Metadata remains for history.
+- Controlled removal is permitted for any `AVAILABLE` document by the authenticated Admin and requires confirmation, a non-empty reason, and an audit event. Metadata remains for history. Once marked removed, content access is denied with `410 Gone`; storage deletion failure leaves the object inaccessible and enters a controlled cleanup retry rather than restoring public access. A `REMOVED` metadata row is immutable to the application.
 - Production deployment must add malware scanning, storage-level access control, and lifecycle policy before untrusted uploads are accepted.
 
 ## Data protection
@@ -67,7 +78,7 @@ Security requirements are mandatory and outrank convenience. The demo must use r
 
 ## Rate limiting and abuse resistance
 
-- Apply safe login, upload, search, export, and mutation limits appropriate to the demo.
+- Apply safe login, upload, search, export, and mutation limits appropriate to the demo. These controls are required, not optional, and final QA must test their threshold and generic-error behavior.
 - Do not reveal whether a member, reference, or file exists to an unauthenticated caller.
 - Log enough security events to investigate abnormal activity without logging secrets.
 

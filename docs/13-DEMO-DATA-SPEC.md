@@ -1,12 +1,19 @@
 # HYSSOP FINANCE — Demo Data Specification
 
+## Document Responsibility
+
+- Owns: fictional demo-data characteristics, coverage, naming rules, seed integrity, and privacy review.
+- Does not own: locked product requirements, database schema authority, or deployment status.
+- Referenced by: the database, security, deployment, and test documents.
+- Change rule: demo data must remain fictional, deterministic where required, and must not introduce real personal or church data.
+
 ## Purpose
 
 The demo uses realistic fictional data to make financial behavior understandable to a church administrator and to prove the application under meaningful variation. It must never use real personal, church, donor, or financial information.
 
 ## Coverage
 
-Seed data should span several months and include:
+Seed data should span several months relative to an injected demo clock. The seed command must accept a documented `DEMO_AS_OF_DATE` or clock value so deterministic tests can use a fixed date while a running demo can produce meaningful Today and This Month records. Include:
 
 - Multiple members with varied names, optional phone values, and short fictional notes.
 - Member Contributions that produce PAID, PARTIALLY PAID, and NOT PAID months.

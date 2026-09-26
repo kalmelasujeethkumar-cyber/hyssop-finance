@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — Project Brief
 
+## Document Responsibility
+
+- Owns: product identity, purpose, primary user, demo goals, non-goals, and success definition.
+- Does not own: detailed behavior, requirements, architecture, or verification evidence.
+- Referenced by: `AGENTS.md`, all specifications, and phase documents.
+- Change rule: scope changes must be reviewed with the user before implementation changes are made.
+
 ## Purpose
 
 HYSSOP FINANCE is a financial-management application for one church. It will provide a trustworthy, maintainable demo for recording income, expenses, member contributions, payment-method balances, documents, reports, and audit history. The application is HYSSOP FINANCE everywhere it is presented.

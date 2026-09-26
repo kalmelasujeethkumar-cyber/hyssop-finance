@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — Definition of Done
 
+## Document Responsibility
+
+- Owns: phase completion gates, final readiness gates, status vocabulary, and the evidence standard.
+- Does not own: product requirements, test scenarios, runtime results, or implementation decisions.
+- Referenced by: every phase document and the runtime evidence records.
+- Change rule: a gate may be tightened, but not weakened to allow an incomplete phase to pass.
+
 ## Principle
 
 Code existing, a page loading, a build succeeding, most tests passing, or an implementation looking good does not mean finished. Completion requires evidence that the required behavior works and the required checks pass.
@@ -22,8 +29,9 @@ A phase is complete only when all applicable items are evidenced:
 - Audit, void, authorization, validation, and document rules are verified.
 - Responsive and accessible states are verified where UI is involved.
 - Runtime documentation is updated with results, decisions, issues, and remaining risks.
+- Requirement coverage, traceability, and phase ownership are checked against `docs/14-TRACEABILITY-MATRIX.md`.
 - Git status, diff, and staged files are inspected; no secrets or unrelated files are included.
-- A meaningful commit is created, pushed to the authorized origin, and the commit hash is recorded.
+- A meaningful commit is created and its implementation/test hash is recorded; a later evidence-only commit may record the verified hash and push result.
 
 A failing gate prevents `COMPLETE` status. Fix the root cause, retest, and run regression checks.
 
@@ -45,6 +53,7 @@ The final demo is ready only when:
 - Security boundaries, secrets handling, uploads, and unauthorized access have been tested.
 - The complete required test process passes from the beginning after the final fix.
 - The final report contains objective evidence and an accurate status.
+- The demo deployment is implemented and smoke-tested on a safe free-tier-compatible path, including a durable replaceable document-storage choice for external access. If authorization, payment, or a sound architecture change is required, the final status is `BLOCKED` until the user resolves it; a local-only limitation is not silently treated as a completed deployment.
 
 ## Status vocabulary
 

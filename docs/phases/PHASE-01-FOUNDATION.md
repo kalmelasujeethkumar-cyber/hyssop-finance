@@ -1,5 +1,23 @@
 # PHASE 01 — Foundation
 
+## Document Responsibility
+
+- Owns: workspace layout, toolchain, configuration validation, application shells, and reproducible build/test commands.
+- Does not own: financial feature behavior, business formulas, or requirement definitions.
+- Primary owned requirements: `REQ-AUTH-001`, `REQ-AUTH-006`, `REQ-FIN-026`.
+- Consumed requirements: `REQ-RESP-001`, `REQ-RESP-012`, `REQ-RESP-013`, and the security constraints referenced by `07-SECURITY-RULES.md`.
+- Authority references: `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `03-UI-UX-RULES.md`, `04-DESIGN-TOKENS.md`, `07-SECURITY-RULES.md`, `08-PERMISSIONS.md`, `10-TEST-PLAN.md`, and `14-TRACEABILITY-MATRIX.md`.
+- Deliverables: `apps/web`, `apps/api`, shared configuration, health endpoint, and documented commands.
+- Out of scope: members, contributions, income, expenses, documents, dashboard, reports, and financial calculations.
+- Handoff: Phase 02 receives a clean shell, validated configuration, and reproducible commands.
+- Acceptance evidence: `TEST-FIN-001` for money/period primitives, `TEST-RESP-001`, `TEST-RESP-002`, and `TEST-SEC-001` for shell security boundaries.
+
+## Phase Metadata
+
+- Status: `NOT STARTED`; requires documentation approval.
+- Preconditions: Phase 00 complete and user approval recorded.
+- Handoff rule: no required control may be presented as working until its real path is implemented and tested.
+
 ## Objective
 
 Create the maintainable project foundation after the user approves the bootstrap: workspace layout, toolchain, linting, type checking, test harnesses, build pipeline, and a minimal running frontend and backend shell. No financial feature is completed in this phase.

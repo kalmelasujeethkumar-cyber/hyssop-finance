@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — Design Tokens
 
+## Document Responsibility
+
+- Owns: exact light-theme color values, typography, spacing, shape, elevation, motion, and visual quality rules.
+- Does not own: interaction behavior, business behavior, component implementation, or accessibility procedures.
+- Referenced by: `03-UI-UX-RULES.md` and phase documents.
+- Change rule: a token change must state its reason and must not reduce contrast or state honesty below the approved target.
+
 ## Token policy
 
 These tokens establish a professional, light-only visual system for the eventual application. The palette uses white and blue for structure, with orange as a restrained accent. Semantic tokens should be used instead of hard-coded colors in components.

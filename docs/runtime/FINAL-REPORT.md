@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — Final Report
 
+## Document Responsibility
+
+- Owns: final readiness status, consolidated evidence, limitations, defect status, and Git/deployment evidence.
+- Does not own: current working state, decision history, issue details, or test specifications.
+- Referenced by: external review and the final completion gate.
+- Change rule: report only observed evidence; keep the status `NOT READY` until the implementation and QA requirements are actually satisfied.
+
 **STATUS: NOT READY — IMPLEMENTATION NOT STARTED**
 
 This is the structured final report template. It must be replaced with objective evidence only after the implementation phases and adversarial QA are complete. Scores must never replace evidence.
@@ -13,6 +20,18 @@ This is the structured final report template. It must be replaced with objective
 - Documentation evidence: 37 intended files, complete specification/phase/runtime inventory, consistency review, staged diff review, ignore-rule review, and high-confidence secret-pattern scan
 - Application evidence: no lint, typecheck, unit, integration, database, E2E, build, financial, document, responsive, or deployment evidence exists yet
 - Next action: user review and approval before Phase 01
+
+## Prompt 01B documentation checkpoint
+
+- Documentation hardening status: **QUALITY GATE PASSED — CHECKPOINT PENDING COMMIT**
+- Ownership map: `AGENTS.md` plus `Document Responsibility` boundaries in all 34 files under `docs/`
+- Stable identifiers: 119 `REQ-*` requirements and 24 `TEST-*` verification identifiers, unique and contiguous
+- Traceability: `docs/14-TRACEABILITY-MATRIX.md` audited; 119 of 119 requirements mapped, orphan `0`, unmapped `0`, multiple primary owners `0`
+- Canonical financial layer: defined in `docs/02-ARCHITECTURE.md` and referenced by database, API, phases, and tests
+- Phase ownership: exactly one primary owner recorded for each required requirement in all 13 phase contracts
+- Audit corrections applied: `ISSUE-010`
+- Application implementation, migrations, tests, and deployment: **NOT STARTED**
+- Next action: commit and push this checkpoint, record the verified hash, then stop for external review before Phase 01
 
 ## Report identity
 

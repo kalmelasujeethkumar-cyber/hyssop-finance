@@ -1,5 +1,23 @@
 # PHASE 10 — AUDIT AND SETTINGS
 
+## Document Responsibility
+
+- Owns: the dedicated Audit History interface, safe audit detail presentation, and the limited demo Settings surface.
+- Does not own: audit-event creation rules, category lifecycle implementation owned by Phase 06, business formulas, or requirement definitions.
+- Primary owned requirements: `REQ-AUDIT-001`, `REQ-AUDIT-002`, `REQ-SETTINGS-001`–`REQ-SETTINGS-009`.
+- Consumed requirements: `REQ-AUTH-*`, `REQ-FIN-015`–`REQ-FIN-020`, `REQ-DOC-004`–`REQ-DOC-006`, `REQ-EXP-001`, `REQ-EXP-002`, `REQ-RESP-004`, and `REQ-RESP-006`.
+- Authority references: `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `05-DATABASE-SPEC.md`, `06-API-SPEC.md`, `07-SECURITY-RULES.md`, `10-TEST-PLAN.md`, and `14-TRACEABILITY-MATRIX.md`.
+- Deliverables: audit read service and page, settings validation/persistence/page, and audited settings changes.
+- Out of scope: editable audit rows, unaudited mutation paths, church identity configuration, and reset-database control.
+- Handoff: Phase 11 integrates settings navigation; Phase 12 verifies audit immutability and security evidence.
+- Acceptance evidence: `TEST-AUDIT-001`, `TEST-AUDIT-002`, `TEST-SEC-001`, and `TEST-E2E-001`.
+
+## Phase Metadata
+
+- Status: `NOT STARTED`; requires audit writes and settings persistence from earlier phases.
+- Preconditions: Phases 01–09 complete; Phase 06 category lifecycle is available for the Settings entry point.
+- Handoff rule: Phase 10 may present category management but does not duplicate or weaken the Phase 06 lifecycle.
+
 ## Objective
 
 Complete the dedicated Audit History interface and the limited, useful demo Settings surface while preserving audit immutability and financial integrity.
@@ -33,7 +51,7 @@ Complete the dedicated Audit History interface and the limited, useful demo Sett
 - Exclude secrets, tokens, raw documents, and unnecessary personal data from audit detail.
 - Append audit events atomically with the corresponding change.
 - Prevent application updates or deletes of audit rows.
-- Keep settings limited to the approved demo configuration.
+- Keep settings limited to the approved demo configuration. At least one payment method remains enabled, and disabling a method affects new entries only; historical records and void workflows remain unchanged.
 - Audit important settings changes.
 
 ## Prohibited shortcuts

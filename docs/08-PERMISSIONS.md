@@ -1,5 +1,12 @@
 # HYSSOP FINANCE — Permissions and Boundaries
 
+## Document Responsibility
+
+- Owns: OpenCode workspace permissions, agent boundaries, permitted project operations, and stop-and-ask conditions.
+- Does not own: application security policy, product requirements, or Git procedure.
+- Referenced by: `AGENTS.md` and the runtime issue record.
+- Change rule: a permission boundary change requires explicit user authorization and must never bypass an operating-system or security control.
+
 ## OpenCode workspace boundary
 
 The authorized project boundary is the currently opened `HYSSOP-FINANCE` workspace. Agents may create, read, edit, rename, move, organize, and, only when genuinely necessary, delete project files inside this workspace.

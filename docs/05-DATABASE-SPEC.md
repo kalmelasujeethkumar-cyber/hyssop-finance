@@ -1,8 +1,23 @@
 # HYSSOP FINANCE — Database Specification
 
+## Document Responsibility
+
+- Owns: PostgreSQL/Prisma entities, exact money storage, constraints, invariants, indexes, audit persistence, and migration rules.
+- Does not own: product requirements, API routes, UI behavior, or deployment authorization.
+- Referenced by: `02-ARCHITECTURE.md`, `06-API-SPEC.md`, `07-SECURITY-RULES.md`, phase documents, and the test plan.
+- Change rule: schema changes must preserve the locked invariants and be recorded as a reviewed migration before application code depends on them.
+
 ## Status
 
 This document specifies the proposed PostgreSQL and Prisma design. No schema, migration, seed, or database connection is created during Prompt 01. Phase 02 must implement and verify this specification after approval.
+
+## Persistence responsibility and references
+
+This document implements the persistence side of `REQ-FIN-001` through `REQ-FIN-003`, `REQ-FIN-005` through `REQ-FIN-020`, `REQ-MEM-001` through `REQ-MEM-006`, `REQ-CONTRIB-001` through `REQ-CONTRIB-003`, `REQ-DOC-007` through `REQ-DOC-009`, `REQ-DOC-013`, `REQ-EXP-001` through `REQ-EXP-004`, and `REQ-SETTINGS-001` through `REQ-SETTINGS-007`. The product statements remain in `01-REQUIREMENTS.md`; the API and UI consume these invariants rather than restating them.
+
+`occurred_at` is the recorded instant; `business_date` is the Asia/Kolkata accounting and filter date used by financial periods. A record is valid for aggregation when it is persisted as `ACTIVE` and satisfies the database type and association constraints. The application must not introduce an undocumented third transaction status.
+
+Phone numbers are normalized to national digits after removing spaces, hyphens, parentheses, and an optional `+91` prefix; the normalized digits are the canonical stored value, with presentation formatting applied only at API/UI boundaries.
 
 ## Exact money strategy
 
@@ -71,7 +86,7 @@ Database checks must enforce the type-specific shape:
 - `INCOME` requires `income_type` and forbids `category_id`.
 - `EXPENSE` requires `category_id` and forbids `income_type` and `contribution_period_id`.
 - `MEMBER_CONTRIBUTION` requires both `member_id` and a `contribution_period_id` whose member, month, and year match the transaction. This cross-table rule is enforced by application validation and a PostgreSQL constraint trigger, because a row-level CHECK constraint cannot reference another table.
-- `ANONYMOUS_DONATION` forbids `member_id` and `contribution_period_id`, and its description must never be used to record a donor identity. Use a neutral default such as `Anonymous Donation` when no description is supplied.
+- `ANONYMOUS_DONATION` forbids `member_id` and `contribution_period_id`, and its description must never be used to record a donor identity. Use a neutral server-owned value such as `Anonymous Donation`; identity-bearing free text is rejected at the API boundary.
 - `OFFERING` and `DONATION` may have an optional `member_id` but never a contribution period.
 - `status = 'ACTIVE'` requires void columns to be null; `status = 'VOIDED'` requires `voided_at`, `voided_by_admin_id`, and a non-empty `void_reason`.
 
@@ -96,7 +111,7 @@ Do not persist a mutable `paid_amount` as the source of truth. If a cached proje
 
 ## Demo settings
 
-`app_setting` stores validated, non-secret demo configuration. The initial key set is `DEFAULT_MONTHLY_CONTRIBUTION_PAISE`, `ENABLED_PAYMENT_METHODS`, `CURRENCY`, and `BUSINESS_TIMEZONE`. The default contribution is positive integer paise; enabled methods are a validated subset of `CASH`, `UPI`, and `BANK_TRANSFER`; `CURRENCY` is fixed to `INR` and `BUSINESS_TIMEZONE` is fixed to `Asia/Kolkata` in this demo. Settings writes are validated, audited, and do not alter historical financial records.
+`app_setting` stores validated, non-secret demo configuration. The initial key set is `DEFAULT_MONTHLY_CONTRIBUTION_PAISE`, `ENABLED_PAYMENT_METHODS`, `CURRENCY`, and `BUSINESS_TIMEZONE`. The default contribution is positive integer paise; enabled methods are a validated subset of `CASH`, `UPI`, and `BANK_TRANSFER` with at least one method enabled; `CURRENCY` is fixed to `INR` and `BUSINESS_TIMEZONE` is fixed to `Asia/Kolkata` in this demo. Disabling a method affects new transaction entry only and never changes historical records, balances, edits, or void operations. Settings writes are validated, audited, and do not alter historical financial records.
 
 ## Void and edit rules
 
@@ -105,11 +120,13 @@ Do not persist a mutable `paid_amount` as the source of truth. If a cached proje
 - Void reason is trimmed and must be non-empty after validation.
 - Voiding is idempotent only for the same request key and target; a second void attempt with a different reason must be rejected clearly.
 - Updates increment `revision` and write an audit event containing the changed field names, previous values, new values, actor, action, and timestamp.
+- Transaction identity, reference, type, creator, and creation timestamp are immutable. Amount, payment method, business date, description, notes, and type-specific associations may be changed only through the validated correction command; each change increments `revision` and must preserve the before/after audit record. Status and void fields change only through the void command.
+- Member `reference_id`, creation time, and financial-history links are immutable. Member edits use a `revision` optimistic-lock value and increment it atomically; a stale update is rejected.
 - All financial aggregation queries filter `status = 'ACTIVE'`.
 
 ## Idempotency
 
-`idempotency_record` contains `id`, `admin_user_id`, `endpoint`, `idempotency_key`, `request_hash`, `response_status`, `response_body JSONB`, `created_at`, and `expires_at`, with a unique constraint on `(admin_user_id, endpoint, idempotency_key)`.
+`idempotency_record` contains `id`, `admin_user_id`, `endpoint`, `idempotency_key`, `request_hash`, `response_status`, `response_body JSONB`, `created_at`, and `expires_at`, with a unique constraint on `(admin_user_id, endpoint, idempotency_key)`. Demo records are retained for 30 days; after expiry the key is rejected as expired rather than silently creating a new financial operation. Concurrent requests with one key are serialized by the unique constraint.
 
 - The first request creates the record in the same database transaction as the business change.
 - A repeat with the same key and the same request hash returns the stored response.
@@ -118,7 +135,7 @@ Do not persist a mutable `paid_amount` as the source of truth. If a cached proje
 
 ## Documents
 
-`transaction_document` contains `id`, `reference_id` such as `HY-DOC-000001`, `transaction_id`, `storage_key`, `original_filename`, `declared_mime_type`, `detected_mime_type`, `byte_size`, `checksum_sha256`, `status`, `uploaded_by_admin_id`, `uploaded_at`, `removed_at`, `removed_by_admin_id`, and `removal_reason`.
+`transaction_document` contains `id`, `reference_id` such as `HY-DOC-000001`, `transaction_id`, `storage_key`, `original_filename`, `declared_mime_type`, `detected_mime_type`, `byte_size`, `checksum_sha256`, `status`, `storage_deleted_at`, `uploaded_by_admin_id`, `uploaded_at`, `removed_at`, `removed_by_admin_id`, and `removal_reason`. The database `status` is `AVAILABLE` or `REMOVED`; after removal, metadata is retained, content access is denied, and `storage_deleted_at` records successful physical deletion when it occurs. A failed storage deletion leaves the metadata `REMOVED` and a controlled cleanup retry, never publicly accessible content.
 
 Constraints require a non-empty storage key, positive byte size, an allowed detected type, and a one-to-many relationship with the transaction. The database never stores file bytes. Removal requires a non-empty `removal_reason` when `status = 'REMOVED'`, preserves metadata, and writes an audit event rather than deleting the row.
 
@@ -126,7 +143,7 @@ The local storage key is an opaque generated value. The original filename is met
 
 ## Members
 
-`member` contains `id`, `reference_id` such as `HY-MEM-0001`, `name`, `phone`, `notes`, `created_at`, and `updated_at`. Names are required and length-limited. Phone is optional; when present it must contain 7 to 15 digits after removing spaces, hyphens, parentheses, and an optional `+91` prefix. The same rule is enforced in the UI, API, and database. `reference_id` is unique and immutable. Member deletion is not provided in the demo; members may be deactivated only if a later approved requirement defines that behavior safely.
+`member` contains `id`, `reference_id` such as `HY-MEM-0001`, `name`, `phone`, `notes`, `revision INTEGER NOT NULL DEFAULT 1`, `created_at`, and `updated_at`. Names are required and length-limited. Phone is optional; when present it must contain 7 to 15 digits after removing spaces, hyphens, parentheses, and an optional `+91` prefix. The same rule is enforced in the UI, API, and database. `reference_id` is unique and immutable. Member deletion is not provided in the demo; members may be deactivated only if a later approved requirement defines that behavior safely.
 
 ## Human-readable identifiers
 
