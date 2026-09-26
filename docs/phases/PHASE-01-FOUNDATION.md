@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `IMPLEMENTED`; quality gate passed on 2026-09-26, Git gate pending recorded evidence.
+- Status: `IMPLEMENTED`; quality gate passed and Git gate passed on 2026-09-26 with commit `1a11d34af7d4ef3f8352cdaabf533b9056b21b7f`. Phase completion still requires external review.
 - Preconditions: Phase 00 complete and user approval recorded.
 - Handoff rule: no required control may be presented as working until its real path is implemented and tested.
 
@@ -92,4 +92,4 @@ Revert only the phase's own uncommitted changes or create a corrective commit. D
 - [x] Frontend and backend shells run — `npm run dev` starts both; `GET /api/v1/health` answers 200 through a real process.
 - [x] Lint, typecheck, unit tests, and build pass — see the Phase 01 gate table in `docs/runtime/TEST-RESULTS.md`.
 - [x] Documentation and decisions updated — `docs/06-API-SPEC.md` health contract, `DEC-041`–`DEC-052`, `ISSUES.md`, `TEST-RESULTS.md`, `README.md`.
-- [ ] Git gate passed and hash recorded — pending the commit, push, and remote verification.
+- [x] Git gate passed and hash recorded — `1a11d34af7d4ef3f8352cdaabf533b9056b21b7f` pushed to `origin/main` with a matching remote hash.

@@ -29,6 +29,7 @@ Environment assumptions: Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, 
 | `npm run test:e2e` | Pass | 2 Playwright tests against the built bundle with a real API process; API access log shows `200` for the browser health request |
 | Phase boundary review | Pass | No member, contribution, income, expense, document, dashboard, report, or session code exists; no navigation target is rendered that does not work |
 | Secret and staged-file review | Pass | Credential-pattern scan over all 104 committable files matched only the deliberate redaction test fixtures; `.env` is ignored and untracked |
+| Git gate | Pass | 75 intended files committed as `1a11d34af7d4ef3f8352cdaabf533b9056b21b7f` and pushed to `origin/main`; local and remote hashes match |
 
 ## Defects found and fixed during the phase
 

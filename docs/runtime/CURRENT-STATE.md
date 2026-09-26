@@ -17,8 +17,8 @@
 
 - Current stage: **PHASE 01 — FOUNDATION**
 - Current phase: `PHASE-01-FOUNDATION`
-- Status: **QUALITY GATE PASSED; GIT GATE PENDING**
-- Next gate: commit, push, verify the remote hash, record the evidence, then stop for external review
+- Status: **PHASE 01 IMPLEMENTED; GIT GATE PASSED AWAITING EXTERNAL REVIEW**
+- Next gate: external review of the Phase 01 checkpoint; `PHASE-02-DATABASE` does not start without explicit approval
 - Phase 02: **NOT STARTED**
 - Application implementation: **PHASE 01 COMPLETE** (foundation only)
 - Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 implementation and evidence recorded
@@ -35,7 +35,7 @@ Phase 01 is approved and its implementation is finished. It owns `REQ-AUTH-001`,
 
 ## Next planned step
 
-Close the Phase 01 Git gate: commit the intended files, push to `origin/main`, verify the remote hash, record the evidence in `TEST-RESULTS.md` and `PHASE-HISTORY.md`, and then stop for external review without beginning Phase 02.
+The Phase 01 Git gate is closed: commit `1a11d34af7d4ef3f8352cdaabf533b9056b21b7f` was pushed to `origin/main` and the remote hash matches. Phase 01 is stopped here for external review; `PHASE-02-DATABASE` requires explicit approval before any work starts.
 
 ## Blockers
 
