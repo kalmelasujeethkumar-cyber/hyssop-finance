@@ -27,6 +27,8 @@ Application tests remain unstarted. The following rows record documentation chec
 | Contradiction and ownership audit | Complete | Phase 05/06/07 document dependency, Phase 09/10 audit ordering, and Phase 06/10 category ownership recorded in `DECISIONS.md` and `ISSUES.md`; `ISSUE-010` records the final traceability corrections |
 | Whitespace and Git diff checks | Complete | `git diff --check` reported no whitespace errors before staging |
 | Secret and staged-file review | Complete | High-confidence pattern scan over the worktree found no credential material; staged file list contains documentation only |
+| Checkpoint commit | Complete | `ee3bae4627dd0f06ae40ec8c5f1b0c8e627657e3` — 36 intended documentation files, 1040 insertions, 185 deletions |
+| Push verification | Complete | `main` pushed to `origin/main`; local and remote hashes match |
 | Application lint, typecheck, unit, integration, database, E2E, and build | Not run | No application code, toolchain, schema, or deployment exists |
 
 ## Evidence for this stage

@@ -15,10 +15,10 @@
 
 ## Current stage
 
-- Current stage: **Documentation Hardening — Prompt 01B quality gate passed, checkpoint pending**
+- Current stage: **Documentation Hardening — Prompt 01B COMPLETE, awaiting external review**
 - Current prompt: **Prompt 01B**
 - Application implementation: **NOT STARTED**
-- Documentation: Prompt 01 baseline pushed; Prompt 01B ownership, stable identifiers, traceability, and phase contracts are audited and ready to commit
+- Documentation: Prompt 01 baseline pushed; Prompt 01B ownership, stable identifiers, traceability, and phase contracts are committed and pushed
 - Database migrations: **NOT STARTED**
 - External services: **NOT CONFIGURED**
 
@@ -30,7 +30,7 @@ Prompt 01B reread the full specification, phase, and runtime set; added the docu
 
 ## Next planned step
 
-Create and push the documentation-hardening checkpoint, record the verified hash in `docs/runtime/PHASE-HISTORY.md`, then stop for external review before Phase 01.
+Wait for external review and explicit user approval. Phase 01 does not start until that approval is given. The next approved work is the Phase 01 foundation bootstrap defined in `docs/phases/PHASE-01-FOUNDATION.md`.
 
 ## Blockers
 
