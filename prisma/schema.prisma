@@ -1,0 +1,285 @@
+// HYSSOP FINANCE — canonical PostgreSQL schema.
+//
+// Authority: `docs/05-DATABASE-SPEC.md` (entity, field, money, constraint, index,
+// and migration rules). Business behavior stays in `docs/01-REQUIREMENTS.md`, and the
+// canonical calculation contract stays in `docs/02-ARCHITECTURE.md`.
+//
+// Rules encoded here:
+//   * every monetary column is `BIGINT` paise named `*_paise`; no float or decimal money;
+//   * `occurred_at` is the recorded instant and `business_date` is the Asia/Kolkata
+//     accounting date used by every financial period filter;
+//   * only `ACTIVE` and `VOIDED` transaction statuses exist;
+//   * every human-readable `reference_id` is unique and allocated by `id_sequence`;
+//   * audit events are append-only and are protected by grants and triggers in the
+//     reviewed migration, because Prisma cannot express `CHECK`, trigger, or
+//     expression-index SQL.
+//
+// CHECK constraints, cross-table constraint triggers, append-only enforcement, and
+// the `lower(name)` expression index are added in `prisma/migrations/*/migration.sql`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Least-privilege runtime role. Used by the application and by database tests.
+  url       = env("DATABASE_URL")
+  // Schema-owner role used only by `prisma migrate`; never by the running API.
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum IncomeType {
+  MEMBER_CONTRIBUTION
+  OFFERING
+  DONATION
+  ANONYMOUS_DONATION
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+}
+
+enum TransactionStatus {
+  ACTIVE
+  VOIDED
+}
+
+enum CategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DocumentStatus {
+  AVAILABLE
+  REMOVED
+}
+
+enum AuditAction {
+  TRANSACTION_CREATED
+  TRANSACTION_UPDATED
+  TRANSACTION_VOIDED
+  DOCUMENT_UPLOADED
+  DOCUMENT_REMOVED
+  MEMBER_CREATED
+  MEMBER_UPDATED
+  CATEGORY_CREATED
+  CATEGORY_UPDATED
+  SETTING_UPDATED
+  LOGIN_SUCCEEDED
+  LOGIN_FAILED
+}
+
+/// The single Admin account. Phase 02 creates the actor entity only; credential and
+/// session columns belong to the Phase 03 authentication migration.
+model AdminUser {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  displayName String   @map("display_name") @db.VarChar(120)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  createdTransactions FinancialTransaction[] @relation("TransactionCreatedBy")
+  voidedTransactions  FinancialTransaction[] @relation("TransactionVoidedBy")
+  uploadedDocuments   TransactionDocument[]  @relation("DocumentUploadedBy")
+  removedDocuments    TransactionDocument[]  @relation("DocumentRemovedBy")
+  auditEvents         AuditEvent[]
+  idempotencyRecords  IdempotencyRecord[]
+
+  @@map("admin_user")
+}
+
+/// Member identity and contact data. `reference_id` is immutable and unique; the
+/// stored phone value is national digits only after normalization.
+model Member {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  referenceId String   @unique @map("reference_id") @db.VarChar(32)
+  name        String   @db.VarChar(120)
+  phone       String?  @db.VarChar(15)
+  notes       String?  @db.Text
+  revision    Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  contributionPeriods ContributionPeriod[]
+  transactions        FinancialTransaction[]
+
+  @@map("member")
+}
+
+/// Expected monthly amount for one member. Received and remaining values are always
+/// derived from active `MEMBER_CONTRIBUTION` transactions and are never stored.
+model ContributionPeriod {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId      String   @map("member_id") @db.Uuid
+  year          Int      @db.SmallInt
+  month         Int      @db.SmallInt
+  expectedPaise BigInt   @map("expected_paise")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  member       Member                 @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  transactions FinancialTransaction[]
+
+  @@unique([memberId, year, month], map: "contribution_period_member_year_month_key")
+  @@index([memberId, year(sort: Desc), month(sort: Desc)], map: "contribution_period_member_recent_idx")
+  @@map("contribution_period")
+}
+
+/// Initial system categories and Admin-created custom categories. Categories are
+/// deactivated instead of deleted so historical transactions keep their label.
+model ExpenseCategory {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String         @db.VarChar(80)
+  normalizedName String         @map("normalized_name") @db.VarChar(80)
+  status         CategoryStatus @default(ACTIVE)
+  isSystem       Boolean        @default(false) @map("is_system")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  transactions FinancialTransaction[]
+
+  @@unique([normalizedName], map: "expense_category_normalized_name_key")
+  @@map("expense_category")
+}
+
+/// The single canonical income and expense record. Type-specific shape, void
+/// metadata, and edit rules are enforced by CHECK constraints and triggers in the
+/// reviewed migration.
+model FinancialTransaction {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  referenceId          String            @unique @map("reference_id") @db.VarChar(32)
+  transactionType      TransactionType   @map("transaction_type")
+  amountPaise          BigInt            @map("amount_paise")
+  paymentMethod        PaymentMethod     @map("payment_method")
+  status               TransactionStatus @default(ACTIVE)
+  businessDate         DateTime          @map("business_date") @db.Date
+  occurredAt           DateTime          @map("occurred_at") @db.Timestamptz(6)
+  description          String?           @db.Text
+  memberId             String?           @map("member_id") @db.Uuid
+  contributionPeriodId String?           @map("contribution_period_id") @db.Uuid
+  incomeType           IncomeType?       @map("income_type")
+  categoryId           String?           @map("category_id") @db.Uuid
+  notes                String?           @db.Text
+  voidedAt             DateTime?         @map("voided_at") @db.Timestamptz(6)
+  voidedByAdminId      String?           @map("voided_by_admin_id") @db.Uuid
+  voidReason           String?           @map("void_reason") @db.Text
+  createdByAdminId     String            @map("created_by_admin_id") @db.Uuid
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime          @default(now()) @map("updated_at") @db.Timestamptz(6)
+  revision             Int               @default(1)
+
+  member             Member?               @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  contributionPeriod ContributionPeriod?   @relation(fields: [contributionPeriodId], references: [id], onDelete: Restrict)
+  category           ExpenseCategory?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdByAdmin     AdminUser             @relation("TransactionCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  voidedByAdmin      AdminUser?            @relation("TransactionVoidedBy", fields: [voidedByAdminId], references: [id], onDelete: Restrict)
+  documents          TransactionDocument[]
+
+  @@index([status, businessDate], map: "financial_transaction_status_business_date_idx")
+  @@index([transactionType, businessDate, status], map: "financial_transaction_type_date_status_idx")
+  @@index([paymentMethod, businessDate, status], map: "financial_transaction_method_date_status_idx")
+  @@index([memberId, businessDate, status], map: "financial_transaction_member_date_status_idx")
+  @@index([categoryId, businessDate, status], map: "financial_transaction_category_date_status_idx")
+  @@index([incomeType, businessDate, status], map: "financial_transaction_income_date_status_idx")
+  @@map("financial_transaction")
+}
+
+/// Document metadata and storage reference for one transaction. Raw file bytes are
+/// never stored in PostgreSQL; `storage_key` is an opaque server-generated value.
+model TransactionDocument {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  referenceId       String         @unique @map("reference_id") @db.VarChar(32)
+  transactionId     String         @map("transaction_id") @db.Uuid
+  storageKey        String         @unique @map("storage_key") @db.VarChar(255)
+  originalFilename  String         @map("original_filename") @db.VarChar(255)
+  declaredMimeType  String         @map("declared_mime_type") @db.VarChar(128)
+  detectedMimeType  String         @map("detected_mime_type") @db.VarChar(128)
+  byteSize          Int            @map("byte_size")
+  checksumSha256    String         @map("checksum_sha256") @db.Char(64)
+  status            DocumentStatus @default(AVAILABLE)
+  storageDeletedAt  DateTime?      @map("storage_deleted_at") @db.Timestamptz(6)
+  uploadedByAdminId String         @map("uploaded_by_admin_id") @db.Uuid
+  uploadedAt        DateTime       @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  removedAt         DateTime?      @map("removed_at") @db.Timestamptz(6)
+  removedByAdminId  String?        @map("removed_by_admin_id") @db.Uuid
+  removalReason     String?        @map("removal_reason") @db.Text
+
+  transaction     FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  uploadedByAdmin AdminUser            @relation("DocumentUploadedBy", fields: [uploadedByAdminId], references: [id], onDelete: Restrict)
+  removedByAdmin  AdminUser?           @relation("DocumentRemovedBy", fields: [removedByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId, status], map: "transaction_document_transaction_status_idx")
+  @@map("transaction_document")
+}
+
+/// Append-only record of important actions. Application roles receive no `UPDATE` or
+/// `DELETE` privilege, and a trigger rejects any mutation attempt.
+model AuditEvent {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorAdminId    String?     @map("actor_admin_id") @db.Uuid
+  action          AuditAction
+  entityType      String      @map("entity_type") @db.VarChar(64)
+  entityId        String?     @map("entity_id") @db.Uuid
+  entityReference String?     @map("entity_reference") @db.VarChar(32)
+  before          Json?
+  after           Json?
+  reason          String?     @db.Text
+  requestId       String?     @map("request_id") @db.Uuid
+  ipHash          String?     @map("ip_hash") @db.VarChar(128)
+  occurredAt      DateTime    @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  actorAdmin AdminUser? @relation(fields: [actorAdminId], references: [id], onDelete: Restrict)
+
+  @@index([occurredAt(sort: Desc)], map: "audit_event_occurred_at_idx")
+  @@index([entityType, entityId, occurredAt(sort: Desc)], map: "audit_event_entity_idx")
+  @@map("audit_event")
+}
+
+/// Validated, non-secret demo configuration. The four seeded keys are constrained by
+/// CHECK constraints; `CURRENCY` and `BUSINESS_TIMEZONE` are fixed for the demo.
+model AppSetting {
+  key       String   @id @db.VarChar(64)
+  value     String   @db.VarChar(255)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_setting")
+}
+
+/// Allocation state for human-readable references. The allocator increments the scope
+/// inside the same transaction that creates the record, so a rollback never consumes
+/// a committed reference and concurrent allocation cannot duplicate one.
+model IdSequence {
+  scope     String   @id @db.VarChar(32)
+  lastValue BigInt   @default(0) @map("last_value")
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("id_sequence")
+}
+
+/// Safe retry record for create and mutation commands. The unique key serializes
+/// concurrent identical requests, and the stored request hash rejects a different
+/// payload under an already-used key.
+model IdempotencyRecord {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminUserId    String   @map("admin_user_id") @db.Uuid
+  endpoint       String   @db.VarChar(255)
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(255)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
+
+  @@unique([adminUserId, endpoint, idempotencyKey], map: "idempotency_record_admin_endpoint_key_key")
+  @@index([expiresAt], map: "idempotency_record_expires_at_idx")
+  @@map("idempotency_record")
+}

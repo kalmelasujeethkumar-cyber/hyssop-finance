@@ -1,11 +1,12 @@
 import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER } from '@nestjs/core';
 import { ApiExceptionFilter } from './common/errors/api-exception.filter';
 import { RequestContextMiddleware } from './common/http/request-context.middleware';
-import { StructuredLogger } from './common/logging/structured-logger';
-import { getAppEnvironment, resolveLogLevel } from './config/environment';
+import { LoggingModule } from './common/logging/logging.module';
 import { loadAppEnvironment } from './config/environment.loader';
+import { DatabaseModule } from './database/database.module';
+import { PrismaModule } from './database/prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -16,15 +17,12 @@ import { HealthModule } from './health/health.module';
       envFilePath: ['../../.env', '.env'],
       load: [loadAppEnvironment],
     }),
+    LoggingModule,
+    PrismaModule,
+    DatabaseModule,
     HealthModule,
   ],
   providers: [
-    {
-      provide: StructuredLogger,
-      useFactory: (config: ConfigService) =>
-        new StructuredLogger(resolveLogLevel(getAppEnvironment(config).nodeEnv)),
-      inject: [ConfigService],
-    },
     {
       provide: APP_FILTER,
       useClass: ApiExceptionFilter,

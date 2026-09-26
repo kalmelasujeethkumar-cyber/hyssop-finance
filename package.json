@@ -28,11 +28,26 @@
     "test": "npm run test --workspace @hyssop/api && npm run test --workspace @hyssop/web",
     "test:api": "npm run test --workspace @hyssop/api",
     "test:web": "npm run test --workspace @hyssop/web",
+    "test:db": "npm run test:db --workspace @hyssop/api",
     "pretest:e2e": "npm run build:contracts && npm run build:api && npm run build:web:smoke",
     "test:e2e": "playwright test --config apps/web/playwright.config.ts",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:validate": "prisma validate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma && npm run db:grant",
+    "db:status": "prisma migrate status --schema prisma/schema.prisma",
+    "db:seed": "prisma db seed --schema prisma/schema.prisma",
+    "db:grant": "node scripts/local-postgres.mjs grant",
+    "db:start": "node scripts/local-postgres.mjs start",
+    "db:stop": "node scripts/local-postgres.mjs stop",
+    "db:urls": "node scripts/local-postgres.mjs urls",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build && npm run format:check"
+    "verify": "npm run lint && npm run typecheck && npm run typecheck:scripts && npm run test && npm run build && npm run format:check",
+    "verify:database": "npm run db:validate && npm run test:db"
+  },
+  "prisma": {
+    "seed": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON prisma/seed.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
@@ -43,6 +58,7 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.12.0",
     "prettier": "3.9.9",
+    "prisma": "6.19.3",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1"
   }

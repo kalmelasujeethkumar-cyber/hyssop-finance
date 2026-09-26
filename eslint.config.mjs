@@ -3,7 +3,13 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 const workspaces = ['apps/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'];
-const nodeTooling = ['**/*.config.ts', '**/e2e/**/*.ts', 'apps/api/jest.config.js'];
+const nodeTooling = [
+  '**/*.config.ts',
+  '**/e2e/**/*.ts',
+  'apps/api/jest.config.js',
+  'apps/api/jest.db.config.js',
+];
+const repositoryScripts = ['prisma/**/*.ts', 'scripts/**/*.mjs'];
 
 export default tseslint.config(
   {
@@ -14,6 +20,8 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/test-results/**',
       '**/*.d.ts',
+      // Git-ignored local working area, including the project-local PostgreSQL cluster.
+      'tmp/**',
     ],
   },
   js.configs.recommended,
@@ -60,6 +68,23 @@ export default tseslint.config(
     languageOptions: {
       sourceType: 'commonjs',
       globals: { ...globals.node },
+    },
+  },
+  {
+    // Repository-level tooling that is not part of a workspace build: the Prisma seed
+    // and the local PostgreSQL workflow script.
+    files: repositoryScripts,
+    extends: [tseslint.configs.recommended],
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { sourceType: 'module' },
+    },
+    rules: {
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'error',
     },
   },
   {

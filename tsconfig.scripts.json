@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "HYSSOP FINANCE repository scripts",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  "include": ["prisma/**/*.ts"]
+}

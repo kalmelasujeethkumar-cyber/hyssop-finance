@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires Phase 01 approval.
+- Status: `IMPLEMENTED`; quality gate passed, Git gate pending.
 - Preconditions: Phase 01 complete, database specification approved, disposable PostgreSQL available.
 - Handoff rule: schema changes use reviewed migrations and preserve audit, void, and exact-money invariants.
 
@@ -90,9 +90,17 @@ Use forward corrective migrations for schema fixes. Never drop a database or vol
 
 ## Completion checklist
 
-- [ ] Schema and migrations reviewed.
-- [ ] Money and void invariants enforced.
-- [ ] Contribution and audit persistence implemented.
-- [ ] Seed data verified as fictional and idempotent.
-- [ ] Database tests pass.
+- [x] Schema and migrations reviewed.
+- [x] Money and void invariants enforced.
+- [x] Contribution and audit persistence implemented.
+- [x] Seed data verified as fictional and idempotent.
+- [x] Database tests pass.
 - [ ] Documentation and Git gate complete.
+
+## Verified implementation notes
+
+- The disposable database workflow is `scripts/local-postgres.mjs`, which manages a project-local PostgreSQL 16 cluster on loopback port `55432` for `hyssop_finance_dev` and `hyssop_finance_test`. Docker is not installed on the developer machine, so `docker-compose.yml` and `docker/postgres/init/001-app-role.sh` remain an unverified alternative provisioning path (`ISSUE-016`).
+- Object-level runtime grants are owned by the reviewed migration `20260926140000_runtime_role_grants`; the provisioning script owns only roles, databases, `CONNECT`, and schema `USAGE`. See `DEC-055`.
+- Idempotent financial commands are persisted by one atomic `runOnce` transaction that writes the business row and the idempotency record together. See `DEC-056`.
+- Document storage is out of scope here, so the seed creates document *metadata* only and no physical objects. Phases 07 and 12 own storage.
+- Two indexes are full rather than partial because the pinned Prisma datamodel cannot declare a partial index without permanent `migrate diff` drift. See `DEC-060` and `ISSUE-013`.

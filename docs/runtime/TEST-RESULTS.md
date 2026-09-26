@@ -9,9 +9,65 @@
 
 ## Current status
 
-**Phase 01 foundation quality gate passed on 2026-09-26. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
+**Phase 02 database quality gate passed on 2026-09-26. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
 
-Phase 01 introduced the first executable application code in the repository: the API shell, the web shell, shared contracts, and the quality-gate tooling. The financial and business layers remain unimplemented by design.
+Phase 02 added the first persisted data layer: the canonical Prisma schema, reviewed forward migrations, exact paise persistence, reference allocation, transactional idempotency, reconciliation queries, a fictional idempotent seed, and database tests that run against a real disposable PostgreSQL 16 instance. REST routes and authentication remain unimplemented by design.
+
+## Phase 02 database gate
+
+Environment assumptions: Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, PostgreSQL `16` from the project-local cluster in `scripts/local-postgres.mjs` on loopback port `55432`, root `.env` created from `.env.example`, `hyssop_finance_dev` for development and `hyssop_finance_test` for database tests, runtime role `hyssop_app`, migration role `hyssop_migrator`, `trust` authentication so no credential exists in the repository.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run db:start` | Pass | Idempotent; cluster already running, roles and `hyssop_finance_dev` / `hyssop_finance_test` present, and it prints the four runtime and migration URLs without credentials |
+| `npm run db:generate` | Pass | Prisma Client `6.19.3` generated into `node_modules/.prisma` |
+| `npm run db:validate` | Pass | `prisma validate` reports `The schema at prisma\schema.prisma is valid` |
+| `npx prisma migrate deploy` | Pass | 2 migrations applied; `All migrations have been successfully applied.` and `prisma migrate status` reports `Database schema is up to date!` |
+| `npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --exit-code` | Pass | `No difference detected.` with exit code `0`, so the committed migrations and the Prisma schema describe the same database |
+| `npm run db:seed` (first run on an empty database) | Pass | `Members: 8`, `Contribution periods: 24`, `Transactions created this run: 48`, `Transactions already present and skipped: 0` |
+| `npm run db:seed` (second run) | Pass | `Transactions created this run: 0`, `Transactions already present and skipped: 48`, proving idempotency of the fictional fixtures |
+| Runtime-role read of seeded data | Pass | As `hyssop_app`: `members=8`, `periods=24`, `transactions=48`, `active_income_paise=1314000` (exact `BIGINT` paise, no floating point) |
+| Least-privilege grant verification | Pass | `has_table_privilege` for `hyssop_app` on `audit_event`: `select=true insert=true update=false delete=false`; on `financial_transaction`: `update=true`, which corrections require |
+| `npm run test:db` | Pass | 3 suites, 48 tests against real PostgreSQL, including schema invariants, grants, triggers, reference concurrency, audit append-only, transaction rollback, and idempotent replay |
+| `npm run lint` | Pass | `eslint .` reported no problems |
+| `npm run format:check` | Pass | `prettier --check .` clean after one formatting pass |
+| `npm run typecheck` | Pass | Contracts build, `apps/api` and `apps/web` `tsc --noEmit` all clean |
+| `npm run typecheck:scripts` | Pass | `tsc -p tsconfig.scripts.json --noEmit` clean, so `prisma/seed*.ts` and the local PostgreSQL script are typechecked |
+| `npm run test` | Pass | API 13 suites / 103 tests and web 4 files / 19 tests |
+| `npm run build` | Pass | Contracts declaration build, `nest build` for `apps/api`, `vite build` for `apps/web` |
+| `npm run test:e2e` | Pass | 2 Playwright tests; the API access log shows the browser's `GET /api/v1/health` answered `200` through the Vite proxy |
+| API and frontend connectivity (documented local ports) | Pass | `http://127.0.0.1:3000/api/v1/health` returned `hyssop-finance-api`; the same request through the web origin `http://127.0.0.1:5173/api/v1/health` returned `hyssop-finance-api`; `http://127.0.0.1:5173/` returned `200` and served the application markup |
+| Index evidence for `05-DATABASE-SPEC.md` | Pass with a recorded deviation | `pg_indexes` shows 21 indexes matching the documented names, columns, and sort directions, including unique indexes on every `reference_id`; with `enable_seqscan` disabled the planner resolves 11 of the 12 documented predicates to their dedicated index. The two `IS NOT NULL` member and category predicates chose the broader `financial_transaction_status_business_date_idx` with a filter, because 48 seeded rows make a full index cheaper; the deviation in `DEC-060` and `ISSUE-013` is about partial, not usable |
+| `npm audit` | Advisory, not a pass | 3 high-severity findings, all `deepmerge-ts` through the Prisma CLI; reachability evidence and the rejected breaking fix are recorded in `ISSUE-014` |
+| Phase boundary review | Pass | No REST route, session, credential, or UI feature was added; `apps/api` still exposes only `GET /api/v1/health`, which stays process-only and never queries the database |
+| Traceability review | Pass | Re-verified mechanically: `docs/01-REQUIREMENTS.md` defines 119 unique `REQ-*` identifiers, `docs/14-TRACEABILITY-MATRIX.md` maps 119 unique rows, and unmapped `0`, orphan `0`, multiple primary owners `0`. Phase 02 still owns exactly `REQ-FIN-001`, `REQ-FIN-002`, `REQ-FIN-003`, `REQ-FIN-021`, and `REQ-FIN-023`, and the 22 `TEST-*` identifiers in the test-plan coverage table are referenced by the matrix with none missing in either direction. No identifier was added, removed, or renumbered, so the matrix needed no edit |
+| Secret and staged-file review | Pending | Recorded with the Git gate below |
+| Git gate | Pending | The Git gate is recorded in `PHASE-HISTORY.md` after the commit is pushed and the remote hash is verified |
+
+## Phase 02 defects found and fixed
+
+| Defect | How it was found | Fix | Regression evidence |
+|---|---|---|---|
+| The development database had no runtime privileges: `has_schema_privilege('hyssop_app','public','USAGE')` was `false` and `SELECT count(*) FROM public.financial_transaction` returned `permission denied for schema public`, so a real API process could not read its own data | Manual `psql` inspection while collecting index evidence, after health and browser tests had already passed | Object-level grants moved out of `scripts/local-postgres.mjs` into the reviewed migration `20260926140000_runtime_role_grants`, including default privileges for later migrations; the script now owns only roles, databases, `CONNECT`, and schema `USAGE` (`DEC-055`) | `has_table_privilege` now reports the documented least-privilege result, the runtime role reads the 48 seeded transactions, and `npm run test:db` still passes 48 tests |
+| `prisma/migrations` had no `migration_lock.toml`, so `prisma migrate diff --from-migrations` failed with `Could not determine the connector from the migrations directory` | Migration drift check | Added the standard `provider = "postgresql"` lock file | Drift check reports `No difference detected.` with exit code `0` |
+| `hyssop_finance_dev` had no `_prisma_migrations` history, so `prisma migrate deploy` refused to run with `P3005: The database schema is not empty` | `migrate deploy` after the new migration was added | Baselined the already-applied migration with `prisma migrate resolve --applied 20260926120000_init`, which records history without executing SQL | `migrate deploy` applies only the new migration and `migrate status` reports the schema is up to date |
+| The idempotency design wrote a claim row with `responseStatus = 0`, which the new `response_status` check constraint correctly rejected, so the first real command failed | First real-database test run against `audited-commands.db-spec.ts` | Replaced begin/complete/abandon with one `runOnce` transaction that writes the business row and the stored response together, validates a real HTTP status, and replays the stored response on a unique conflict (`DEC-056`) | `npm run test:db` passes, including the duplicate-request, concurrent-request, and failed-command rollback cases |
+| Reconciliation period filtering missed the first day of a range because a bare timestamp parameter was compared against a `date` column in the session time zone | Real-database test asserting the seeded September totals | Bound every date parameter as `formatBusinessDate(value)::date` (`DEC-057`) | `reference-and-reconciliation.db-spec.ts` passes on the seeded data, and the aggregates match the seed totals |
+| The seed re-inserted its correction example on a second run because it matched the transaction to correct by its original amount, which the correction itself had changed | Second `npm run db:seed` run created rows instead of skipping them | The correction example is matched by reference identity, not by the pre-correction amount | First run creates 48 and skips 0; second run creates 0 and skips 48 |
+| `npm run test:db` could not run from the repository root without manually exporting test URLs | Attempting the phase acceptance gate from a clean shell | The test global setup derives the test URLs from the development URLs when explicit test values are absent, and refuses any database name that does not end in `_test` (`DEC-059`) | `npm run test:db` passes from the repository root with no manual environment setup |
+| The API process aborts with a clear message and non-zero exit code when it cannot bind its port, and writes the reason to server-side stderr | A second API start during connectivity verification produced `listen EADDRINUSE` in `api.err.log` while the already-running instance kept serving | No code change; the Phase 01 startup error contract behaved as documented | Health kept answering `200` and the failure stayed diagnosable without exposing internals to the client |
+
+## Phase 02 non-blocking advisories
+
+| Advisory | Assessment |
+|---|---|
+| `npm install` warns that `@angular-devkit/*` (Nest CLI tooling) declares Node `^22.22.0 \|\| ^24.15.0 \|\| >=26.0.0` while the approved runtime is `22.19.0` | Build, typecheck, and tests all pass on the approved runtime; `nest generate` may be restricted on a newer Node. Tracked as `ISSUE-011`, not a phase failure |
+| NestJS logs a `LegacyRouteConverter` message for its internal catch-all route | Upstream Express 5 `path-to-regexp` advisory; the route is internal 404 handling, not an application route. Tracked as `ISSUE-012` |
+| `vite build` reports a chunk-size advisory for the single shell bundle | Expected for a shell with no route-level code splitting; recorded rather than suppressed |
+| Prisma warns that `package.json#prisma` is removed in Prisma 7 | Reproduced on every Prisma command and accepted for this phase per `DEC-061`; tracked as `ISSUE-015` |
+| `npm audit` reports 3 high-severity `deepmerge-ts` findings through the Prisma CLI | Not reachable from the shipped API bundle or `@prisma/client`; the only offered fix is a breaking Prisma downgrade. Tracked as `ISSUE-014` |
+| The Docker/Compose provisioning path was never executed | Docker is not installed on the developer machine; the project-local PostgreSQL 16 workflow produced all Phase 02 evidence. Tracked as `ISSUE-016` |
+| The default development port `3000` was already owned by an unrelated process on the developer machine | The acceptance run uses dedicated loopback ports; no process outside the workspace was inspected beyond identifying the port owner, and nothing outside the workspace was modified |
 
 ## Phase 01 foundation gate
 
@@ -31,7 +87,7 @@ Environment assumptions: Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, 
 | Secret and staged-file review | Pass | Credential-pattern scan over all 104 committable files matched only the deliberate redaction test fixtures; `.env` is ignored and untracked |
 | Git gate | Pass | 75 intended files committed as `1a11d34af7d4ef3f8352cdaabf533b9056b21b7f` and pushed to `origin/main`; local and remote hashes match |
 
-## Defects found and fixed during the phase
+## Phase 01 defects found and fixed
 
 | Defect | How it was found | Fix | Regression evidence |
 |---|---|---|---|
@@ -42,7 +98,7 @@ Environment assumptions: Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, 
 | Section titles used weight 600, below the documented 650–700 range in `04-DESIGN-TOKENS.md` | Specification comparison during self-review | Section headings now use `font-bold` (700) | Visual rule now matches the token document |
 | `eslint` reported 3 remaining strictness violations after the first pass | `npm run lint` | Removed the redundant assertions, typed the rejection helper parameter as `Error` | `npm run lint` passes with no rule disabled |
 
-## Non-blocking advisories
+## Phase 01 non-blocking advisories
 
 | Advisory | Assessment |
 |---|---|

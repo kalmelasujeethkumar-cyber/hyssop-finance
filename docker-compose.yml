@@ -1,0 +1,51 @@
+# HYSSOP FINANCE — optional local PostgreSQL through Docker/Compose.
+#
+# Authority: `docs/05-DATABASE-SPEC.md` (real disposable PostgreSQL, not an in-memory
+# substitute) and `docs/02-ARCHITECTURE.md` (PostgreSQL is the system of record;
+# Docker/Compose only where it materially helps local development).
+#
+# This file is the documented Compose path. It was NOT executed during Phase 02 because
+# Docker is not installed on the verification machine; the verified equivalent is the
+# project-scoped local cluster created by `npm run db:start`
+# (`scripts/local-postgres.mjs`), which runs the same PostgreSQL 16 major version with
+# the same role split. See `docs/runtime/TEST-RESULTS.md` for the recorded limitation.
+#
+# Requirements:
+#   * Docker Engine with the Compose plugin;
+#   * `POSTGRES_PASSWORD` set in your git-ignored `.env` (placeholders only are
+#     committed; real credentials never are).
+#
+# Usage:
+#   docker compose up -d
+#   npm run db:migrate
+#   npm run db:seed
+#   docker compose down        # add -v only for the disposable local volume
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hyssop-finance-postgres
+    restart: unless-stopped
+    environment:
+      # Schema-owner role; used only by `prisma migrate`.
+      POSTGRES_USER: hyssop_migrator
+      POSTGRES_DB: hyssop_finance_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env before starting the database}
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+      # Role created by docker/postgres/init/001-app-role.sh for API and test traffic.
+      APP_ROLE: hyssop_app
+      APP_ROLE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env before starting the database}
+    ports:
+      # Loopback only. The database is never exposed to the network.
+      - '127.0.0.1:55432:5432'
+    volumes:
+      - hyssop-postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hyssop_migrator -d hyssop_finance_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  hyssop-postgres-data:
