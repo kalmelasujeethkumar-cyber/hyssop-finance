@@ -18,6 +18,13 @@ import { getAppEnvironment } from '../../config/environment';
  * require a running database. `verifyConnectivity` exists for the database test
  * harness and for a future readiness check; `docs/06-API-SPEC.md` currently defines the
  * health endpoint as a process check only, and this phase does not add one.
+ *
+ * Interactive transaction waits are raised above Prisma's 2 s / 5 s defaults. Reference
+ * allocation is intentionally serialized per scope by the `id_sequence` row lock, so a
+ * burst of concurrent writers queues behind one another by design. With the defaults the
+ * last writer in a documented burst fails with `Unable to start a transaction in the given
+ * time` instead of waiting its turn, which would surface as a spurious server error. The
+ * values below keep the wait bounded instead of unbounded.
  */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
@@ -27,6 +34,7 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   ) {
     super({
       datasourceUrl: getAppEnvironment(config).databaseUrl,
+      transactionOptions: { maxWait: 15_000, timeout: 30_000 },
       log: [
         { emit: 'event', level: 'warn' },
         { emit: 'event', level: 'error' },

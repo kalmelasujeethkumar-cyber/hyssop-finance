@@ -35,6 +35,7 @@
     "db:validate": "prisma validate --schema prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma && npm run db:grant",
     "db:status": "prisma migrate status --schema prisma/schema.prisma",
+    "db:drift": "node scripts/migration-drift.mjs",
     "db:seed": "prisma db seed --schema prisma/schema.prisma",
     "db:grant": "node scripts/local-postgres.mjs grant",
     "db:start": "node scripts/local-postgres.mjs start",

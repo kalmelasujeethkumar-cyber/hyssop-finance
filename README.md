@@ -39,6 +39,8 @@ npm run dev
 
 Database URLs: `DATABASE_URL` is the least-privilege runtime role (`hyssop_app`), and `DIRECT_DATABASE_URL` is the schema-owner role (`hyssop_migrator`) used only for migrations. `npm run db:start` prints both URLs for the development and test databases; the local cluster uses loopback-only `trust` authentication, so no password is stored in the repository. `docker-compose.yml` is the container alternative and is not verified on the current machine.
 
+`npm run db:drift` verifies that the migrations and `prisma/schema.prisma` agree and that the development database still matches the schema. It creates and drops its own `hyssop_finance_shadow` database, because `prisma migrate diff` destroys whatever database it is given as a shadow. Never pass a database that holds data as `--shadow-database-url`.
+
 Configuration lives in one root `.env`; `.env.example` is the only template and contains no secrets. Only `VITE_`-prefixed values reach the browser. The web dev and preview servers are bound to `127.0.0.1` and proxy `/api` to `API_PROXY_TARGET`, so the browser calls one origin. If `3000` is already in use on your machine, change `PORT` and `API_PROXY_TARGET` together and add the matching origin to `CORS_ALLOWED_ORIGINS`.
 
 ## Quality gate
@@ -49,6 +51,7 @@ npm run typecheck      # contracts build + strict tsc for the API and the web ap
 npm run typecheck:scripts # strict tsc for prisma/seed*.ts and scripts/
 npm run test           # 103 API unit/integration tests + 19 web tests
 npm run test:db        # 48 tests against real disposable PostgreSQL
+npm run db:drift       # migration history and live dev database vs prisma/schema.prisma
 npm run build          # contracts, nest build, vite build
 npm run format:check   # Prettier
 npm run test:e2e       # 2 Playwright tests; builds the smoke bundle and starts both services
