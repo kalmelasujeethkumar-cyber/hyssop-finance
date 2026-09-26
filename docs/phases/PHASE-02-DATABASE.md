@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `IMPLEMENTED`; quality gate passed, Git gate pending.
+- Status: `COMPLETE`; quality gate passed and the Git gate is closed with verified commit `84b5687189d58755438b13f0ea97cd82172958cf` on `origin/main`.
 - Preconditions: Phase 01 complete, database specification approved, disposable PostgreSQL available.
 - Handoff rule: schema changes use reviewed migrations and preserve audit, void, and exact-money invariants.
 
@@ -95,7 +95,7 @@ Use forward corrective migrations for schema fixes. Never drop a database or vol
 - [x] Contribution and audit persistence implemented.
 - [x] Seed data verified as fictional and idempotent.
 - [x] Database tests pass.
-- [ ] Documentation and Git gate complete.
+- [x] Documentation and Git gate complete.
 
 ## Verified implementation notes
 

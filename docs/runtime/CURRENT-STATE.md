@@ -17,11 +17,11 @@
 
 - Current stage: **PHASE 02 — DATABASE**
 - Current phase: `PHASE-02-DATABASE`
-- Status: **PHASE 02 IMPLEMENTED; QUALITY GATE PASSED; GIT GATE PENDING**
-- Next gate: commit, push, and remote-hash verification for the Phase 02 implementation
+- Status: **PHASE 02 COMPLETE; GIT GATE CLOSED AWAITING EXTERNAL REVIEW**
+- Next gate: external review of the Phase 02 checkpoint
 - Phase 03: **NOT STARTED**; authentication must not begin without explicit approval
 - Application implementation: **PHASE 01 AND PHASE 02 COMPLETE** (foundation and persistence only)
-- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 gate closed; Phase 02 evidence recorded
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 and Phase 02 gates closed with recorded evidence
 - Database migrations: **2 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`
 - External services: **NOT CONFIGURED**
 
@@ -37,7 +37,7 @@ Phase 02 is implemented and has passed its quality gate. It owns `REQ-FIN-001`, 
 
 ## Next planned step
 
-Run the Phase 02 Git gate: inspect status, the intended diff, the staged file list, and secret safety; commit only intended files; push to `origin/main`; verify the remote hash; and record it in `docs/runtime/PHASE-HISTORY.md`. Then stop for review. `PHASE-03-AUTH` requires explicit approval before any work starts.
+The Phase 02 Git gate is closed: commit `84b5687189d58755438b13f0ea97cd82172958cf` was pushed to `origin/main` and the remote hash matches. Phase 02 is stopped here for review; `PHASE-03-AUTH` requires explicit approval before any work starts.
 
 ## Blockers
 

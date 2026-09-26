@@ -9,7 +9,7 @@
 
 ## Current status
 
-**Phase 02 database quality gate passed on 2026-09-26. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
+**Phase 02 database quality gate passed on 2026-09-26, and its Git gate is closed: commit `84b5687189d58755438b13f0ea97cd82172958cf` is pushed to `origin/main` and the remote hash matches. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
 
 Phase 02 added the first persisted data layer: the canonical Prisma schema, reviewed forward migrations, exact paise persistence, reference allocation, transactional idempotency, reconciliation queries, a fictional idempotent seed, and database tests that run against a real disposable PostgreSQL 16 instance. REST routes and authentication remain unimplemented by design.
 
@@ -41,8 +41,8 @@ Environment assumptions: Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, 
 | `npm audit` | Advisory, not a pass | 3 high-severity findings, all `deepmerge-ts` through the Prisma CLI; reachability evidence and the rejected breaking fix are recorded in `ISSUE-014` |
 | Phase boundary review | Pass | No REST route, session, credential, or UI feature was added; `apps/api` still exposes only `GET /api/v1/health`, which stays process-only and never queries the database |
 | Traceability review | Pass | Re-verified mechanically: `docs/01-REQUIREMENTS.md` defines 119 unique `REQ-*` identifiers, `docs/14-TRACEABILITY-MATRIX.md` maps 119 unique rows, and unmapped `0`, orphan `0`, multiple primary owners `0`. Phase 02 still owns exactly `REQ-FIN-001`, `REQ-FIN-002`, `REQ-FIN-003`, `REQ-FIN-021`, and `REQ-FIN-023`, and the 22 `TEST-*` identifiers in the test-plan coverage table are referenced by the matrix with none missing in either direction. No identifier was added, removed, or renumbered, so the matrix needed no edit |
-| Secret and staged-file review | Pending | Recorded with the Git gate below |
-| Git gate | Pending | The Git gate is recorded in `PHASE-HISTORY.md` after the commit is pushed and the remote hash is verified |
+| Secret and staged-file review | Pass | A high-confidence credential-pattern scan over all 63 committable files matched only `docker/postgres/init/001-app-role.sh`, where `: 'APP_ROLE_PASSWORD'` is a psql variable reference supplied by the container environment and not a stored value. `.env` is ignored and untracked, and no build output, dependency, or local database artifact is staged |
+| Git gate | Pass | 63 intended files committed as `84b5687189d58755438b13f0ea97cd82172958cf` and pushed to `origin/main`; local and remote hashes match |
 
 ## Phase 02 defects found and fixed
 
