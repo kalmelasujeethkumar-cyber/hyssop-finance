@@ -1,7 +1,7 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import type { ApiClient } from '../lib/api-client';
+import type { ApiClient, ApiRequestOptions } from '../lib/api-client';
 import { renderRoute } from '../test/render';
 import {
   clientFailingWith,
@@ -36,16 +36,38 @@ describe('foundation shell routing', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
   });
 
-  it('states that no financial data exists instead of showing placeholder figures', async () => {
+  it('names the features that are not built yet instead of showing placeholder figures', async () => {
     renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
 
     await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
+    // The screen has to say what does not exist, so the Pastor is not left believing a
+    // missing screen is a broken one.
     expect(
-      screen.getByText(/No member, income, or expense data is stored or displayed yet\./),
+      screen.getByRole('heading', { level: 2, name: 'What is not in this build yet' }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.getByText(/Income, expenses, receipts and documents, reports/)).toBeVisible();
+    // No dashboard figures, because none are calculated for this screen.
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('offers navigation only to the sections that are implemented', async () => {
+    renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+
+    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+
+    // A link to a screen that does not exist would be a dead control. Members is the only
+    // product section built so far, so it is the only product link offered.
+    const navigation = screen.getByRole('navigation', { name: 'Primary' });
+
+    expect(
+      within(navigation)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['Foundation', 'Members']);
+    expect(within(navigation).queryByRole('link', { name: /Income/ })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('link', { name: /Expenses/ })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('link', { name: /Reports/ })).not.toBeInTheDocument();
   });
 
   it('shows a not-found screen for an unknown address and returns home from it', async () => {
@@ -100,8 +122,14 @@ describe('connectivity status', () => {
           ? Promise.reject(transportFailure)
           : Promise.resolve(HEALTH_REPORT as TData);
       },
-      post: <TData,>(path: string, body?: unknown, options?: { csrfToken?: string }) =>
+      post: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
         base.post<TData>(path, body, options),
+      patch: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        base.patch<TData>(path, body, options),
+      put: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        base.put<TData>(path, body, options),
+      getList: <TItem,>(path: string, options?: ApiRequestOptions) =>
+        base.getList<TItem>(path, options),
     };
 
     renderRoute({ client });

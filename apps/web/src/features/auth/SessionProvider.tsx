@@ -44,6 +44,18 @@ export interface SessionState {
   readonly retryBootstrap: () => void;
   readonly signIn: (credentials: SignInCredentials) => Promise<void>;
   readonly signOut: () => Promise<void>;
+  /**
+   * Sends a state-changing request with the current session CSRF token and returns its
+   * result, fetching a token if none is held and refreshing once on `CSRF_FAILED`.
+   *
+   * `docs/06-API-SPEC.md` requires the `X-CSRF-Token` header on every mutating request and
+   * `docs/07-SECURITY-RULES.md` requires it to match the server-stored value for the
+   * session. The token is kept in a ref here so it is never serialized into a React tree
+   * or written to browser storage; feature mutation hooks call this and never touch the
+   * token itself. That means the "present the token, refresh once if it rotated" rule is
+   * implemented in exactly one place instead of being re-derived per screen.
+   */
+  readonly withCsrf: <TData>(send: (csrfToken: string) => Promise<TData>) => Promise<TData>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -100,29 +112,62 @@ export function SessionProvider({ children }: { readonly children: ReactNode }) 
     [client, queryClient],
   );
 
-  const signOut = useCallback(async (): Promise<void> => {
-    const current = csrfToken.current;
+  /**
+   * Obtains a CSRF token when none is held and sends the request with it.
+   *
+   * The token is stored in a ref, so it never appears in React state, a rendered tree, or
+   * a devtools snapshot. `GET /auth/csrf` with a live session rotates the session secret,
+   * so the value fetched here is exactly the one the `SessionGuard` will accept on the
+   * following mutation.
+   */
+  const withCsrf = useCallback(
+    async <TData,>(send: (csrfToken: string) => Promise<TData>): Promise<TData> => {
+      const current =
+        csrfToken.current ?? (await client.get<CsrfTokenResult>('/auth/csrf')).csrfToken;
 
+      csrfToken.current = current;
+
+      try {
+        return await send(current);
+      } catch (error: unknown) {
+        // A token can be rotated away underneath a long-lived tab. Refreshing once keeps the
+        // action working instead of stranding the Admin; a second failure is reported.
+        if (!(error instanceof ApiClientError) || error.code !== 'CSRF_FAILED') {
+          throw error;
+        }
+
+        const refreshed = (await client.get<CsrfTokenResult>('/auth/csrf')).csrfToken;
+
+        csrfToken.current = refreshed;
+
+        return send(refreshed);
+      }
+    },
+    [client],
+  );
+
+  const signOut = useCallback(async (): Promise<void> => {
     try {
-      await client.post('/auth/logout', undefined, current === null ? {} : { csrfToken: current });
+      await withCsrf((token) => client.post('/auth/logout', undefined, { csrfToken: token }));
     } catch (error: unknown) {
-      // The stored CSRF value can be rotated away underneath a long-lived tab. Refreshing it
-      // once keeps the sign-out control working instead of stranding the user; a second
-      // failure is reported honestly.
-      if (!(error instanceof ApiClientError) || error.code !== 'CSRF_FAILED') {
+      // The logout endpoint is idempotent, so a `401` genuinely proves there is no live
+      // session left to end, and the local view may be cleared.
+      //
+      // A `CSRF_FAILED` is *not* that. `withCsrf` has already refreshed the token and
+      // retried once by the time this runs, so reaching here means the request was refused
+      // rather than performed, and the server may still hold a live session. Swallowing it
+      // would sign the Admin out of the browser while leaving them signed in on the server,
+      // and would report a success that never happened. It is rethrown instead.
+      if (!(error instanceof ApiClientError) || error.status !== 401) {
         throw error;
       }
-
-      const refreshed = await client.get<CsrfTokenResult>('/auth/csrf');
-
-      await client.post('/auth/logout', undefined, { csrfToken: refreshed.csrfToken });
     }
 
     // Only after the API has confirmed the revocation: if the request failed the server may
     // still hold a live session, and clearing the browser's view of it would be a lie.
     csrfToken.current = null;
     queryClient.setQueryData(SESSION_QUERY_KEY, null);
-  }, [client, queryClient]);
+  }, [client, queryClient, withCsrf]);
 
   const retryBootstrap = useCallback(() => {
     void query.refetch();
@@ -138,6 +183,7 @@ export function SessionProvider({ children }: { readonly children: ReactNode }) 
       retryBootstrap,
       signIn,
       signOut,
+      withCsrf,
     };
 
     // An unreachable API is reported as its own state. Reporting it as "anonymous" would
@@ -167,8 +213,9 @@ export function SessionProvider({ children }: { readonly children: ReactNode }) 
       retryBootstrap,
       signIn,
       signOut,
+      withCsrf,
     };
-  }, [query.data, query.error, query.isError, retryBootstrap, signIn, signOut]);
+  }, [query.data, query.error, query.isError, retryBootstrap, signIn, signOut, withCsrf]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

@@ -1,7 +1,9 @@
-import { ValidationPipe, VersioningType, type INestApplication } from '@nestjs/common';
-import { CSRF_TOKEN_HEADER, REQUEST_ID_HEADER } from '@hyssop/contracts';
+import { HttpStatus, ValidationPipe, VersioningType, type INestApplication } from '@nestjs/common';
+import type { ValidationError } from 'class-validator';
+import { CSRF_TOKEN_HEADER, REQUEST_ID_HEADER, type ApiFieldIssue } from '@hyssop/contracts';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { ApiError } from '../common/errors/api-error';
 import { StructuredLogger } from '../common/logging/structured-logger';
 import type { AppEnvironment } from '../config/environment';
 
@@ -15,11 +17,23 @@ export const ALLOWED_METHODS = [
   'OPTIONS',
 ] as const;
 
+/**
+ * The conditional-request header the browser may send.
+ *
+ * `docs/06-API-SPEC.md` requires `PATCH /members/:id` to carry the member `revision` in
+ * `If-Match` or an equivalent contract, and `apps/web` sends it. A browser sends only the
+ * headers named here on a cross-origin request, so an allowlist without `If-Match` would
+ * make the preflight for every member edit fail, and the Admin would be unable to save a
+ * change at all. It is allowed on any request but is only read by the member route.
+ */
+export const IF_MATCH_HEADER = 'If-Match';
+
 export const ALLOWED_REQUEST_HEADERS = [
   'Accept',
   'Content-Type',
   REQUEST_ID_HEADER,
   CSRF_TOKEN_HEADER,
+  IF_MATCH_HEADER,
 ] as const;
 
 /**
@@ -65,8 +79,59 @@ export function configureApp(app: INestApplication, environment: AppEnvironment)
       forbidNonWhitelisted: true,
       transform: true,
       transformOptions: { enableImplicitConversion: false },
+      // Without this, a decorator rejection is a plain framework `BadRequestException`. The
+      // global filter only reflects field issues from the application's own `ApiError`, so the
+      // response would carry a generic message and no `fields` at all — and a browser has
+      // nothing to attach the problem to, which contradicts the field-level error
+      // requirement in `docs/06-API-SPEC.md`.
+      exceptionFactory: validationErrorFactory,
     }),
   );
 
   app.enableShutdownHooks();
+}
+
+/**
+ * Converts decorator validation failures into the documented envelope.
+ *
+ * The message is deliberately generic: the per-field messages are what a form renders, and
+ * repeating them in the top-level message would be noise. Constraint metadata is not copied
+ * into the response either, because a validator's `constraints` object is a description of
+ * the server's internals rather than something a client needs.
+ */
+function validationErrorFactory(errors: ValidationError[]): ApiError {
+  const fields = errors.flatMap(collectFieldIssues);
+
+  return new ApiError(
+    'VALIDATION_FAILED',
+    'The request could not be validated.',
+    HttpStatus.BAD_REQUEST,
+    fields.length === 0 ? {} : { fields },
+  );
+}
+
+/**
+ * Flattens one validation error, including nested ones.
+ *
+ * A DTO can hold a nested object or array, so a dotted path such as `items.0.amount` is what
+ * identifies the offending input. Nesting is walked rather than dropped, because reporting
+ * only the top-level property would tell the Admin to re-check a field they did not change.
+ */
+function collectFieldIssues(error: ValidationError): ApiFieldIssue[] {
+  const own = (error.constraints ?? {}) as Record<string, string | undefined>;
+  const issues: ApiFieldIssue[] = [];
+
+  for (const message of Object.values(own)) {
+    if (message !== undefined) {
+      issues.push({ field: error.property, message });
+    }
+  }
+
+  for (const child of error.children ?? []) {
+    for (const nested of collectFieldIssues(child)) {
+      issues.push({ field: `${error.property}.${nested.field}`, message: nested.message });
+    }
+  }
+
+  return issues;
 }

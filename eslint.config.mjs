@@ -91,6 +91,12 @@ export default tseslint.config(
     files: ['**/*.spec.ts', '**/*.test.ts', '**/*.spec.tsx', '**/*.test.tsx', '**/*.e2e-spec.ts'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
+      // A test double replaces a repository or service whose interface returns `Promise`, so
+      // its methods must be async even when the in-memory body never awaits anything. The
+      // rule is about production code that promises work it does not do; here it would only
+      // force `Promise.resolve` noise onto a faithful stand-in, or a blanket inline disable on
+      // every double. It stays enabled everywhere else.
+      '@typescript-eslint/require-await': 'off',
     },
   },
 );

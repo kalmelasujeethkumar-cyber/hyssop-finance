@@ -30,6 +30,12 @@ export function AppProviders({
         watchForSessionExpiry(client.get<TData>(path, options), onSessionExpired),
       post: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
         watchForSessionExpiry(client.post<TData>(path, body, options), onSessionExpired),
+      patch: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.patch<TData>(path, body, options), onSessionExpired),
+      put: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.put<TData>(path, body, options), onSessionExpired),
+      getList: <TItem,>(path: string, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.getList<TItem>(path, options), onSessionExpired),
     }),
     [client, onSessionExpired],
   );

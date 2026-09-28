@@ -13,7 +13,7 @@ test('foundation shell loads, is keyboard reachable, and reports API connectivit
   await page.goto('/login');
   await signIn(page);
 
-  await expect(page.getByText('HYSSOP FINANCE')).toBeVisible();
+  await expect(page.getByText('HYSSOP FINANCE', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: 'Foundation' })).toBeVisible();
 
   const healthStatus = page.getByTestId('health-status');

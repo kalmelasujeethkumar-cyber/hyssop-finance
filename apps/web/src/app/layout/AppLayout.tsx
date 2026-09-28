@@ -1,15 +1,25 @@
 import { useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../../features/auth/SessionProvider';
 
 /**
- * Semantic application shell. It intentionally contains no product navigation:
- * every navigation target would have to work, and no product screen exists yet.
+ * Semantic application shell with the primary navigation.
  *
- * The only control it adds is sign-out, and it is rendered only for a confirmed session, so
- * there is no dead control for a visitor who is not signed in.
+ * Authority: `docs/03-UI-UX-RULES.md`: use navigation landmarks, keep the current section
+ * identifiable, provide an accessible narrow-viewport navigation, keep page titles and
+ * important status visible without relying on colour alone, and avoid page-level horizontal
+ * overflow.
+ *
+ * **Only sections that exist are listed.** The rules name Dashboard, Members, Income,
+ * Expenses, Documents, Reports, Audit History, and Settings as the eventual navigation, but
+ * the same rules forbid presenting unimplemented behaviour as a completed feature, and no
+ * dead control or `Coming Soon` placeholder is permitted. Members is the only section
+ * delivered so far; the rest appear in the phase that actually implements them, which is
+ * why this navigation is shorter than the target rather than longer.
  */
 export function AppLayout() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
       <a
@@ -20,27 +30,104 @@ export function AppLayout() {
       </a>
 
       <header className="border-b border-border-default bg-surface">
-        <div className="mx-auto flex max-w-5xl flex-col gap-1 px-6 py-4">
-          <p className="text-section-title font-bold tracking-tight text-text-primary">
-            HYSSOP FINANCE
-          </p>
-          <p className="text-supporting text-text-secondary">
-            Church financial management · Asia/Kolkata · INR
-          </p>
-          <SessionControls />
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-section-title font-bold tracking-tight text-text-primary">
+                HYSSOP FINANCE
+              </p>
+              <p className="text-supporting text-text-secondary">
+                Church financial management · Asia/Kolkata · INR
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <SessionControls />
+              {/*
+                The narrow-viewport navigation toggle. `aria-expanded` and `aria-controls`
+                tie it to the drawer it opens, and the drawer is always present in the DOM so
+                the control is never a button that reveals nothing.
+              */}
+              <button
+                type="button"
+                className="rounded-md border border-border-strong bg-surface px-3 py-1 text-supporting font-semibold text-text-primary md:hidden"
+                aria-expanded={isMenuOpen}
+                aria-controls="primary-navigation"
+                onClick={() => {
+                  setIsMenuOpen((previous) => !previous);
+                }}
+              >
+                {isMenuOpen ? 'Close menu' : 'Menu'}
+              </button>
+            </div>
+          </div>
+
+          <nav
+            id="primary-navigation"
+            aria-label="Primary"
+            className={`${isMenuOpen ? 'block' : 'hidden'} md:block`}
+          >
+            <ul className="flex flex-col gap-1 md:flex-row md:items-center md:gap-4">
+              <NavigationItem to="/" end onNavigate={() => setIsMenuOpen(false)}>
+                Foundation
+              </NavigationItem>
+              <NavigationItem to="/members" onNavigate={() => setIsMenuOpen(false)}>
+                Members
+              </NavigationItem>
+            </ul>
+          </nav>
         </div>
       </header>
 
-      <main id="main-content" className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+      <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
         <Outlet />
       </main>
 
       <footer className="border-t border-border-default bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-4 text-supporting text-text-secondary">
-          Foundation build. No member, income, or expense data is stored or displayed yet.
+        <div className="mx-auto max-w-6xl px-6 py-4 text-supporting text-text-secondary">
+          Member and contribution records are stored in the HYSSOP FINANCE database. Income,
+          expense, report, and document sections are not yet available.
         </div>
       </footer>
     </div>
+  );
+}
+
+/**
+ * One navigation link.
+ *
+ * The active section is marked with `aria-current="page"` and is underlined and bolded, so
+ * the current position is conveyed by more than colour. The link is a router link, not an
+ * anchor, so navigating does not reload the page and lose the session bootstrap.
+ */
+function NavigationItem({
+  to,
+  end,
+  onNavigate,
+  children,
+}: {
+  readonly to: string;
+  readonly end?: boolean | undefined;
+  readonly onNavigate: () => void;
+  readonly children: string;
+}) {
+  return (
+    <li>
+      <NavLink
+        to={to}
+        end={end ?? false}
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          `block rounded-md px-3 py-2 text-supporting font-semibold ${
+            isActive
+              ? 'bg-blue-100 text-blue-700 underline'
+              : 'text-text-primary hover:bg-surface-subtle'
+          }`
+        }
+      >
+        {children}
+      </NavLink>
+    </li>
   );
 }
 
@@ -76,7 +163,7 @@ function SessionControls() {
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <p className="text-supporting text-text-secondary">
         Signed in as <span className="font-semibold text-text-primary">{admin.displayName}</span> (
         {admin.identifier})

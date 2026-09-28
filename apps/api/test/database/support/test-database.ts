@@ -166,7 +166,7 @@ export async function createHarness(): Promise<TestHarness> {
   const sessions = new AdminSessionRepository(runtime, audit);
   const csrfTokens = new AuthCsrfTokenRepository(runtime);
   const members = new MemberRepository(runtime, references, audit);
-  const contributions = new ContributionPeriodRepository(runtime);
+  const contributions = new ContributionPeriodRepository(runtime, audit);
   const categories = new ExpenseCategoryRepository(runtime, audit);
   const transactions = new TransactionRepository(runtime, references, audit);
   const documents = new TransactionDocumentRepository(runtime, references, audit);

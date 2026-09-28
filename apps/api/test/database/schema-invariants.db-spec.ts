@@ -141,12 +141,15 @@ describe('database invariants', () => {
       const actorAdminId = await seedActor();
       const first = await harness.members.create({ name: 'First Member' }, actorAdminId);
       const second = await harness.members.create({ name: 'Second Member' }, actorAdminId);
-      const period = await harness.contributions.create({
-        memberId: first.id,
-        year: 2026,
-        month: 9,
-        expectedPaise: 50_000n,
-      });
+      const period = await harness.contributions.create(
+        {
+          memberId: first.id,
+          year: 2026,
+          month: 9,
+          expectedPaise: 50_000n,
+        },
+        harness.admin.id,
+      );
 
       await expect(
         harness.transactions.create(
@@ -390,12 +393,15 @@ describe('database invariants', () => {
     it('refuses to delete a member that has financial history', async () => {
       const actorAdminId = await seedActor();
       const member = await harness.members.create({ name: 'Chandralekha Nair' }, actorAdminId);
-      const period = await harness.contributions.create({
-        memberId: member.id,
-        year: 2026,
-        month: 9,
-        expectedPaise: 50_000n,
-      });
+      const period = await harness.contributions.create(
+        {
+          memberId: member.id,
+          year: 2026,
+          month: 9,
+          expectedPaise: 50_000n,
+        },
+        harness.admin.id,
+      );
 
       await harness.transactions.create(
         {
@@ -421,22 +427,28 @@ describe('database invariants', () => {
     it('accepts one expected amount per member per month', async () => {
       const actorAdminId = await seedActor();
       const member = await harness.members.create({ name: 'Devadas Menon' }, actorAdminId);
-      const period = await harness.contributions.create({
-        memberId: member.id,
-        year: 2026,
-        month: 9,
-        expectedPaise: 50_000n,
-      });
+      const period = await harness.contributions.create(
+        {
+          memberId: member.id,
+          year: 2026,
+          month: 9,
+          expectedPaise: 50_000n,
+        },
+        harness.admin.id,
+      );
 
       expect(period.expectedPaise).toBe(50_000n);
 
       await expect(
-        harness.contributions.create({
-          memberId: member.id,
-          year: 2026,
-          month: 9,
-          expectedPaise: 60_000n,
-        }),
+        harness.contributions.create(
+          {
+            memberId: member.id,
+            year: 2026,
+            month: 9,
+            expectedPaise: 60_000n,
+          },
+          harness.admin.id,
+        ),
       ).rejects.toThrow(/already exists/);
     });
 
@@ -445,12 +457,15 @@ describe('database invariants', () => {
       const member = await harness.members.create({ name: 'Esther Philip' }, actorAdminId);
 
       await expect(
-        harness.contributions.create({
-          memberId: member.id,
-          year: 2026,
-          month: 13,
-          expectedPaise: 50_000n,
-        }),
+        harness.contributions.create(
+          {
+            memberId: member.id,
+            year: 2026,
+            month: 13,
+            expectedPaise: 50_000n,
+          },
+          harness.admin.id,
+        ),
       ).rejects.toThrow(/month/);
 
       await expect(

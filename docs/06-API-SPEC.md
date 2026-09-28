@@ -26,7 +26,9 @@ All financial aggregate responses are projections of the canonical calculation l
   "error": {
     "code": "VALIDATION_FAILED",
     "message": "The request could not be validated.",
-    "fields": { "amount": ["Amount must be greater than zero."] },
+    "fields": [
+      { "field": "amount", "message": "Amount must be greater than zero." }
+    ],
     "requestId": "6f2f0b2e-6b5b-4a03-9b3e-2c6f0b6f7c11"
   }
 }
@@ -65,9 +67,9 @@ Mutating requests, including login, require the CSRF header or token defined by 
 
 - `GET /api/v1/members` — search, sort, and paginated list.
 - `POST /api/v1/members` — create a member and return its `HY-MEM-0001` reference.
-- `GET /api/v1/members/:id` — member detail with current period summaries.
+- `GET /api/v1/members/:id` — member detail with current period summaries. `?year=` is optional and defaults to the current business year, so an omitted year returns only the periods configured for that year.
 - `PATCH /api/v1/members/:id` — update allowed fields with optimistic revision checking using the member `revision` value and an `If-Match` or equivalent request contract. A stale revision returns a conflict.
-- `GET /api/v1/members/:id/contributions?year=` — month-wise expected, received, remaining, and status.
+- `GET /api/v1/members/:id/contributions?year=` — month-wise expected, received, remaining, and status. An omitted `year` defaults to the current business year.
 - `GET /api/v1/members/:id/transactions` — member transaction history.
 - `GET /api/v1/members/:id/documents` — documents associated with the member's transactions where needed.
 

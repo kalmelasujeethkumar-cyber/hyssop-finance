@@ -76,6 +76,7 @@ enum AuditAction {
   LOGIN_SUCCEEDED
   LOGIN_FAILED
   LOGOUT
+  CONTRIBUTION_PERIOD_SET
 }
 
 /// The single Admin account. The identifier is the login name and is stored

@@ -1,12 +1,13 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import type { ApiClient } from '../../lib/api-client';
+import type { ApiClient, ApiRequestOptions } from '../../lib/api-client';
 import { renderRoute } from '../../test/render';
 import {
   ADMIN_PROFILE,
   clientResolvingWith,
   CSRF_TOKEN_RESULT,
+  csrfFailed,
   invalidCredentials,
   LOGIN_RESULT,
   stubApiClient,
@@ -166,6 +167,62 @@ describe('session lifecycle', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Foundation' })).toBeInTheDocument();
   });
 
+  it('does not claim a sign-out happened when the request is refused with a CSRF failure', async () => {
+    const user = userEvent.setup();
+    // A `CSRF_FAILED` on sign-out means the request was refused, not performed. Reporting
+    // that as a completed sign-out would send the Admin to the sign-in screen while the
+    // server still holds their session, so the failure has to stay visible.
+    const client = stubApiClient({ logout: csrfFailed });
+
+    renderRoute({ client });
+    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Sign out did not complete. Please try again.');
+    expect(screen.getByRole('heading', { level: 1, name: 'Foundation' })).toBeInTheDocument();
+    expect(screen.getByText(ADMIN_PROFILE.displayName)).toBeInTheDocument();
+  });
+
+  it('retries a sign-out once with a refreshed CSRF token before giving up', async () => {
+    const user = userEvent.setup();
+    const base = stubApiClient();
+    let logoutAttempts = 0;
+    // The first logout is refused for a stale token, exactly as a long-lived tab would see.
+    // The refreshed token is then accepted, so the Admin ends up signed out.
+    const client: ApiClient = {
+      get: <TData,>(path: string, options?: { signal?: AbortSignal }) =>
+        base.get<TData>(path, options),
+      post: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) => {
+        if (path !== '/auth/logout') {
+          return base.post<TData>(path, body, options);
+        }
+        logoutAttempts += 1;
+
+        return logoutAttempts === 1
+          ? Promise.reject(csrfFailed)
+          : base.post<TData>(path, body, options);
+      },
+      patch: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        base.patch<TData>(path, body, options),
+      put: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        base.put<TData>(path, body, options),
+      getList: <TItem,>(path: string, options?: ApiRequestOptions) =>
+        base.getList<TItem>(path, options),
+    };
+
+    renderRoute({ client });
+    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument();
+    expect(logoutAttempts).toBe(2);
+    // A fresh token was requested rather than the refusal being retried with the same value.
+    expect(base.calls.filter((call) => call.path === '/auth/csrf').length).toBeGreaterThan(0);
+  });
+
   it('returns to the sign-in screen when a protected route reports the session is gone', async () => {
     const base = stubApiClient();
     // The bootstrap succeeds, so the product screen is shown, and the protected call that
@@ -173,8 +230,14 @@ describe('session lifecycle', () => {
     const client: ApiClient = {
       get: <TData,>(path: string, options?: { signal?: AbortSignal }) =>
         path === '/health' ? Promise.reject(unauthenticated) : base.get<TData>(path, options),
-      post: <TData,>(path: string, body?: unknown, options?: { csrfToken?: string }) =>
+      post: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
         base.post<TData>(path, body, options),
+      patch: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        base.patch<TData>(path, body, options),
+      put: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        base.put<TData>(path, body, options),
+      getList: <TItem,>(path: string, options?: ApiRequestOptions) =>
+        base.getList<TItem>(path, options),
     };
 
     renderRoute({ client });

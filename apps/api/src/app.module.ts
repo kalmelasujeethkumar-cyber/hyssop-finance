@@ -10,6 +10,7 @@ import { loadAppEnvironment } from './config/environment.loader';
 import { DatabaseModule } from './database/database.module';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { HealthModule } from './health/health.module';
+import { MembersModule } from './members/members.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { HealthModule } from './health/health.module';
     DatabaseModule,
     AuthModule,
     HealthModule,
+    MembersModule,
   ],
   providers: [
     {

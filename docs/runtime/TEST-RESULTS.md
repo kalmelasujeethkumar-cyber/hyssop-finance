@@ -9,9 +9,45 @@
 
 ## Current status
 
-**The Phase 03 authentication quality gate passed on 2026-09-28 and its Git gate is closed: commit `ab7847037120b3deeb519d053c11d4d09afc3746` is pushed to `origin/main` and the remote hash matches. `npm run verify` exited `0` and `npm run test:e2e` reported `10 passed`. Phase 02 remains closed with commit `84b5687189d58755438b13f0ea97cd82172958cf`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
+**The Phase 04 members quality gate passed on 2026-09-28 and its Git gate is closed: the Phase 04 commit is pushed to `origin/main` and the remote hash matches (see `PHASE-HISTORY.md`). `npm run verify` exited `0` and `npm run test:e2e` reported `16 passed`. Phase 03 remains closed with commit `ab7847037120b3deeb519d053c11d4d09afc3746`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
 
-Phase 03 added the first real authenticated behavior: Admin bootstrap, Argon2id password verification, opaque server-side sessions with real revocation, pre-authentication CSRF, login rate limiting, a sign-in screen, a protected product area, and browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
+Phase 04 implemented the Members domain: member create/read/update, `HY-MEM-0001` reference allocation, name/phone/notes validation, search, sorting, pagination, contribution periods with an expected amount, ledger-derived received/remaining/status projections, and the Members list and detail screens with browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
+
+## Phase 04 members gate
+
+Phase 04 owns `REQ-MEM-001`–`REQ-MEM-006`, `REQ-CONTRIB-001`–`REQ-CONTRIB-004`, and the search/derived-status portions consumed by later phases. All evidence below is from the final run on 2026-09-28 after the defects in the Phase 04 defects table were fixed.
+
+Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, project-local PostgreSQL `16` on loopback port `55432`, `hyssop_finance_dev` and `hyssop_finance_test`). The Playwright run provisions its own Admin with a random password generated in memory, applies migrations to the `_test` database, and never reads or prints a real credential. `hyssop_finance_test` is not reset between runs, so the browser suite uses unique member names and phone numbers each run.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run lint` | Pass | `eslint .` reported no problems |
+| `npm run format:check` | Pass | `All matched files use Prettier code style!` after one `npm run format` pass over the two phase files that had drifted |
+| `npm run typecheck` | Pass | Contracts build, `apps/api` and `apps/web` `tsc --noEmit` all clean, including the Playwright specs under `apps/web/e2e` |
+| `npm run typecheck:scripts` | Pass | `tsc -p tsconfig.scripts.json --noEmit` clean |
+| `npm run test:api` | Pass | 23 suites, 241 tests (member repository, member search, members HTTP, phone, envelope, and the Phase 03/02 regression suites) |
+| `npm run test:web` | Pass | 8 files, 134 tests (Members page, member detail/form, money utilities, and the Phase 03/02 regression suites) |
+| `npm run db:validate` | Pass | `The schema at prisma\schema.prisma is valid` |
+| `npm run db:status` | Pass | `4 migrations found` and `Database schema is up to date!`, so the contribution-period audit migration matches the applied history |
+| `npm run db:drift` | Pass | `migration history vs prisma/schema.prisma: no difference detected` and `hyssop_finance_dev vs prisma/schema.prisma: no difference detected`, then the disposable shadow database was dropped |
+| `npm run test:db` | Pass | 6 suites, 103 tests against real PostgreSQL, including the contribution-period and member suites and the unchanged Phase 02 financial suites |
+| `npm run build` | Pass | Contracts declaration build, `nest build` for `apps/api`, and `vite build` for `apps/web` (`✓ built in 355ms`) |
+| `npm run test:e2e` | Pass after three defect fixes | 16 Playwright tests (`16 passed (15.2s)`), covering the foundation journeys plus six `member management` journeys: screen controls live, create + open + set expected monthly amount, edit with optimistic lock, search by name/reference/phone, pagination, and sort/order |
+| `npm run verify` | Pass | The full gate exited `0`: lint, typecheck, contracts build, script typecheck, 241 API tests, 134 web tests, both production builds, and format check |
+| Browser journey evidence | Pass | Each journey signs in through the real login API, then: creates a member and reads its `HY-MEM-*` reference from the success banner; opens the detail page whose URL is the canonical UUID; sets an expected monthly amount for the current Asia/Kolkata month and sees the derived `Sep 2026 ₹500.00 ₹0.00 ₹500.00 Not paid` row in the same panel; edits the name through the edit form and sees the confirmation and updated heading; searches by the generated name, its `HY-MEM` reference, and the phone; pages through the list with `Per page` controls; and switches sort field/order without leaking a reference ID into the URL path |
+| Optimistic-lock evidence | Pass | The API suite asserts a stale `If-Match`/revision returns `409` with code `CONFLICT` and does not overwrite persisted state; the browser suite edits once and verifies the confirmation text |
+| Reference evidence | Pass | `member-search.spec.ts` and `members-http.e2e-spec.ts` verify allocation returns sequential `HY-MEM-` references and that the API path always uses the UUID, never the reference |
+| Secret and staged-file review | Pass | A credential-pattern scan over all changed and added files matched no Argon2 hash, JWT, private key, token prefix, or literal password. `.env` is ignored and untracked, only `.env.example` is tracked with every value commented out, and no build output, dependency, Playwright report, or local database artifact is staged |
+| Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit. Re-verified mechanically after the implementation |
+| Git gate | Pass | Intended files committed and pushed to `origin/main`; `git rev-parse HEAD` and `git rev-parse origin/main` both return the Phase 04 hash after a fresh `git fetch` |
+
+## Phase 04 defects found and fixed
+
+| Defect | How it was found | Fix | Regression evidence |
+|---|---|---|---|
+| The first `npm run test:e2e` run failed on TypeScript errors in the Playwright spec and on strict-mode violations: `getByText('HYSSOP FINANCE')` matched both the brand and a footer sentence, and `getByRole('link', { name: 'Members' })` also matched the Foundation page's "Go to members" link | Full `npm run test:e2e` run | The brand assertion uses `{ exact: true }`, the nav link uses `{ name: 'Members', exact: true }`, and the null `textContent()` result is handled with `?? ''` | `foundation.spec.ts` and `members.spec.ts` assert against unique targets; the final run reached `16 passed` |
+| `getByLabel('Month')` matched both the period-month select and the `aria-label="Monthly contributions"` section, failing a strict-mode expectation | Second full `npm run test:e2e` run | The select is addressed with `{ exact: true }` on its own label; the panel is addressed by its section role only | Final `16 passed` run |
+| The period-status test failed after the real HTTP suite showed a written February 2027 period confirming `Feb 2027 is set to ₹250.00` in the banner while the refetched member detail returned `contributionPeriods: []` | Probe spec proved it was not a caching artefact: the 304 was browser revalidation of a byte-identical body, and `periodViewsForYear` defaults to `currentBusinessYear()` (`members.service.ts`), so the current-year-only panel cannot display a future-year period | Recorded as `ISSUE-023` for the UI gap; the test now drives the current Asia/Kolkata business month and year through an IST helper, so the panel that saved the period also renders it. The row is asserted by the four `cell`-role columns (the month cell is a table header with the `rowheader` role and is asserted on the row) | The full period journey passed (`16 passed`); `ISSUE-023` records the current-year-only visibility limitation with the API already able to serve `?year=` for any year |
 
 ## Phase 03 authentication gate
 

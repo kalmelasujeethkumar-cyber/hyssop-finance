@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { normalizePhone, PhoneFormatError } from '@hyssop/contracts';
+import type { MemberSortDirection, MemberSortField } from '@hyssop/contracts';
 import type { Member, Prisma } from '@prisma/client';
 import { notFound, staleRevision, validationFailed } from '../../common/errors/domain.errors';
-import { normalizePhone } from '../../common/phone/normalize-phone';
 import { AuditEventRepository, AUDIT_ENTITY_TYPES } from '../audit/audit-event.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReferenceAllocatorService } from '../references/reference-allocator.service';
@@ -23,6 +24,68 @@ export interface MemberSearchFilters {
   readonly search?: string;
   readonly limit: number;
   readonly offset: number;
+  readonly sort?: MemberSortField;
+  readonly direction?: MemberSortDirection;
+}
+
+/** The transaction columns a member history projection reads. */
+export type MemberTransactionRow = {
+  readonly id: string;
+  readonly referenceId: string;
+  readonly amountPaise: bigint;
+  readonly paymentMethod: string;
+  readonly businessDate: Date;
+  readonly description: string | null;
+  readonly status: 'ACTIVE' | 'VOIDED';
+};
+
+/**
+ * Builds the `WHERE` clause shared by the page query and its `count`, so a total can
+ * never disagree with the rows beside it.
+ *
+ * A search term is always a *value* passed as a bound parameter, never SQL text, so search
+ * input cannot alter query structure. Prisma's `contains` is a literal substring match
+ * rather than a SQL `LIKE` pattern, so `%`, `_`, and `\` are ordinary characters here and
+ * deliberately receive no escaping: adding backslashes would make a search for a literal
+ * `%` fail to find it.
+ */
+export function memberSearchWhere(search: string | undefined): Prisma.MemberWhereInput {
+  const term = search?.trim() ?? '';
+
+  if (term === '') {
+    return {};
+  }
+
+  return {
+    OR: [
+      { name: { contains: term, mode: 'insensitive' } },
+      { referenceId: { contains: term, mode: 'insensitive' } },
+      { phone: { contains: term } },
+    ],
+  };
+}
+
+/**
+ * Deterministic ordering. Every sort is completed by `referenceId`, which is unique, so
+ * two pages of a large member list can never repeat or skip a row because two names
+ * happened to be equal.
+ */
+function memberOrderBy(
+  sort: MemberSortField,
+  direction: MemberSortDirection,
+): Prisma.MemberOrderByWithRelationInput[] {
+  const order: Prisma.SortOrder = direction === 'desc' ? 'desc' : 'asc';
+
+  if (sort === 'createdAt') {
+    return [{ createdAt: order }, { referenceId: 'asc' }];
+  }
+
+  if (sort === 'referenceId') {
+    // `reference_id` is already unique, so no tiebreaker is needed.
+    return [{ referenceId: order }];
+  }
+
+  return [{ name: order }, { referenceId: 'asc' }];
 }
 
 /**
@@ -45,7 +108,7 @@ export class MemberRepository {
   /** Creates a member and its audit event in one transaction. */
   public async create(input: CreateMemberInput, actorAdminId: string): Promise<Member> {
     const name = normalizeName(input.name);
-    const phone = normalizePhone(input.phone ?? null);
+    const phone = normalizeMemberPhone(input.phone ?? null);
     const notes = normalizeOptionalText(input.notes);
 
     return this.prisma.$transaction(async (tx) => {
@@ -88,23 +151,42 @@ export class MemberRepository {
   }
 
   public async search(filters: MemberSearchFilters): Promise<readonly Member[]> {
-    const search = filters.search?.trim() ?? '';
-    const where: Prisma.MemberWhereInput =
-      search === ''
-        ? {}
-        : {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { referenceId: { contains: search, mode: 'insensitive' } },
-              { phone: { contains: search } },
-            ],
-          };
-
     return this.prisma.member.findMany({
-      where,
-      orderBy: [{ name: 'asc' }, { referenceId: 'asc' }],
+      where: memberSearchWhere(filters.search),
+      orderBy: memberOrderBy(filters.sort ?? 'name', filters.direction ?? 'asc'),
       take: filters.limit,
       skip: filters.offset,
+    });
+  }
+
+  /** Counts the rows matching the same filter, so the pager total is real. */
+  public async countMatching(search?: string): Promise<number> {
+    return this.prisma.member.count({ where: memberSearchWhere(search) });
+  }
+
+  /**
+   * The member's member-contribution transactions, newest first.
+   *
+   * A read-only projection owned by Phase 04: `REQ-MEM-003` and `REQ-MEM-004` require a
+   * member to have history, and that history is always read from the ledger rather than
+   * from a stored amount. Voided rows are included so the Admin can see that a payment
+   * was voided, and their `status` travels with the row; they are excluded from every
+   * derived total by `ContributionPeriodRepository`. Creating or editing these rows is
+   * Phase 05's job.
+   */
+  public async listTransactions(memberId: string): Promise<readonly MemberTransactionRow[]> {
+    return this.prisma.financialTransaction.findMany({
+      where: { memberId, incomeType: 'MEMBER_CONTRIBUTION' },
+      orderBy: [{ businessDate: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        referenceId: true,
+        amountPaise: true,
+        paymentMethod: true,
+        businessDate: true,
+        description: true,
+        status: true,
+      },
     });
   }
 
@@ -116,7 +198,7 @@ export class MemberRepository {
    */
   public async update(id: string, input: UpdateMemberInput, actorAdminId: string): Promise<Member> {
     const name = normalizeName(input.name);
-    const phone = normalizePhone(input.phone ?? null);
+    const phone = normalizeMemberPhone(input.phone ?? null);
     const notes = normalizeOptionalText(input.notes);
 
     return this.prisma.$transaction(async (tx) => {
@@ -166,6 +248,35 @@ function normalizeName(raw: string): string {
   }
 
   return name;
+}
+
+/**
+ * Applies the documented phone rule and reports a violation as a field-level validation
+ * error.
+ *
+ * `normalizePhone` deliberately throws a plain `PhoneFormatError`, because the rule itself
+ * is transport-agnostic. This is the boundary where a phone enters persistence, so it is
+ * where that error is translated into the documented `VALIDATION_FAILED` envelope. Without
+ * the translation the global filter would treat an invalid phone as an unknown failure and
+ * answer `500`, which would tell the Admin nothing and would contradict `REQ-MEM-005` and
+ * the error-exposure rule in `docs/07-SECURITY-RULES.md`.
+ *
+ * Exported so the HTTP test double applies the identical rule. A double that stored the
+ * phone verbatim would report a `201` for a number production refuses, which is a test that
+ * passes while the contract is wrong.
+ */
+export function normalizeMemberPhone(raw: string | null | undefined): string | null {
+  try {
+    return normalizePhone(raw);
+  } catch (error: unknown) {
+    if (error instanceof PhoneFormatError) {
+      throw validationFailed(`The phone number is not valid: ${error.message}.`, {
+        field: 'phone',
+      });
+    }
+
+    throw error;
+  }
 }
 
 function normalizeOptionalText(raw: string | null | undefined): string | null {

@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires authenticated API and Phase 02 persistence.
+- Status: `IMPLEMENTED, QUALITY GATE PASSED` on 2026-09-28; committed and pushed to `origin/main` (verified hash in `PHASE-HISTORY.md`); awaiting external review.
 - Preconditions: Phases 01–03 complete; no real personal data.
 - Handoff rule: “CRUD” in this phase means create, read, and update; financial history is never deleted.
 
@@ -89,8 +89,8 @@ Use additive migrations or corrective commits. Do not delete members or financia
 
 ## Completion checklist
 
-- [ ] Member CRUD and search work.
-- [ ] Reference allocation is safe.
-- [ ] Contribution periods and statuses are correct.
-- [ ] Member history is derived from transactions.
-- [ ] Tests, documentation, and Git gate complete.
+- [x] Member CRUD and search work.
+- [x] Reference allocation is safe.
+- [x] Contribution periods and statuses are correct.
+- [x] Member history is derived from transactions.
+- [x] Tests, documentation, and Git gate complete.

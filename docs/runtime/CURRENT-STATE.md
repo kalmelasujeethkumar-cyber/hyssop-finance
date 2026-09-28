@@ -15,14 +15,14 @@
 
 ## Current stage
 
-- Current stage: **PHASE 03 — AUTH**
-- Current phase: `PHASE-03-AUTH`
-- Status: **PHASE 03 QUALITY GATE PASSED; GIT GATE CLOSED AWAITING EXTERNAL REVIEW**
-- Next gate: external review of the Phase 03 checkpoint
-- Phase 04: **NOT STARTED**; it must not begin before the Phase 03 checkpoint is approved
-- Application implementation: **PHASE 01, PHASE 02, AND PHASE 03 COMPLETE** (foundation, persistence, and authentication)
-- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01, Phase 02, and Phase 03 gates closed with recorded evidence
-- Database migrations: **3 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`, with `npm run db:drift` reporting no difference
+- Current stage: **PHASE 04 — MEMBERS**
+- Current phase: `PHASE-04-MEMBERS`
+- Status: **PHASE 04 QUALITY GATE PASSED; GIT GATE CLOSED AWAITING EXTERNAL REVIEW**
+- Next gate: external review of the Phase 04 checkpoint
+- Phase 05: **NOT STARTED**; it must not begin before the Phase 04 checkpoint is approved
+- Application implementation: **PHASE 01, PHASE 02, PHASE 03, AND PHASE 04 COMPLETE** (foundation, persistence, authentication, and members)
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01, Phase 02, Phase 03, and Phase 04 gates closed with recorded evidence
+- Database migrations: **4 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`, with `npm run db:drift` reporting no difference
 - External services: **NOT CONFIGURED**
 
 ## Progress
@@ -37,13 +37,15 @@ Phase 02 is complete. It owns `REQ-FIN-001`, `REQ-FIN-002`, `REQ-FIN-003`, `REQ-
 
 Phase 03 is implemented and has passed its quality gate. It owns the authentication requirements and implemented the single-Admin account with an Argon2id password hash, a one-time `npm run admin:bootstrap` that revokes the previous Admin's sessions, opaque server-side sessions stored as SHA-256 hashes with real revocation, an HTTP-only session cookie and a script-readable CSRF cookie, origin-bound single-use pre-authentication CSRF enforced with a constant-time comparison, login rate limiting, a sign-in screen, a session-guarded product area, and 10 Playwright journeys that run against a real API and a real database. `npm run verify` exited `0`, `npm run test:e2e` reported `10 passed`, `npm run test:db` passed 103 tests, and the API suite passed 162 tests. No financial screen exists yet; the product area is the foundation shell only.
 
+Phase 04 is implemented and has passed its quality gate. It owns `REQ-MEM-001`–`REQ-MEM-006`, `REQ-CONTRIB-001`–`REQ-CONTRIB-004`, and implemented member create/read/update, immutable `HY-MEM-0001` references allocated from a per-scope sequence with the UUID kept as the route identity, phone normalization and validation, free-text search, sort, and pagination, contribution periods with an expected amount whose received, remaining, and PAID / PARTIALLY PAID / NOT PAID status are derived from active member-contribution transactions, and the Members list and detail screens with a six-journey browser suite. `npm run test:e2e` reported `16 passed`, `npm run test:api` passed 241 tests, `npm run test:web` passed 134 tests, `npm run test:db` passed 103 tests, and `npm run verify` exited `0`. Two contract/document details were corrected (`DEC-068`, `DEC-073`) and one UI limitation was recorded rather than silently accepted: the contribution-period panel renders only the current business year with no year selector (`ISSUE-023`), while the API already supports `?year=` for any year.
+
 ## Next planned step
 
-The Phase 03 Git gate is closed: commit `ab7847037120b3deeb519d053c11d4d09afc3746` was pushed to `origin/main` and the remote hash matches. Phase 03 is stopped here for review; `PHASE-04-FINANCIAL` requires explicit approval before any work starts.
+The Phase 04 Git gate is closed: the Phase 04 commit was pushed to `origin/main` and the remote hash matches. Phase 04 is stopped here for review; `PHASE-05-INCOME` requires explicit approval before any work starts.
 
 ## Blockers
 
-No current blockers are known. Eight advisories are recorded in `docs/runtime/ISSUES.md` (`ISSUE-011` through `ISSUE-016`, plus `ISSUE-021` and `ISSUE-022`); none of them blocks the phase, and each records the condition that would require user approval. `ISSUE-021` (a new sign-in currently leaves an earlier session live) and `ISSUE-022` (the login rate limit is per API process) are recorded rather than silently decided, because no locked requirement owns either behavior. If a locked-requirement conflict, authorization need, secret requirement, or unsafe operation arises, record it in `docs/runtime/ISSUES.md` and stop.
+No current blockers are known. Nine advisories are recorded in `docs/runtime/ISSUES.md` (`ISSUE-011` through `ISSUE-016`, `ISSUE-021`, `ISSUE-022`, and `ISSUE-023`); none of them blocks the phase, and each records the condition that would require user approval. `ISSUE-021` (a new sign-in currently leaves an earlier session live), `ISSUE-022` (the login rate limit is per API process), and `ISSUE-023` (the contribution-period panel shows only the current business year) are recorded rather than silently decided, because no locked requirement owns either behavior. If a locked-requirement conflict, authorization need, secret requirement, or unsafe operation arises, record it in `docs/runtime/ISSUES.md` and stop.
 
 ## Authorization reminder
 

@@ -313,12 +313,15 @@ describe('reference allocation and derived financial layer', () => {
   describe('contribution derivation (REQ-CONTRIB-002)', () => {
     async function seedContribution(): Promise<{ periodId: string; memberId: string }> {
       const member = await harness.members.create({ name: 'George Mathew' }, actorAdminId);
-      const period = await harness.contributions.create({
-        memberId: member.id,
-        year: 2026,
-        month: 9,
-        expectedPaise: 50_000n,
-      });
+      const period = await harness.contributions.create(
+        {
+          memberId: member.id,
+          year: 2026,
+          month: 9,
+          expectedPaise: 50_000n,
+        },
+        harness.admin.id,
+      );
 
       return { periodId: period.id, memberId: member.id };
     }
