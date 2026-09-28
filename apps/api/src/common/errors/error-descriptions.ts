@@ -27,6 +27,24 @@ const STATUS_TO_CLIENT_MESSAGE: Readonly<Record<number, string>> = {
 
 export const INTERNAL_ERROR_MESSAGE = 'An unexpected error occurred. Please try again.';
 
+/**
+ * A message may only be reflected to the client when it is a single short line. The
+ * patterns reject the shapes that would leak something: a stack frame, a filesystem
+ * path, a SQL fragment, a URL, or a JSON/array dump. This is a second gate behind the
+ * `ApiError` type check, not the primary one.
+ */
+const UNSAFE_MESSAGE_PATTERN =
+  /[\n\r\t]|\bat\s+\w+\s*\(|node_modules|[A-Za-z]:[\\/]|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|https?:\/\/|\{|\}/i;
+
+export function isSafeClientMessage(message: unknown): message is string {
+  return (
+    typeof message === 'string' &&
+    message.length > 0 &&
+    message.length <= 200 &&
+    !UNSAFE_MESSAGE_PATTERN.test(message)
+  );
+}
+
 export function errorCodeForStatus(status: number): ApiErrorCode {
   return STATUS_TO_ERROR_CODE[status] ?? (status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_FAILED');
 }
@@ -39,12 +57,19 @@ export function clientMessageForStatus(status: number): string {
   return STATUS_TO_CLIENT_MESSAGE[status] ?? 'The request could not be completed.';
 }
 
+/**
+ * Describes any `HttpException` from its status alone. A framework exception such as
+ * `NotFoundException` carries the requested path in its message, which is exactly the
+ * kind of internal detail that must not be reflected, so the body is never inspected
+ * here. Only the application's own `ApiError` may supply a code and a message.
+ */
 export function describeHttpException(exception: HttpException): {
   status: number;
   code: ApiErrorCode;
   message: string;
 } {
   const status = exception.getStatus();
+
   return {
     status,
     code: errorCodeForStatus(status),

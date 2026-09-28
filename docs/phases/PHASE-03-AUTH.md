@@ -90,8 +90,10 @@ Do not commit a partially configured credential. If a secret is exposed, stop an
 
 ## Completion checklist
 
-- [ ] Password and session design implemented.
-- [ ] Auth endpoints and guards verified.
-- [ ] CSRF and CORS policy verified.
-- [ ] Security audit events verified.
+- [x] Password and session design implemented.
+- [x] Auth endpoints and guards verified.
+- [x] CSRF and CORS policy verified.
+- [x] Security audit events verified.
 - [ ] Documentation and Git gate complete.
+
+Checklist items are marked only against recorded evidence in `docs/runtime/TEST-RESULTS.md`. The first four items are backed by the 103 real-database tests, the 162 API tests, the 37 web tests, and the 10 passing Playwright journeys. The last item stays open until the implementation is committed, pushed, and the remote hash is verified.

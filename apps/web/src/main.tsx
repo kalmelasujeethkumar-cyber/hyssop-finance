@@ -3,7 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { RootErrorBoundary } from './app/errors/RootErrorBoundary';
-import { ApiClientProvider } from './app/providers/ApiClientProvider';
+import { AppProviders } from './app/providers/AppProviders';
 import { buildRoutes } from './app/routes';
 import { createApiClient } from './lib/api-client';
 import { apiBaseUrl } from './lib/env';
@@ -28,9 +28,9 @@ createRoot(container).render(
   <StrictMode>
     <RootErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ApiClientProvider client={apiClient}>
+        <AppProviders client={apiClient}>
           <RouterProvider router={router} />
-        </ApiClientProvider>
+        </AppProviders>
       </QueryClientProvider>
     </RootErrorBoundary>
   </StrictMode>,

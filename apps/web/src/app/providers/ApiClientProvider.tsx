@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { ApiClient } from '../../lib/api-client';
 
-const ApiClientContext = createContext<ApiClient | null>(null);
+export const ApiClientContext = createContext<ApiClient | null>(null);
 
 export interface ApiClientProviderProps {
   readonly client: ApiClient;

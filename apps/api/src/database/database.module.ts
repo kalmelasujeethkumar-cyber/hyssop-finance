@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AuditEventRepository } from './audit/audit-event.repository';
+import { AdminSessionRepository } from './auth/admin-session.repository';
+import { AdminUserRepository } from './auth/admin-user.repository';
+import { AuthCsrfTokenRepository } from './auth/auth-csrf-token.repository';
 import { ExpenseCategoryRepository } from './categories/expense-category.repository';
 import { ContributionPeriodRepository } from './contributions/contribution-period.repository';
 import { TransactionDocumentRepository } from './documents/transaction-document.repository';
@@ -21,6 +24,9 @@ import { TransactionRepository } from './transactions/transaction.repository';
   providers: [
     ReferenceAllocatorService,
     AuditEventRepository,
+    AdminUserRepository,
+    AdminSessionRepository,
+    AuthCsrfTokenRepository,
     MemberRepository,
     ContributionPeriodRepository,
     ExpenseCategoryRepository,
@@ -33,6 +39,9 @@ import { TransactionRepository } from './transactions/transaction.repository';
   exports: [
     ReferenceAllocatorService,
     AuditEventRepository,
+    AdminUserRepository,
+    AdminSessionRepository,
+    AuthCsrfTokenRepository,
     MemberRepository,
     ContributionPeriodRepository,
     ExpenseCategoryRepository,

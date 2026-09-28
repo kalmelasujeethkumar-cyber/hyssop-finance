@@ -14,6 +14,8 @@ export const API_ERROR_CODES = [
   'NOT_FOUND',
   'CONFLICT',
   'RATE_LIMITED',
+  'INVALID_CREDENTIALS',
+  'CSRF_FAILED',
   'REQUEST_FAILED',
   'INTERNAL_ERROR',
 ] as const;

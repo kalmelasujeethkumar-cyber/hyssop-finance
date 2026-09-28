@@ -18,6 +18,27 @@ export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export const DEFAULT_PORT = 3000;
 
+export const COOKIE_SAME_SITE_VALUES = ['lax', 'strict', 'none'] as const;
+
+export type CookieSameSite = (typeof COOKIE_SAME_SITE_VALUES)[number];
+
+/**
+ * Argon2id cost. The defaults are the OWASP minimum for Argon2id and are
+ * intentionally not raised further, so the demo stays responsive on modest hardware.
+ * Documented in `.env.example` and in `docs/runtime/DECISIONS.md`.
+ */
+export const DEFAULT_ARGON2_MEMORY_KIB = 19456;
+export const DEFAULT_ARGON2_ITERATIONS = 2;
+export const DEFAULT_ARGON2_PARALLELISM = 1;
+
+export const DEFAULT_SESSION_TTL_HOURS = 8;
+export const DEFAULT_CSRF_TTL_MINUTES = 15;
+export const DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5;
+export const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES = 15;
+
+/** Maximum session lifetime, so a mistyped value cannot create a permanent session. */
+export const MAX_SESSION_TTL_HOURS = 720;
+
 /**
  * Connection roles created by `npm run db:start` and `docker-compose.yml`.
  * `DIRECT_DATABASE_URL` is the schema-owner role used only by `prisma migrate`.
@@ -28,6 +49,30 @@ export const RUNTIME_ROLE_NAME = 'hyssop_app';
 /** PostgreSQL superuser roles that the runtime must never connect as. */
 const FORBIDDEN_RUNTIME_ROLES: readonly string[] = ['postgres', 'superuser'];
 
+export interface Argon2Parameters {
+  readonly memoryKib: number;
+  readonly iterations: number;
+  readonly parallelism: number;
+}
+
+/**
+ * Authentication configuration. `docs/07-SECURITY-RULES.md` requires secure,
+ * explicitly verified cookie policy, revocable sessions, and rate-limited login, so
+ * each of those is a validated, named value rather than a constant in a service.
+ */
+export interface AuthEnvironment {
+  readonly sessionCookieName: string;
+  readonly csrfCookieName: string;
+  /** `SameSite=None` is only valid with `Secure`, per the cookie rules in the browser. */
+  readonly cookieSameSite: CookieSameSite;
+  readonly cookieSecure: boolean;
+  readonly sessionTtlHours: number;
+  readonly csrfTtlMinutes: number;
+  readonly argon2: Argon2Parameters;
+  readonly loginRateLimitMaxAttempts: number;
+  readonly loginRateLimitWindowMinutes: number;
+}
+
 export interface AppEnvironment {
   readonly nodeEnv: NodeEnvironment;
   readonly port: number;
@@ -37,6 +82,7 @@ export interface AppEnvironment {
   readonly databaseUrl: string;
   /** Schema-owner connection string used only by migration commands, when configured. */
   readonly directDatabaseUrl: string | null;
+  readonly auth: AuthEnvironment;
 }
 
 export type EnvironmentSource = Readonly<Record<string, string | undefined>>;
@@ -62,12 +108,13 @@ export function parseEnvironment(source: EnvironmentSource): AppEnvironment {
   const logLevel = nodeEnv === 'development' ? 'debug' : 'info';
   const databaseUrl = parseDatabaseUrl(source['DATABASE_URL'], problems);
   const directDatabaseUrl = parseDirectDatabaseUrl(source['DIRECT_DATABASE_URL'], problems);
+  const auth = parseAuthEnvironment(source, problems);
 
   if (problems.length > 0) {
     throw new EnvironmentValidationError(problems);
   }
 
-  return { nodeEnv, port, corsAllowedOrigins, logLevel, databaseUrl, directDatabaseUrl };
+  return { nodeEnv, port, corsAllowedOrigins, logLevel, databaseUrl, directDatabaseUrl, auth };
 }
 
 export function resolveLogLevel(nodeEnv: NodeEnvironment): LogLevel {
@@ -179,6 +226,205 @@ function parseDirectDatabaseUrl(raw: string | undefined, problems: string[]): st
 
   assertPostgresUrl(value, 'DIRECT_DATABASE_URL', problems);
   return value;
+}
+
+/**
+ * Authentication configuration parsing.
+ *
+ * Every value here is a cookie, lifetime, or cost that `docs/07-SECURITY-RULES.md`
+ * requires to be explicitly verified rather than assumed. A failure names the variable
+ * and the rule and never echoes the value, so a misconfigured secret cannot be logged.
+ */
+export function parseAuthEnvironment(
+  source: EnvironmentSource,
+  problems: string[],
+): AuthEnvironment {
+  const sessionCookieName = parseCookieName(
+    source['SESSION_COOKIE_NAME'],
+    'SESSION_COOKIE_NAME',
+    'hyssop_session',
+    problems,
+  );
+  const csrfCookieName = parseCookieName(
+    source['CSRF_COOKIE_NAME'],
+    'CSRF_COOKIE_NAME',
+    'hyssop_csrf',
+    problems,
+  );
+
+  if (sessionCookieName === csrfCookieName) {
+    problems.push('CSRF_COOKIE_NAME must differ from SESSION_COOKIE_NAME');
+  }
+
+  const cookieSameSite = parseCookieSameSite(source['SESSION_COOKIE_SAME_SITE'], problems);
+  const cookieSecure = parseBoolean(source['COOKIE_SECURE'], 'COOKIE_SECURE', false, problems);
+  const sessionTtlHours = parseBoundedNumber(
+    source['SESSION_TTL_HOURS'],
+    'SESSION_TTL_HOURS',
+    DEFAULT_SESSION_TTL_HOURS,
+    1,
+    MAX_SESSION_TTL_HOURS,
+    problems,
+  );
+  const csrfTtlMinutes = parseBoundedNumber(
+    source['CSRF_TTL_MINUTES'],
+    'CSRF_TTL_MINUTES',
+    DEFAULT_CSRF_TTL_MINUTES,
+    1,
+    120,
+    problems,
+  );
+  const argon2 = {
+    memoryKib: parseBoundedNumber(
+      source['ARGON2_MEMORY_KIB'],
+      'ARGON2_MEMORY_KIB',
+      DEFAULT_ARGON2_MEMORY_KIB,
+      8192,
+      262144,
+      problems,
+    ),
+    iterations: parseBoundedNumber(
+      source['ARGON2_ITERATIONS'],
+      'ARGON2_ITERATIONS',
+      DEFAULT_ARGON2_ITERATIONS,
+      1,
+      16,
+      problems,
+    ),
+    parallelism: parseBoundedNumber(
+      source['ARGON2_PARALLELISM'],
+      'ARGON2_PARALLELISM',
+      DEFAULT_ARGON2_PARALLELISM,
+      1,
+      16,
+      problems,
+    ),
+  };
+  const loginRateLimitMaxAttempts = parseBoundedNumber(
+    source['LOGIN_RATE_LIMIT_MAX_ATTEMPTS'],
+    'LOGIN_RATE_LIMIT_MAX_ATTEMPTS',
+    DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+    1,
+    100,
+    problems,
+  );
+  const loginRateLimitWindowMinutes = parseBoundedNumber(
+    source['LOGIN_RATE_LIMIT_WINDOW_MINUTES'],
+    'LOGIN_RATE_LIMIT_WINDOW_MINUTES',
+    DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES,
+    1,
+    1440,
+    problems,
+  );
+
+  // A `SameSite=None` cookie is discarded by browsers unless it is also `Secure`, so
+  // accepting the combination silently would produce a confusing cross-site login loop.
+  if (cookieSameSite === 'none' && !cookieSecure) {
+    problems.push('SESSION_COOKIE_SAME_SITE=none requires COOKIE_SECURE=true');
+  }
+
+  return {
+    sessionCookieName,
+    csrfCookieName,
+    cookieSameSite,
+    cookieSecure,
+    sessionTtlHours,
+    csrfTtlMinutes,
+    argon2,
+    loginRateLimitMaxAttempts,
+    loginRateLimitWindowMinutes,
+  };
+}
+
+function parseCookieName(
+  raw: string | undefined,
+  name: string,
+  fallback: string,
+  problems: string[],
+): string {
+  const value = raw?.trim();
+
+  if (value === undefined || value === '') {
+    return fallback;
+  }
+
+  // RFC 6265 cookie names are tokens; anything else would be silently dropped or split.
+  if (!/^[A-Za-z0-9!#$%&'*+\-.^_`|~]{1,64}$/.test(value)) {
+    problems.push(`${name} must be a valid cookie name of at most 64 token characters`);
+    return fallback;
+  }
+
+  return value;
+}
+
+function parseCookieSameSite(raw: string | undefined, problems: string[]): CookieSameSite {
+  const value = raw?.trim().toLowerCase();
+
+  if (value === undefined || value === '') {
+    return 'lax';
+  }
+
+  const match = COOKIE_SAME_SITE_VALUES.find((candidate) => candidate === value);
+
+  if (match === undefined) {
+    problems.push('SESSION_COOKIE_SAME_SITE must be one of: lax, strict, none');
+    return 'lax';
+  }
+
+  return match;
+}
+
+function parseBoolean(
+  raw: string | undefined,
+  name: string,
+  fallback: boolean,
+  problems: string[],
+): boolean {
+  const value = raw?.trim().toLowerCase();
+
+  if (value === undefined || value === '') {
+    return fallback;
+  }
+
+  if (value === 'true') {
+    return true;
+  }
+
+  if (value === 'false') {
+    return false;
+  }
+
+  problems.push(`${name} must be exactly true or false`);
+  return fallback;
+}
+
+function parseBoundedNumber(
+  raw: string | undefined,
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+  problems: string[],
+): number {
+  const value = raw?.trim();
+
+  if (value === undefined || value === '') {
+    return fallback;
+  }
+
+  if (!/^\d{1,6}$/.test(value)) {
+    problems.push(`${name} must be a whole number between ${minimum} and ${maximum}`);
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (parsed < minimum || parsed > maximum) {
+    problems.push(`${name} must be a whole number between ${minimum} and ${maximum}`);
+    return fallback;
+  }
+
+  return parsed;
 }
 
 function assertPostgresUrl(value: string, name: string, problems: string[]): void {

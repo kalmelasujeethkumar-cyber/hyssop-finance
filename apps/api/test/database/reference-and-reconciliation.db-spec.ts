@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Reference allocation, concurrency safety, and the derived financial layer.
  *
  * Authority: `docs/05-DATABASE-SPEC.md` ("`id_sequence` rows allocate the next value
@@ -9,7 +9,12 @@
  * calculation from persisted data).
  */
 
-import { createHarness, createPrismaClient, type TestHarness } from './support/test-database';
+import {
+  createHarness,
+  createPrismaClient,
+  testAdminData,
+  type TestHarness,
+} from './support/test-database';
 
 jest.setTimeout(120_000);
 
@@ -31,7 +36,7 @@ describe('reference allocation and derived financial layer', () => {
 
   beforeEach(async () => {
     harness.admin = await harness.reset();
-    const admin = await harness.runtime.adminUser.create({ data: { displayName: 'Actor' } });
+    const admin = await harness.runtime.adminUser.create({ data: testAdminData('actor') });
     actorAdminId = admin.id;
     const category = await harness.categories.create('Electricity', actorAdminId);
     categoryId = category.id;

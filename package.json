@@ -37,6 +37,7 @@
     "db:status": "prisma migrate status --schema prisma/schema.prisma",
     "db:drift": "node scripts/migration-drift.mjs",
     "db:seed": "prisma db seed --schema prisma/schema.prisma",
+    "admin:bootstrap": "node scripts/admin-bootstrap.mjs",
     "db:grant": "node scripts/local-postgres.mjs grant",
     "db:start": "node scripts/local-postgres.mjs start",
     "db:stop": "node scripts/local-postgres.mjs stop",

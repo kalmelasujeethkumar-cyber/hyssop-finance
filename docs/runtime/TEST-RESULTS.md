@@ -9,9 +9,45 @@
 
 ## Current status
 
-**Phase 02 database quality gate passed on 2026-09-26, and its Git gate is closed: commit `84b5687189d58755438b13f0ea97cd82172958cf` is pushed to `origin/main` and the remote hash matches. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
+**The Phase 03 authentication quality gate passed on 2026-09-28: `npm run verify` exited `0` and `npm run test:e2e` reported `10 passed`. Phase 02 remains closed with commit `84b5687189d58755438b13f0ea97cd82172958cf` pushed to `origin/main`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
 
-Phase 02 added the first persisted data layer: the canonical Prisma schema, reviewed forward migrations, exact paise persistence, reference allocation, transactional idempotency, reconciliation queries, a fictional idempotent seed, and database tests that run against a real disposable PostgreSQL 16 instance. REST routes and authentication remain unimplemented by design.
+Phase 03 added the first real authenticated behavior: Admin bootstrap, Argon2id password verification, opaque server-side sessions with real revocation, pre-authentication CSRF, login rate limiting, a sign-in screen, a protected product area, and browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
+
+## Phase 03 authentication gate
+
+Environment assumptions: unchanged from Phase 02 (Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, project-local PostgreSQL `16` on loopback port `55432`, `hyssop_finance_dev` and `hyssop_finance_test`). The Playwright run provisions its own Admin with a random password generated in memory, applies migrations to the `_test` database, and never reads or prints a real credential. No secret is stored in the repository or passed on a command line.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run db:validate` | Pass | `The schema at prisma\schema.prisma is valid` |
+| `npm run db:status` | Pass | `3 migrations found` and `Database schema is up to date!`, so the authentication migration and the amended `revision` column match the applied history |
+| `npm run db:drift` | Pass | `migration history vs prisma/schema.prisma: no difference detected` and `hyssop_finance_dev vs prisma/schema.prisma: no difference detected`, then the disposable shadow database was dropped |
+| `npm run test:db` | Pass, twice | 6 suites, 103 tests against real PostgreSQL, including the `auth-http` and `auth-persistence` suites, the Admin bootstrap suite, and the unchanged Phase 02 financial suites |
+| `npm run test:api` | Pass | 20 suites, 162 tests |
+| `npm run test:web` | Pass, four times | 5 files, 37 tests; the sign-in route test was run repeatedly after the redirect race fix because it had been intermittent |
+| `npm run test:e2e` | Pass after two defect fixes | 10 Playwright tests: 4 failed on the first run, 2 on the second, `10 passed (14.1s)` on the third. See the Phase 03 defects table below |
+| `npm run lint` | Pass | `eslint .` reported no problems |
+| `npm run format:check` | Pass | `All matched files use Prettier code style!` |
+| `npm run typecheck` | Pass | Contracts build, `apps/api` and `apps/web` `tsc --noEmit` all clean |
+| `npm run typecheck:scripts` | Pass | `tsc -p tsconfig.scripts.json --noEmit` clean, so `prisma/seed.ts` and `scripts/admin-bootstrap.mjs` are typechecked |
+| `npm run build` | Pass | Contracts declaration build, `nest build` for `apps/api`, and `vite build` for `apps/web` (`✓ built in 243ms`) |
+| `npm run verify` | Pass | The full gate exited `0`: lint, typecheck, contracts build, script typecheck, 162 API tests, 37 web tests, both production builds, and format check |
+| CSRF negative-path evidence | Pass | The real HTTP suite proves `GET /api/v1/auth/csrf` sets a matching readable cookie, and `POST /auth/login` rejects a missing cookie, a mismatched pair, a matching pair that was never issued, an untrusted origin, and a replay, every time with `CSRF_FAILED` and no session cookie |
+| Session and revocation evidence | Pass | Sign-in, `GET /auth/me`, server-side revocation through `POST /auth/logout`, and rejection of a replaced session cookie are all proven against the real database; a tampered cookie returns the Admin to the sign-in screen in the browser |
+| Storage evidence | Pass | The browser test asserts `localStorage.length` and `sessionStorage.length` are both `0` after sign-in, that `hyssop_session` is `httpOnly`, and that `hyssop_csrf` is not |
+| Rate-limit evidence | Pass | `auth-http.db-spec.ts` runs a dedicated instance with the documented `5` attempts and asserts the sixth attempt returns `RATE_LIMITED` with `Retry-After`; the shared database-suite environment uses `100` so unrelated suites are not self-blocked |
+| Secret and staged-file review | Pass | A credential-pattern scan over all 79 changed and added files matched no Argon2 hash, JWT, private key, token prefix, or literal password. `.env` is ignored and untracked, only `.env.example` is tracked with every value commented out, and no build output, dependency, Playwright report, or local database artifact is staged |
+| Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit; Phase 03 continues to own its existing authentication requirements |
+
+## Phase 03 defects found and fixed
+
+| Defect | How it was found | Fix | Regression evidence |
+|---|---|---|---|
+| The browser sign-in journey was intermittent: after a successful sign-in the Admin was sometimes stranded back on the sign-in screen, and the API log showed a `429` on `POST /auth/login` | `npm run test:web` failed on about half its runs. The queued anonymous-route redirect could commit after the session had already been established | `RequireSession` now performs a guarded redirect and renders nothing while anonymous, and `LoginPage` redirects away when the live state is already authenticated, so a late redirect cannot strand a signed-in Admin. The test harness now mirrors the production React Query defaults instead of forcing `gcTime: 0`, and the stub session state changes on sign-in and sign-out. No timeout was increased | The suite passed 37 of 37 on four consecutive runs |
+| `POST /api/v1/auth/login` returned `204 No Content` for logout while the browser client unwraps a canonical `data` envelope, so signing out failed in the browser | Contract comparison during Phase 03 recovery | `LogoutResult` was added to the shared contract, the route returns `200` with the canonical envelope, and the web stub returns the real shape (`DEC-067`, `ISSUE-019`) | `auth-http.db-spec.ts` asserts `200` and a validated `revoked` value; `api-client.test.ts` proves a `200` envelope is unwrapped and a bodyless `204` is rejected |
+| `GET /api/v1/auth/csrf` returned the pre-authentication token in the body only, and login validated the header alone, contradicting the cookie-and-token rule in `docs/07-SECURITY-RULES.md` | Contract comparison during Phase 03 recovery; the existing test asserted the wrong behavior, so it hid the mismatch | The route now sets a short-lived readable cookie whose value equals the response token, login requires the header and cookie to match, and the comparison is constant-time over hashed values (`DEC-065`, `ISSUE-020`) | The HTTP suite proves the pair is required, must match, must have been issued, is origin-bound, and is single-use |
+| Four Playwright tests failed with a `429` because the suite signs in about nine times from one address while the documented default limit is 5 attempts per 15 minutes in a single API process | `npm run test:e2e` first run, read from the API access log rather than guessed at | The limiter is unchanged and still enforced; only the throwaway Playwright API process is started with `LOGIN_RATE_LIMIT_MAX_ATTEMPTS=100`, because a per-client limit cannot be shared across independent journeys in one process | The documented threshold and the generic rate-limit message remain verified against the real values in `auth-http.db-spec.ts`; the browser suite reached `10 passed` |
+| One Playwright test failed on `expect(browserErrors).toEqual([])` because Chromium logs the documented `401` answer to the anonymous session probe as a console error | `npm run test:e2e` second run | The helper now grants exactly one allowance per real `401` response from `/api/v1/auth/me` and spends it only on that generic resource message. Any extra 401, any other console error, any uncaught exception, and any failed request still fails the test, so the filter cannot hide a real defect | `npm run test:e2e` reported `10 passed (14.1s)`, and the strict error checks are unchanged in every other test |
 
 ## Phase 02 database gate
 

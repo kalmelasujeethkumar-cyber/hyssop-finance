@@ -35,6 +35,7 @@ Phone numbers are normalized to national digits after removing spaces, hyphens, 
 |---|---|---|
 | `admin_user` | The single authenticated Admin account | Has sessions and audit events |
 | `admin_session` | Revocable opaque login session | Belongs to one Admin; token stored only as a hash |
+| `auth_csrf_token` | Short-lived pre-authentication CSRF token | Belongs to one trusted origin; token stored only as a hash |
 | `member` | Member identity and contact data | Has contribution periods, transactions, audit references |
 | `contribution_period` | Expected monthly amount for a member | Unique per member, month, and year |
 | `expense_category` | Initial and custom expense categories | Used by expense transactions; categories are deactivated rather than hard-deleted when no longer available for new entries |
@@ -53,7 +54,7 @@ Phone numbers are normalized to national digits after removing spaces, hyphens, 
 - `transaction_status`: `ACTIVE`, `VOIDED`
 - `category_status`: `ACTIVE`, `INACTIVE`
 - `document_status`: `AVAILABLE`, `REMOVED`
-- `audit_action`: an extensible, versioned list of documented action codes including `TRANSACTION_CREATED`, `TRANSACTION_UPDATED`, `TRANSACTION_VOIDED`, `DOCUMENT_UPLOADED`, `DOCUMENT_REMOVED`, `MEMBER_CREATED`, `MEMBER_UPDATED`, `CATEGORY_CREATED`, `CATEGORY_UPDATED`, `SETTING_UPDATED`, `LOGIN_SUCCEEDED`, and `LOGIN_FAILED`
+- `audit_action`: an extensible, versioned list of documented action codes including `TRANSACTION_CREATED`, `TRANSACTION_UPDATED`, `TRANSACTION_VOIDED`, `DOCUMENT_UPLOADED`, `DOCUMENT_REMOVED`, `MEMBER_CREATED`, `MEMBER_UPDATED`, `CATEGORY_CREATED`, `CATEGORY_UPDATED`, `SETTING_UPDATED`, `LOGIN_SUCCEEDED`, `LOGIN_FAILED`, and `LOGOUT`
 
 ## Financial transaction fields
 
@@ -162,6 +163,16 @@ Format and width are fixed:
 
 Audit rows are append-only. Application roles have no update or delete permission for audit events. Security events must avoid storing passwords, session tokens, raw documents, or unnecessary personal data.
 
+## Admin accounts, sessions, and CSRF
+
+`admin_user` contains `id`, `identifier VARCHAR(64) NOT NULL UNIQUE`, `display_name`, `password_hash TEXT NOT NULL`, `last_login_at TIMESTAMPTZ NULL`, `created_at`, and `updated_at`. The identifier is stored lower-cased and constrained to equal its own lower-case form, so `Admin` and `admin` can never become two accounts. There is exactly one Admin in the demo; the unique identifier is what makes an accidental second account impossible.
+
+`password_hash` holds an Argon2id PHC string. A value beginning with `!` is the **unusable-credential sentinel**: it means the account exists as a financial actor but no password has been provisioned, so verification always fails. The sentinel exists so the fictional seed can create the actor row that transactions reference without ever embedding a credential. The Admin bootstrap replaces the sentinel with a real Argon2id hash and is the only supported way to provision the password. Neither the identifier nor any password value is ever written to an audit event, log, or document.
+
+`admin_session` contains `id`, `admin_user_id UUID NOT NULL REFERENCES admin_user(id) ON DELETE CASCADE`, `token_hash CHAR(64) NOT NULL UNIQUE`, `csrf_token_hash CHAR(64) NOT NULL`, `ip_hash VARCHAR(128) NULL`, `created_at TIMESTAMPTZ NOT NULL`, `last_seen_at TIMESTAMPTZ NOT NULL`, `expires_at TIMESTAMPTZ NOT NULL`, `revoked_at TIMESTAMPTZ NULL`, and `revoked_reason VARCHAR(32) NULL` constrained to `LOGOUT`, `EXPIRED`, or `REPLACED`, with `CHECK (expires_at > created_at)`. The opaque session token is generated with a cryptographic random source, delivered only in an HTTP-only cookie, and stored only as a SHA-256 hash, so a database read cannot reconstruct a usable session. The post-authentication CSRF secret is likewise stored only as a hash and is rotated by updating the row. Session rows are not audit history: an expired or revoked session is rejected on read and may be deleted later by maintenance, while the `LOGIN_SUCCEEDED` and `LOGOUT` events remain permanently in `audit_event`.
+
+`auth_csrf_token` contains `id`, `token_hash CHAR(64) NOT NULL UNIQUE`, `origin VARCHAR(255) NOT NULL`, `created_at`, `expires_at`, and `consumed_at TIMESTAMPTZ NULL`, with `CHECK (expires_at > created_at)`. It backs the unauthenticated pre-authentication CSRF token that login requires. The row binds the token to the exact trusted origin that requested it, expires quickly, and is marked consumed on use, so a login token cannot be replayed. The CSRF cookie is deliberately **not** HTTP-only, because the browser must echo the same value in a request header; the session cookie is always HTTP-only.
+
 ## Indexes and query performance
 
 - `financial_transaction(status, business_date)`
@@ -175,6 +186,8 @@ Audit rows are append-only. Application roles have no update or delete permissio
 - `audit_event(occurred_at DESC)`
 - `audit_event(entity_type, entity_id, occurred_at DESC)`
 - `member(lower(name))` for case-insensitive search
+- `admin_session(admin_user_id)` and `admin_session(expires_at)` for session lookup and expired-row maintenance
+- `auth_csrf_token(expires_at)` for expired pre-authentication token maintenance
 - Unique indexes on every `reference_id`
 
 Dashboard aggregates must use index-friendly filters and must not load full transaction history into frontend memory.
@@ -184,6 +197,9 @@ Dashboard aggregates must use index-friendly filters and must not load full tran
 - Prisma migrations are reviewed before application.
 - Migrations must be additive or explicitly reversible, and destructive changes require a documented backup and recovery plan.
 - Demo seeding is idempotent and uses only fictional data defined in `13-DEMO-DATA-SPEC.md`.
+- Seeding never provisions a credential. The Admin bootstrap reads a password from the environment, hashes it with Argon2id, and is run before the actor-bearing demo seed is activated; the seed may create the actor row with the unusable-credential sentinel but never a usable password.
+- A migration that makes a column unique must be applicable to a database that already holds more than one row of that table. The authentication migration therefore backfills the oldest `admin_user` row with the identifier `admin` and gives any further row a deterministic `admin-legacy-<id prefix>` identifier; every backfilled row receives the unusable-credential sentinel, so no extra row becomes a usable credential and the unique constraint can be created either way.
+- A failed migration on a transactional PostgreSQL database leaves no partial schema. Recovery is `prisma migrate resolve --rolled-back <migration>` followed by a re-run, and it must be applied to the disposable `_test` database rather than by editing migration history.
 - No user-facing reset-demo-database feature is allowed.
 - Database tests must run against a real disposable PostgreSQL instance, not an in-memory substitute.
 - Any action that could destroy non-demo or user data is a stop condition.

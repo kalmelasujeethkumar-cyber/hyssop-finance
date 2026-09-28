@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Database invariants that only a real PostgreSQL instance can prove.
  *
  * Authority: `docs/05-DATABASE-SPEC.md` (constraints, grants, append-only audit,
@@ -7,7 +7,7 @@
  */
 
 import { Prisma } from '@prisma/client';
-import { createHarness, type TestHarness } from './support/test-database';
+import { createHarness, testAdminData, type TestHarness } from './support/test-database';
 
 jest.setTimeout(120_000);
 
@@ -27,7 +27,7 @@ describe('database invariants', () => {
   });
 
   async function seedActor(): Promise<string> {
-    const admin = await harness.runtime.adminUser.create({ data: { displayName: 'Actor' } });
+    const admin = await harness.runtime.adminUser.create({ data: testAdminData('actor') });
     return admin.id;
   }
 
@@ -368,7 +368,7 @@ describe('database invariants', () => {
 
     it('rejects a stale revision instead of overwriting a concurrent edit', async () => {
       const actorAdminId = await seedActor();
-      const member = await harness.members.create({ name: 'Benedict Dâ€™Souza' }, actorAdminId);
+      const member = await harness.members.create({ name: 'Benedict D’Souza' }, actorAdminId);
 
       const updated = await harness.members.update(
         member.id,
@@ -381,7 +381,7 @@ describe('database invariants', () => {
       await expect(
         harness.members.update(
           member.id,
-          { name: 'Benedict Dâ€™Souza', expectedRevision: 1 },
+          { name: 'Benedict D’Souza', expectedRevision: 1 },
           actorAdminId,
         ),
       ).rejects.toThrow(/changed by someone else/);
@@ -658,7 +658,7 @@ describe('database invariants', () => {
 
   describe('idempotency and reference sequence constraints', () => {
     it('enforces the unique key for the same admin and endpoint at the database level', async () => {
-      const admin = await harness.runtime.adminUser.create({ data: { displayName: 'Admin' } });
+      const admin = await harness.runtime.adminUser.create({ data: testAdminData('admin-two') });
 
       await harness.runtime.idempotencyRecord.create({
         data: {
@@ -691,8 +691,7 @@ describe('database invariants', () => {
       await expect(
         harness.runtime.idempotencyRecord.create({
           data: {
-            adminUserId: (await harness.runtime.adminUser.create({ data: { displayName: 'A' } }))
-              .id,
+            adminUserId: (await harness.runtime.adminUser.create({ data: testAdminData('a') })).id,
             endpoint: '/api/v1/transactions',
             idempotencyKey: 'key-2',
             requestHash: 'not-a-hash',

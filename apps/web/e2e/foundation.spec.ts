@@ -1,19 +1,17 @@
 import { expect, test } from '@playwright/test';
+import { collectBrowserErrors, signIn } from './support/auth';
 
+/**
+ * Foundation shell checks, run as a signed-in Admin because the whole product area now sits
+ * behind the session guard.
+ */
 test('foundation shell loads, is keyboard reachable, and reports API connectivity', async ({
   page,
 }) => {
-  const browserErrors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      browserErrors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error: Error) => {
-    browserErrors.push(error.message);
-  });
+  const browserErrors = collectBrowserErrors(page);
 
-  await page.goto('/');
+  await page.goto('/login');
+  await signIn(page);
 
   await expect(page.getByText('HYSSOP FINANCE')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: 'Foundation' })).toBeVisible();
@@ -31,6 +29,9 @@ test('foundation shell loads, is keyboard reachable, and reports API connectivit
 test('an unknown address renders the not-found screen with a working way back', async ({
   page,
 }) => {
+  await page.goto('/login');
+  await signIn(page);
+
   await page.goto('/no-such-screen');
 
   await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Command behaviour that depends on real persistence: audited edits, settings writes,
  * and idempotent retries.
  *
@@ -8,7 +8,7 @@
  */
 
 import type { Prisma } from '@prisma/client';
-import { createHarness, type TestHarness } from './support/test-database';
+import { createHarness, testAdminData, type TestHarness } from './support/test-database';
 
 jest.setTimeout(120_000);
 
@@ -29,7 +29,7 @@ describe('audited persistence commands', () => {
 
   beforeEach(async () => {
     harness.admin = await harness.reset();
-    const admin = await harness.runtime.adminUser.create({ data: { displayName: 'Actor' } });
+    const admin = await harness.runtime.adminUser.create({ data: testAdminData('actor') });
     actorAdminId = admin.id;
     const category = await harness.categories.create('Church Maintenance', actorAdminId);
     categoryId = category.id;

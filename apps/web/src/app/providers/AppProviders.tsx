@@ -1,0 +1,67 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, type ReactNode } from 'react';
+import { SESSION_QUERY_KEY, SessionProvider } from '../../features/auth/SessionProvider';
+import { ApiClientError, type ApiClient, type ApiRequestOptions } from '../../lib/api-client';
+import { ApiClientContext } from './ApiClientProvider';
+
+/**
+ * The provider stack the browser and every UI test mount, in one place, so a test cannot
+ * accidentally provide an API client without a session and pass because of it.
+ */
+export function AppProviders({
+  client,
+  children,
+}: {
+  readonly client: ApiClient;
+  readonly children: ReactNode;
+}) {
+  const queryClient = useQueryClient();
+
+  const onSessionExpired = useCallback(() => {
+    // The API, not the browser, decided the session is gone. Drop the cached identity so the
+    // guard sends the Admin back to sign-in, and keep the error so the calling screen can
+    // still report what happened.
+    queryClient.setQueryData(SESSION_QUERY_KEY, null);
+  }, [queryClient]);
+
+  const sessionAwareClient = useMemo<ApiClient>(
+    () => ({
+      get: <TData,>(path: string, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.get<TData>(path, options), onSessionExpired),
+      post: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.post<TData>(path, body, options), onSessionExpired),
+    }),
+    [client, onSessionExpired],
+  );
+
+  return (
+    <ApiClientContext.Provider value={sessionAwareClient}>
+      <SessionProvider>{children}</SessionProvider>
+    </ApiClientContext.Provider>
+  );
+}
+
+/**
+ * Turns a `401` from any protected route into a session reset.
+ *
+ * `INVALID_CREDENTIALS` is deliberately excluded: a rejected sign-in is a 401 too, and it
+ * must stay on the sign-in screen rather than resetting an already-empty session.
+ */
+async function watchForSessionExpiry<TData>(
+  request: Promise<TData>,
+  onSessionExpired: () => void,
+): Promise<TData> {
+  try {
+    return await request;
+  } catch (error: unknown) {
+    if (
+      error instanceof ApiClientError &&
+      error.status === 401 &&
+      error.code !== 'INVALID_CREDENTIALS'
+    ) {
+      onSessionExpired();
+    }
+
+    throw error;
+  }
+}

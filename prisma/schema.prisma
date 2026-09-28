@@ -75,16 +75,22 @@ enum AuditAction {
   SETTING_UPDATED
   LOGIN_SUCCEEDED
   LOGIN_FAILED
+  LOGOUT
 }
 
-/// The single Admin account. Phase 02 creates the actor entity only; credential and
-/// session columns belong to the Phase 03 authentication migration.
+/// The single Admin account. The identifier is the login name and is stored
+/// lower-cased; `password_hash` holds an Argon2id PHC string, or the documented
+/// `!`-prefixed unusable-credential sentinel while no password has been provisioned.
 model AdminUser {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  displayName String   @map("display_name") @db.VarChar(120)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  identifier   String    @unique @map("identifier") @db.VarChar(64)
+  displayName  String    @map("display_name") @db.VarChar(120)
+  passwordHash String    @map("password_hash") @db.Text
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
 
+  sessions             AdminSession[]
   createdTransactions FinancialTransaction[] @relation("TransactionCreatedBy")
   voidedTransactions  FinancialTransaction[] @relation("TransactionVoidedBy")
   uploadedDocuments   TransactionDocument[]  @relation("DocumentUploadedBy")
@@ -93,6 +99,44 @@ model AdminUser {
   idempotencyRecords  IdempotencyRecord[]
 
   @@map("admin_user")
+}
+
+/// A revocable opaque login session. The browser receives the token once, in an
+/// HTTP-only cookie; only its SHA-256 hash is persisted, so a database read cannot
+/// reconstruct a usable session. `csrf_token_hash` is the rotated post-authentication
+/// CSRF secret for the same session.
+model AdminSession {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminUserId   String    @map("admin_user_id") @db.Uuid
+  tokenHash     String    @unique @map("token_hash") @db.Char(64)
+  csrfTokenHash String    @map("csrf_token_hash") @db.Char(64)
+  ipHash        String?   @map("ip_hash") @db.VarChar(128)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedReason String?   @map("revoked_reason") @db.VarChar(32)
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId], map: "admin_session_admin_user_idx")
+  @@index([expiresAt], map: "admin_session_expires_at_idx")
+  @@map("admin_session")
+}
+
+/// Short-lived pre-authentication CSRF token. The row binds the token to the exact
+/// trusted origin that requested it, expires quickly, and is marked consumed on use so
+/// a login token cannot be replayed.
+model AuthCsrfToken {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  origin     String    @db.VarChar(255)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+
+  @@index([expiresAt], map: "auth_csrf_token_expires_at_idx")
+  @@map("auth_csrf_token")
 }
 
 /// Member identity and contact data. `reference_id` is immutable and unique; the

@@ -20,6 +20,17 @@ describe('parseEnvironment', () => {
       logLevel: 'debug',
       databaseUrl: VALID_DATABASE_URL,
       directDatabaseUrl: null,
+      auth: {
+        sessionCookieName: 'hyssop_session',
+        csrfCookieName: 'hyssop_csrf',
+        cookieSameSite: 'lax',
+        cookieSecure: false,
+        sessionTtlHours: 8,
+        csrfTtlMinutes: 15,
+        argon2: { memoryKib: 19456, iterations: 2, parallelism: 1 },
+        loginRateLimitMaxAttempts: 5,
+        loginRateLimitWindowMinutes: 15,
+      },
     });
   });
 

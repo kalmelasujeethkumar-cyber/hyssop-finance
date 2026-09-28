@@ -1,8 +1,13 @@
 import { ArgumentsHost, Catch, HttpException, type ExceptionFilter } from '@nestjs/common';
-import type { ApiErrorBody } from '@hyssop/contracts';
+import { isApiErrorCode, type ApiErrorBody, type ApiFieldIssue } from '@hyssop/contracts';
 import type { Request, Response } from 'express';
 import { StructuredLogger } from '../logging/structured-logger';
-import { describeHttpException, INTERNAL_ERROR_MESSAGE } from './error-descriptions';
+import { ApiError } from './api-error';
+import {
+  describeHttpException,
+  INTERNAL_ERROR_MESSAGE,
+  isSafeClientMessage,
+} from './error-descriptions';
 
 /**
  * Converts every thrown value into the single error envelope defined by
@@ -20,7 +25,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const requestId = request.requestId ?? 'unknown';
 
     if (exception instanceof HttpException) {
-      const { status, code, message } = describeHttpException(exception);
+      const { status, code, message, fields, retryAfterSeconds } = this.describe(exception);
 
       this.logger.logRequest(
         status >= 500 ? 'error' : 'warn',
@@ -29,7 +34,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
         requestId,
       );
 
-      this.send(response, status, { error: { code, message, requestId } });
+      if (retryAfterSeconds !== undefined) {
+        response.setHeader('Retry-After', String(retryAfterSeconds));
+      }
+
+      this.send(response, status, {
+        error: { code, message, requestId, ...(fields === undefined ? {} : { fields }) },
+      });
       return;
     }
 
@@ -47,6 +58,42 @@ export class ApiExceptionFilter implements ExceptionFilter {
     this.send(response, 500, {
       error: { code: 'INTERNAL_ERROR', message: INTERNAL_ERROR_MESSAGE, requestId },
     });
+  }
+
+  /**
+   * Only the application's own `ApiError` may choose the client-facing code and
+   * message, and only when both are safe. Any other `HttpException` — including every
+   * framework exception, whose message can contain the requested path — falls back to
+   * the fixed per-status description.
+   */
+  private describe(exception: HttpException): {
+    status: number;
+    code: ReturnType<typeof describeHttpException>['code'];
+    message: string;
+    fields?: readonly ApiFieldIssue[];
+    retryAfterSeconds?: number;
+  } {
+    const fallback = describeHttpException(exception);
+
+    if (!(exception instanceof ApiError)) {
+      return fallback;
+    }
+
+    const body: unknown = exception.getResponse();
+    const message =
+      typeof body === 'object' && body !== null
+        ? (body as Record<string, unknown>)['message']
+        : undefined;
+
+    return {
+      status: fallback.status,
+      code: isApiErrorCode(exception.code) ? exception.code : fallback.code,
+      message: isSafeClientMessage(message) ? message : fallback.message,
+      ...(exception.fields === undefined ? {} : { fields: exception.fields }),
+      ...(exception.retryAfterSeconds === undefined
+        ? {}
+        : { retryAfterSeconds: exception.retryAfterSeconds }),
+    };
   }
 
   private send(response: Response, status: number, body: ApiErrorBody): void {

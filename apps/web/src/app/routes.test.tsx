@@ -1,26 +1,33 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import type { ApiClient } from '../lib/api-client';
 import { renderRoute } from '../test/render';
 import {
   clientFailingWith,
   clientResolvingWith,
   HEALTH_REPORT,
   serverFailure,
+  stubApiClient,
   transportFailure,
+  unauthenticated,
 } from '../test/stub-client';
 
 describe('foundation shell routing', () => {
-  it('renders the application identity and the foundation screen', () => {
+  it('renders the application identity and the foundation screen', async () => {
     renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
 
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Foundation' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('HYSSOP FINANCE')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Foundation' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'API connectivity' })).toBeInTheDocument();
   });
 
-  it('exposes a skip link and a main landmark for keyboard and screen-reader use', () => {
+  it('exposes a skip link and a main landmark for keyboard and screen-reader use', async () => {
     renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+
+    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
     expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute(
       'href',
@@ -29,8 +36,10 @@ describe('foundation shell routing', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
   });
 
-  it('states that no financial data exists instead of showing placeholder figures', () => {
+  it('states that no financial data exists instead of showing placeholder figures', async () => {
     renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+
+    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
     expect(
       screen.getByText(/No member, income, or expense data is stored or displayed yet\./),
@@ -44,13 +53,24 @@ describe('foundation shell routing', () => {
 
     renderRoute({ path: '/no-such-screen', client: clientResolvingWith(HEALTH_REPORT) });
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Page not found' }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Back to foundation' }));
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Foundation' })).toBeInTheDocument();
     });
+  });
+
+  it('sends an unauthenticated visitor from any product address to the sign-in screen', async () => {
+    renderRoute({ path: '/no-such-screen', client: stubApiClient({ session: unauthenticated }) });
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Page not found' }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -69,16 +89,19 @@ describe('connectivity status', () => {
   it('shows the unavailable state and a working retry control when the API is unreachable', async () => {
     const user = userEvent.setup();
     let attempt = 0;
-    const client = {
+    const base = stubApiClient();
+    const client: ApiClient = {
       get: <TData,>(path: string): Promise<TData> => {
         if (path !== '/health') {
-          throw new Error(`The stub client was called with an unexpected path: ${path}`);
+          return base.get<TData>(path);
         }
         attempt += 1;
         return attempt === 1
           ? Promise.reject(transportFailure)
           : Promise.resolve(HEALTH_REPORT as TData);
       },
+      post: <TData,>(path: string, body?: unknown, options?: { csrfToken?: string }) =>
+        base.post<TData>(path, body, options),
     };
 
     renderRoute({ client });

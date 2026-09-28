@@ -17,6 +17,7 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { UNPROVISIONED_PASSWORD_HASH } from '@hyssop/contracts';
 import {
   businessDateInMonth,
   businessDateFromInstant,
@@ -118,15 +119,28 @@ function readAsOfDate(): Date {
   return parseBusinessDate(configured);
 }
 
+/**
+ * Creates or reuses the single Admin row that owns the demo data.
+ *
+ * Authority: `docs/05-DATABASE-SPEC.md` ("Seeding never provisions a credential. The
+ * Admin bootstrap … is the only supported way to provision the password") and
+ * `docs/13-DEMO-DATA-SPEC.md`. The row is resolved by its unique identifier, so a rerun
+ * is idempotent, and it is created with the unusable-credential sentinel: the fictional
+ * data needs an actor, never a password. `npm run admin:bootstrap` replaces the sentinel
+ * with a real Argon2id hash.
+ */
 async function ensureAdminUser(): Promise<string> {
-  const displayName = 'Demo Admin';
-  const existing = await prisma.adminUser.findFirst({ where: { displayName } });
+  const identifier = 'admin';
+  const existing = await prisma.adminUser.findUnique({ where: { identifier } });
 
   if (existing !== null) {
     return existing.id;
   }
 
-  const created = await prisma.adminUser.create({ data: { displayName } });
+  const created = await prisma.adminUser.create({
+    data: { identifier, displayName: 'Demo Admin', passwordHash: UNPROVISIONED_PASSWORD_HASH },
+  });
+
   return created.id;
 }
 
