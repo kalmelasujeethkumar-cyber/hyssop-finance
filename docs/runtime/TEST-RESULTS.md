@@ -9,7 +9,7 @@
 
 ## Current status
 
-**The Phase 03 authentication quality gate passed on 2026-09-28: `npm run verify` exited `0` and `npm run test:e2e` reported `10 passed`. Phase 02 remains closed with commit `84b5687189d58755438b13f0ea97cd82172958cf` pushed to `origin/main`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
+**The Phase 03 authentication quality gate passed on 2026-09-28 and its Git gate is closed: commit `ab7847037120b3deeb519d053c11d4d09afc3746` is pushed to `origin/main` and the remote hash matches. `npm run verify` exited `0` and `npm run test:e2e` reported `10 passed`. Phase 02 remains closed with commit `84b5687189d58755438b13f0ea97cd82172958cf`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
 
 Phase 03 added the first real authenticated behavior: Admin bootstrap, Argon2id password verification, opaque server-side sessions with real revocation, pre-authentication CSRF, login rate limiting, a sign-in screen, a protected product area, and browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
 
@@ -37,7 +37,8 @@ Environment assumptions: unchanged from Phase 02 (Windows, Node `22.19.0`, npm `
 | Storage evidence | Pass | The browser test asserts `localStorage.length` and `sessionStorage.length` are both `0` after sign-in, that `hyssop_session` is `httpOnly`, and that `hyssop_csrf` is not |
 | Rate-limit evidence | Pass | `auth-http.db-spec.ts` runs a dedicated instance with the documented `5` attempts and asserts the sixth attempt returns `RATE_LIMITED` with `Retry-After`; the shared database-suite environment uses `100` so unrelated suites are not self-blocked |
 | Secret and staged-file review | Pass | A credential-pattern scan over all 79 changed and added files matched no Argon2 hash, JWT, private key, token prefix, or literal password. `.env` is ignored and untracked, only `.env.example` is tracked with every value commented out, and no build output, dependency, Playwright report, or local database artifact is staged |
-| Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit; Phase 03 continues to own its existing authentication requirements |
+| Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit. Re-verified mechanically after the implementation: `docs/01-REQUIREMENTS.md` defines 119 unique `REQ-*` identifiers, the matrix maps all 119 with `0` unmapped, and the 22 `TEST-*` identifiers in the test-plan coverage table are referenced by the matrix with `0` missing in either direction. Phase 03 continues to own its existing authentication requirements |
+| Git gate | Pass | 83 intended files committed as `ab7847037120b3deeb519d053c11d4d09afc3746` and pushed to `origin/main`; `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash after a fresh `git fetch` |
 
 ## Phase 03 defects found and fixed
 

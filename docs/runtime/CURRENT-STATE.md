@@ -17,11 +17,11 @@
 
 - Current stage: **PHASE 03 — AUTH**
 - Current phase: `PHASE-03-AUTH`
-- Status: **PHASE 03 QUALITY GATE PASSED; GIT GATE IN PROGRESS**
-- Next gate: commit the Phase 03 implementation, push it to `origin/main`, verify the remote hash, and record that evidence
-- Phase 04: **NOT STARTED**; it must not begin before the Phase 03 Git gate closes
-- Application implementation: **PHASE 01, PHASE 02, AND PHASE 03 IMPLEMENTED** (foundation, persistence, and authentication)
-- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 and Phase 02 gates closed with recorded evidence; Phase 03 evidence is written and awaits the Git gate
+- Status: **PHASE 03 QUALITY GATE PASSED; GIT GATE CLOSED AWAITING EXTERNAL REVIEW**
+- Next gate: external review of the Phase 03 checkpoint
+- Phase 04: **NOT STARTED**; it must not begin before the Phase 03 checkpoint is approved
+- Application implementation: **PHASE 01, PHASE 02, AND PHASE 03 COMPLETE** (foundation, persistence, and authentication)
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01, Phase 02, and Phase 03 gates closed with recorded evidence
 - Database migrations: **3 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`, with `npm run db:drift` reporting no difference
 - External services: **NOT CONFIGURED**
 
@@ -39,7 +39,7 @@ Phase 03 is implemented and has passed its quality gate. It owns the authenticat
 
 ## Next planned step
 
-Close the Phase 03 Git gate: commit the intended files, push to `origin/main`, verify that the remote hash matches, and record the verified hash in `docs/runtime/PHASE-HISTORY.md` and `docs/runtime/TEST-RESULTS.md` as an evidence-only commit. Then stop for review; `PHASE-04-FINANCIAL` requires explicit approval before any work starts.
+The Phase 03 Git gate is closed: commit `ab7847037120b3deeb519d053c11d4d09afc3746` was pushed to `origin/main` and the remote hash matches. Phase 03 is stopped here for review; `PHASE-04-FINANCIAL` requires explicit approval before any work starts.
 
 ## Blockers
 
