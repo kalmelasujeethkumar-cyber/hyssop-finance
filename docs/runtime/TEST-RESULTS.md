@@ -9,7 +9,7 @@
 
 ## Current status
 
-**The Phase 04 members quality gate passed on 2026-09-28 and its Git gate is closed: the Phase 04 commit is pushed to `origin/main` and the remote hash matches (see `PHASE-HISTORY.md`). `npm run verify` exited `0` and `npm run test:e2e` reported `16 passed`. Phase 03 remains closed with commit `ab7847037120b3deeb519d053c11d4d09afc3746`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
+**The Phase 04 members quality gate passed on 2026-09-28 and its Git gate is closed: commit `b1477379dee465c1129bb7a32e22a4c713e4d4ea` is pushed to `origin/main` and the remote hash matches. `npm run verify` exited `0` and `npm run test:e2e` reported `16 passed`. Phase 03 remains closed with commit `ab7847037120b3deeb519d053c11d4d09afc3746`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
 
 Phase 04 implemented the Members domain: member create/read/update, `HY-MEM-0001` reference allocation, name/phone/notes validation, search, sorting, pagination, contribution periods with an expected amount, ledger-derived received/remaining/status projections, and the Members list and detail screens with browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
 

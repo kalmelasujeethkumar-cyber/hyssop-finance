@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `IMPLEMENTED, QUALITY GATE PASSED` on 2026-09-28; committed and pushed to `origin/main` (verified hash in `PHASE-HISTORY.md`); awaiting external review.
+- Status: `IMPLEMENTED, QUALITY GATE PASSED` on 2026-09-28; committed at `b1477379dee465c1129bb7a32e22a4c713e4d4ea` and pushed to `origin/main`; awaiting external review.
 - Preconditions: Phases 01–03 complete; no real personal data.
 - Handoff rule: “CRUD” in this phase means create, read, and update; financial history is never deleted.
 
