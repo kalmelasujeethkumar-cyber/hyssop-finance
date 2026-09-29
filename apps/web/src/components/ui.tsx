@@ -1,5 +1,5 @@
 import { Children, cloneElement, isValidElement, type ReactNode } from 'react';
-import type { ContributionStatus } from '@hyssop/contracts';
+import type { ContributionStatus, TransactionStatus } from '@hyssop/contracts';
 
 /**
  * Small shared presentational pieces.
@@ -173,6 +173,30 @@ function labelForStatus(status: ContributionStatus): string {
   }
 
   return status === 'PARTIALLY PAID' ? 'Partially paid' : 'Not paid';
+}
+
+const TRANSACTION_STATUS_CLASS: Record<TransactionStatus, string> = {
+  ACTIVE: 'border-success-700 bg-success-100 text-success-700',
+  VOIDED: 'border-border-strong bg-surface-subtle text-text-secondary',
+};
+
+/**
+ * The transaction status.
+ *
+ * `REQ-FIN-016` to `REQ-FIN-020` make void a state rather than a deletion, so a voided record is
+ * still shown in every list and on its detail screen. The word is always spelled out next to
+ * the colour, because a struck-through or greyed row is not something a screen reader can
+ * announce and colour alone would leave a voided amount looking countable.
+ */
+export function TransactionStatusBadge({ status }: { readonly status: TransactionStatus }) {
+  return (
+    <span
+      data-status={status}
+      className={`inline-block rounded-full border px-2 py-0.5 text-supporting font-semibold ${TRANSACTION_STATUS_CLASS[status]}`}
+    >
+      {status === 'ACTIVE' ? 'Active' : 'Voided'}
+    </span>
+  );
 }
 
 export function PageHeader({

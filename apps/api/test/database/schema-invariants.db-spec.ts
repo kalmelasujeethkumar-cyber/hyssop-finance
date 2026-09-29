@@ -7,6 +7,7 @@
  */
 
 import { Prisma } from '@prisma/client';
+import { INITIAL_APP_SETTING_VALUES } from '../../src/database/settings/app-setting.validation';
 import { createHarness, testAdminData, type TestHarness } from './support/test-database';
 
 jest.setTimeout(120_000);
@@ -644,6 +645,33 @@ describe('database invariants', () => {
   });
 
   describe('settings invariants (REQ-SETTINGS-001)', () => {
+    it('carries the documented initial key set so income can be recorded without a seed', async () => {
+      // The application deliberately refuses to guess a missing setting, so an environment
+      // whose `app_setting` table is empty reports a server fault instead of recording
+      // income. `beforeEach` truncates the table, which is exactly the situation that must
+      // be impossible, and this asserts both halves: the documented key set is present, and
+      // the values match the migration that owns them.
+      const stored = await harness.runtime.appSetting.findMany({ orderBy: { key: 'asc' } });
+
+      expect(stored.map((setting) => ({ key: setting.key, value: setting.value }))).toStrictEqual(
+        Object.entries(INITIAL_APP_SETTING_VALUES)
+          .map(([key, value]) => ({ key, value }))
+          .sort((left, right) => left.key.localeCompare(right.key)),
+      );
+
+      // A member contribution resolves the expected amount from the stored paise count, so
+      // the value is read back through the same repository the service uses rather than
+      // compared as a raw string only.
+      await expect(
+        harness.settings.findOne('DEFAULT_MONTHLY_CONTRIBUTION_PAISE'),
+      ).resolves.toMatchObject({ value: '50000' });
+      await expect(harness.settings.enabledPaymentMethods()).resolves.toStrictEqual([
+        'CASH',
+        'UPI',
+        'BANK_TRANSFER',
+      ]);
+    });
+
     it('refuses an invalid setting value at the database level', async () => {
       await expect(
         harness.runtime.appSetting.create({ data: { key: 'CURRENCY', value: 'USD' } }),

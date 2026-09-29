@@ -3,10 +3,13 @@ import { RequireSession } from './auth/RequireSession';
 import { RouteErrorPage } from './errors/RouteErrorPage';
 import { AppLayout } from './layout/AppLayout';
 import { FoundationPage } from '../pages/FoundationPage';
+import { IncomeDetailPage } from '../pages/IncomeDetailPage';
+import { IncomePage } from '../pages/IncomePage';
 import { LoginPage } from '../pages/LoginPage';
 import { MemberDetailPage } from '../pages/MemberDetailPage';
 import { MembersPage } from '../pages/MembersPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { TransactionReceiptPage } from '../pages/TransactionReceiptPage';
 
 /**
  * The single route definition used by the browser and by the UI tests, so both
@@ -36,6 +39,9 @@ export function buildRoutes(): RouteObject[] {
         { index: true, element: <FoundationPage /> },
         { path: 'members', element: <MembersPage /> },
         { path: 'members/:memberId', element: <MemberDetailPage /> },
+        { path: 'income', element: <IncomePage /> },
+        { path: 'income/:transactionId', element: <IncomeDetailPage /> },
+        { path: 'transactions/:transactionId/receipt', element: <TransactionReceiptPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],
     },

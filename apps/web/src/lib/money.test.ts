@@ -6,6 +6,7 @@ import {
   formatInrBare,
   formatIstTimestamp,
   formatMonthYear,
+  formatPaiseAsInr,
   groupIndianDigits,
   parseDecimalAmount,
 } from './money';
@@ -85,6 +86,39 @@ describe('formatInr', () => {
   it('omits the symbol on request, for a column with its own header', () => {
     expect(formatInrBare('1250000.00')).toBe('12,50,000.00');
     expect(formatInrBare('bad')).toBe('—');
+  });
+});
+
+describe('formatPaiseAsInr', () => {
+  it('shows a stored paise count as a grouped rupee amount', () => {
+    // The audit snapshot is the one place the browser receives money as paise rather than as a
+    // decimal string, and `docs/03-UI-UX-RULES.md` still applies to it: a raw paise count must
+    // never be shown as a financial value.
+    expect(formatPaiseAsInr('50000')).toBe('₹500.00');
+    expect(formatPaiseAsInr('125000000')).toBe('₹12,50,000.00');
+    expect(formatPaiseAsInr('0')).toBe('₹0.00');
+  });
+
+  it('keeps both paise digits for a count below one rupee', () => {
+    expect(formatPaiseAsInr('5')).toBe('₹0.05');
+    expect(formatPaiseAsInr('50')).toBe('₹0.50');
+    expect(formatPaiseAsInr('15050')).toBe('₹150.50');
+  });
+
+  it('never rounds a count beyond the safe integer range', () => {
+    // A float route would lose the low digits of this value, which is the one thing a financial
+    // screen must not do. Sixteen paise digits is well past `Number.MAX_SAFE_INTEGER`; removing
+    // the two fraction digits leaves fourteen grouped as one leading digit, six pairs, then the
+    // final three, so the value is rendered exactly rather than approximately.
+    expect(formatPaiseAsInr('9999999999999999')).toBe('₹9,99,99,99,99,99,999.99');
+  });
+
+  it('leaves a value that is not a paise count alone rather than guessing', () => {
+    // Formatting an unrecognised value into something plausible but wrong is worse than showing
+    // what the API actually sent.
+    expect(formatPaiseAsInr('-500')).toBe('-500');
+    expect(formatPaiseAsInr('12.5')).toBe('12.5');
+    expect(formatPaiseAsInr('')).toBe('');
   });
 });
 

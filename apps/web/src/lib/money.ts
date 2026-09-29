@@ -44,6 +44,33 @@ export function formatInrBare(amount: string): string {
 }
 
 /**
+ * Formats a stored paise count as an exact INR amount.
+ *
+ * The audit snapshot is the one place the browser receives money as a paise integer rather than
+ * a decimal string, because it is a record of what the database row held. `docs/03-UI-UX-RULES.md`
+ * still applies to it: "Raw paise or unformatted numbers must not be shown as financial values",
+ * so the history line must read `₹800.00` and not `80000`.
+ *
+ * The division by 100 is done by moving the decimal point two digits to the left as text, never
+ * with `/ 100`, so a paise count beyond `Number.MAX_SAFE_INTEGER` cannot be rounded into a
+ * different amount on the way to the screen. A value that is not a plain digit string is returned
+ * unchanged rather than formatted into something plausible but wrong.
+ */
+export function formatPaiseAsInr(paise: string): string {
+  const trimmed = paise.trim();
+
+  if (!/^\d+$/.test(trimmed)) {
+    return paise;
+  }
+
+  // `padStart(3)` makes the two fraction digits exist for a count below one rupee, so `50` reads
+  // `₹0.50` rather than losing a place.
+  const padded = trimmed.padStart(3, '0');
+
+  return `${RUPEE}${groupIndianDigits(padded.slice(0, -2))}.${padded.slice(-2)}`;
+}
+
+/**
  * Indian digit grouping for a non-negative integer string.
  *
  * Handles a leading zero string without producing an empty group, and leaves a string

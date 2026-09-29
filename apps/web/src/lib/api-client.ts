@@ -1,5 +1,6 @@
 import {
   CSRF_TOKEN_HEADER,
+  IDEMPOTENCY_KEY_HEADER,
   isApiErrorBody,
   isApiListEnvelope,
   isApiSuccessEnvelope,
@@ -16,6 +17,15 @@ export interface ApiRequestOptions {
   readonly csrfToken?: string;
   /** Sent as `If-Match` for an optimistic-locking update. */
   readonly ifMatch?: string;
+  /**
+   * Sent as `Idempotency-Key` for every create and mutation.
+   *
+   * `docs/06-API-SPEC.md` requires one, and a financial write without it is the failure this
+   * project cares about most: a double submit or a retry after a timeout would record the same
+   * contribution twice. The key is generated once per *user intent* and reused across retries
+   * of that intent, which is the only way a retry is recognised as the same operation.
+   */
+  readonly idempotencyKey?: string;
 }
 
 export interface ApiClient {
@@ -105,6 +115,9 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     }
     if (options.ifMatch !== undefined) {
       headers['If-Match'] = options.ifMatch;
+    }
+    if (options.idempotencyKey !== undefined) {
+      headers[IDEMPOTENCY_KEY_HEADER] = options.idempotencyKey;
     }
 
     let response: Response;

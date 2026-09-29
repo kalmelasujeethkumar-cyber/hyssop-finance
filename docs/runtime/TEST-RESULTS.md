@@ -9,11 +9,54 @@
 
 ## Current status
 
-**The Phase 04 members quality gate passed on 2026-09-28 and its Git gate is closed: commit `b1477379dee465c1129bb7a32e22a4c713e4d4ea` is pushed to `origin/main` and the remote hash matches. `npm run verify` exited `0` and `npm run test:e2e` reported `16 passed`. Phase 03 remains closed with commit `ab7847037120b3deeb519d053c11d4d09afc3746`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
+**The Phase 05 income quality gate passed on 2026-09-29: every mandatory command passed and `npm run test:e2e` reported `25 passed`. The Phase 05 Git gate is recorded in `PHASE-HISTORY.md`. Phase 04 remains closed with commit `b1477379dee465c1129bb7a32e22a4c713e4d4ea`, and Phase 03 with `ab7847037120b3deeb519d053c11d4d09afc3746`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
 
-**The whole Phase 04 gate was independently re-executed on 2026-09-29 after an accidental editor close, and every command passed again against the same committed tree; see "Phase 04 re-verification after the accidental session close" below. Phase 05 has not started.**
+**The Phase 04 gate was independently re-executed on 2026-09-29 after an accidental editor close, and every command passed again against the same committed tree; see "Phase 04 re-verification after the accidental session close" below.**
 
 Phase 04 implemented the Members domain: member create/read/update, `HY-MEM-0001` reference allocation, name/phone/notes validation, search, sorting, pagination, contribution periods with an expected amount, ledger-derived received/remaining/status projections, and the Members list and detail screens with browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
+
+## Phase 05 income gate
+
+Phase 05 owns `REQ-INCOME-001`-`REQ-INCOME-006`, `REQ-DOC-010`-`REQ-DOC-014`, `REQ-FIN-015`-`REQ-FIN-020`, `REQ-FIN-022`, and `REQ-FIN-024`, and the acceptance identifiers `TEST-INCOME-001`, `TEST-FIN-002`, `TEST-FIN-003`, `TEST-DOC-001`, and `TEST-E2E-001`. All evidence below is from the final run on 2026-09-29 after the five Phase 05 defects in the table beneath this gate were fixed.
+
+Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, project-local PostgreSQL `16` on loopback port `55432`, `hyssop_finance_dev` and `hyssop_finance_test`). The project-local cluster had to be started detached from the interactive shell to stay up (`ISSUE-024`). The Playwright run provisions its own Admin with a random password generated in memory, applies migrations to the `_test` database, and never reads or prints a real credential. `hyssop_finance_test` is not reset between runs, so the browser suite uses unique descriptions and member names each run.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run db:migrate` | Pass | Five recorded migrations applied to both databases, including the new `20260929210000_app_setting_initial_keys` forward migration that seeds the four required `app_setting` rows, followed by `npm run db:grant` |
+| `npm run lint` | Pass | `eslint .` reported no problems |
+| `npm run format:check` | Pass | `All matched files use Prettier code style!` after one `npx prettier --write` pass over the single file that had drifted |
+| `npm run typecheck` | Pass | Contracts build, `apps/api` and `apps/web` `tsc --noEmit` all clean, including the Playwright specs under `apps/web/e2e` |
+| `npm run typecheck:scripts` | Pass | `tsc -p tsconfig.scripts.json` clean |
+| `npm run test:api` | Pass | 24 suites, 334 tests, including the 93-test `income-http.e2e-spec.ts` contract suite and the unchanged Phase 02-04 regression suites |
+| `npm run test:web` | Pass | 10 files, 235 tests, including the income form, income request body, transaction helpers, and the new cache-invalidation guard |
+| `npm run test:db` | Pass | 7 suites, 117 tests against real PostgreSQL, including the new `schema-invariants.db-spec.ts` guard and the unchanged Phase 02-04 financial suites |
+| `npm run build` | Pass | Contracts declaration build, `nest build` for `apps/api`, and `vite build` for `apps/web` (`✓ built in 346ms`) |
+| `npm run test:e2e` | Pass after three defect fixes | 25 Playwright tests (`25 passed (25.0s)`) against the built bundle served by `vite preview`, with a real API process and a real PostgreSQL database |
+| Member-contribution browser evidence | Pass | The journey records a real member contribution through the form, reads the API-allocated `HY-INC-*` reference and the derived `Contribution month`, follows `Open member`, and asserts the month row inside the `Monthly contributions` region as expected `500.00`, received `500.00`, remaining `0.00`, status `^Paid$`, plus the matching `Contribution history` row for the same reference |
+| Cache-coherence evidence | Pass | The request log of the passing run shows `GET /api/v1/members/:id` immediately after `POST /api/v1/income`, which is the refetch that `ISSUE-029` was missing. Three unit tests over a real `QueryClient` assert the invalidated keys, and the member-detail test was confirmed to fail when the invalidation line is removed |
+| Idempotency, concurrency, and audit evidence | Pass | The 93-test contract suite asserts replay of a repeated `Idempotency-Key`, a `409` on a reused key with a different body, `If-Match` revision conflicts, and a complete `TRANSACTION_CREATED` / `TRANSACTION_UPDATED` / `TRANSACTION_VOIDED` audit trail with stored `before` and `after` values |
+| Anonymous-privacy evidence | Pass | An anonymous donation is stored with no member, description, or notes anywhere, the member control is absent rather than disabled, and the receipt reports `Not recorded (anonymous)` |
+| Secret and staged-file review | Pass | A credential-pattern scan over all changed and added files matched no Argon2 hash, JWT, private key, token prefix, or literal password. `.env` is ignored and untracked, only `.env.example` is tracked, and no build output, dependency, Playwright report, trace, or local database artifact is staged |
+| Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit |
+| Git gate | Pending at the time this table was written | The verified commit hash and push result are recorded in `PHASE-HISTORY.md` by the evidence commit, which does not change the implementation verdict |
+
+## Phase 05 defects found and fixed
+
+| Defect | How it was found | Fix | Regression evidence |
+|---|---|---|---|
+| `memberId` was missing from the transaction correction allow-list, so a computed member change was silently discarded (`ISSUE-026`, `DEC-074`) | The re-authored `income-http.e2e-spec.ts` "detaches a member from a named offering" test kept the member attached | Added `memberId` to `CorrectableTransactionFields`, to `CORRECTABLE_FIELDS`, and to the nullable-passthrough branch of `toCorrectableData` | Two HTTP tests assert the stored row and the audit `before`/`after` member pair, not only the response body; `npm run test:api` 334/334 |
+| The income form never sent the `contributionPeriod` the API requires, so a Member Contribution could not be recorded at all (`ISSUE-027`, `DEC-076`) | The Phase 05 browser journey; the API refused the write with `400 A member contribution requires a contribution month` | Derived the month from the validated business date and sent it for a member contribution only, leaving it off the three types the API forbids one for | `income-api.test.ts` asserts the corrected body, the per-type omission, and the month derivation, and the browser journey records a real member contribution end to end |
+| The disposable test database's `reset()` truncated the migration-seeded `app_setting` rows, so a browser run after a database-test run failed with `App setting was not found.` (`ISSUE-028`, `DEC-077`) | A full-suite Playwright run that followed a passing `npm run test:db` | Added `INITIAL_APP_SETTING_VALUES` and made `reset()` restore the set with `createMany({ skipDuplicates: true })` | `schema-invariants.db-spec.ts` asserts the keys exist after a reset and are readable through the repository; `npm run test:db` 117/117 and `npm run test:e2e` 25/25 in sequence |
+| A member contribution was stored correctly but the member detail's derived status was never invalidated, so the month the Admin had just paid in full kept reading `Not paid` (`ISSUE-029`, `DEC-078`) | The same browser journey, after PostgreSQL proved the stored row, period link, and `50000` paise were all correct | Added one `invalidateTransactionDependents` helper in the shared transaction layer and called it from income create, correction, and void | Three unit tests over a real `QueryClient`, the member-detail one confirmed to fail without the line; the browser journey now passes and the request log shows the member refetch |
+| The member-contribution journey's row locator matched two tables and its expected status string did not exist (`ISSUE-030`) | A Playwright strict-mode violation once the product defect above was fixed | Scoped the row to the `Monthly contributions` region and asserted the four cells individually, including the exact `^Paid$` status | `npm run test:e2e` 25/25; no assertion was weakened and the interface was not changed to satisfy the test |
+
+## Phase 05 non-blocking advisories
+
+| Advisory | Assessment |
+|---|---|
+| The local PostgreSQL cluster still requires a detached launch to stay up on this machine (`ISSUE-024`) | Environmental, not a project defect, and it reproduced identically inside and outside the OneDrive-synced tree. Recorded as a run instruction rather than worked around in project code |
+| A bare `npx playwright test` skips the `pretest:e2e` rebuild and serves the previous `dist/` (`ISSUE-031`) | A diagnostic-invocation trap, not a product fault. The gate is already self-protecting, so no project change was made; acceptance evidence is taken only from `npm run test:e2e`, which runs its own build |
 
 ## Phase 04 members gate
 

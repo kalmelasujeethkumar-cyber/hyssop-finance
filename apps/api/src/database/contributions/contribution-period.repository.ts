@@ -161,6 +161,57 @@ export class ContributionPeriodRepository {
     return period;
   }
 
+  /**
+   * Resolves a member-month, opening the period at the configured default when it is new.
+   *
+   * A member contribution must reference a period (`REQ-CONTRIB-001`), but the Admin
+   * recording a payment should not have to open the period first as a separate step. This
+   * runs inside the caller's transaction so the period and the contribution that needs it
+   * commit together: a rolled-back payment cannot leave behind a period that records an
+   * expectation nobody entered.
+   *
+   * The expected amount comes from `DEFAULT_MONTHLY_CONTRIBUTION_PAISE` and is only used
+   * when the period does not exist. An existing period keeps its own expected amount, so
+   * recording a payment can never silently reset what the Admin expects the member to give
+   * (`REQ-CONTRIB-002`).
+   */
+  public async findOrCreateWithinTransaction(
+    tx: Prisma.TransactionClient,
+    input: ContributionPeriodInput,
+    actorAdminId: string,
+  ): Promise<ContributionPeriod> {
+    validatePeriodBounds(input.year, input.month);
+    const expectedPaise = validatedExpectedPaise(input.expectedPaise);
+
+    const existing = await tx.contributionPeriod.findUnique({
+      where: {
+        memberId_year_month: { memberId: input.memberId, year: input.year, month: input.month },
+      },
+    });
+
+    if (existing !== null) {
+      return existing;
+    }
+
+    const created = await upsertContributionPeriod(tx, input, expectedPaise);
+
+    await this.audit.record(tx, {
+      action: 'CONTRIBUTION_PERIOD_SET',
+      entityType: AUDIT_ENTITY_TYPES.contributionPeriod,
+      entityId: created.id,
+      actorAdminId,
+      before: null,
+      after: {
+        memberId: created.memberId,
+        year: created.year,
+        month: created.month,
+        expectedPaise: created.expectedPaise.toString(),
+      },
+    });
+
+    return created;
+  }
+
   public async listForMember(memberId: string): Promise<readonly ContributionPeriod[]> {
     return this.prisma.contributionPeriod.findMany({
       where: { memberId },

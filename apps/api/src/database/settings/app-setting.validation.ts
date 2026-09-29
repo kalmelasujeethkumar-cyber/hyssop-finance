@@ -17,6 +17,25 @@ export type PaymentMethodName = (typeof PAYMENT_METHOD_NAMES)[number];
 export const FIXED_CURRENCY = 'INR';
 export const FIXED_BUSINESS_TIMEZONE = 'Asia/Kolkata';
 
+/**
+ * The documented initial value of every required setting.
+ *
+ * `docs/05-DATABASE-SPEC.md` fixes both the key set and the locked values, and the forward
+ * migration `20260929210000_app_setting_initial_keys` writes exactly these rows so that an
+ * environment which was migrated but not seeded can still record income. Anything that empties
+ * `app_setting` must restore them: the application deliberately treats a missing row as a
+ * server fault rather than falling back to a hard-coded amount, because a silent fallback would
+ * let two environments disagree about what a member owes. The real-PostgreSQL suite's
+ * truncate-and-reset helper is exactly such a place, and the `REQ-SETTINGS-*` invariant tests
+ * prove the migrated rows and this constant still agree.
+ */
+export const INITIAL_APP_SETTING_VALUES: Readonly<Record<AppSettingKey, string>> = {
+  DEFAULT_MONTHLY_CONTRIBUTION_PAISE: '50000',
+  ENABLED_PAYMENT_METHODS: PAYMENT_METHOD_NAMES.join(','),
+  CURRENCY: FIXED_CURRENCY,
+  BUSINESS_TIMEZONE: FIXED_BUSINESS_TIMEZONE,
+};
+
 export function isAppSettingKey(value: string): value is AppSettingKey {
   return (APP_SETTING_KEYS as readonly string[]).includes(value);
 }

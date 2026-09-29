@@ -27,3 +27,17 @@ export const CurrentSession = createParamDecorator(
     return request.session;
   },
 );
+
+/**
+ * Injects the per-request correlation ID assigned by `RequestContextMiddleware`.
+ *
+ * Financial audit events carry it, so a recorded change can be tied back to the exact
+ * request that made it — including the response the Admin saw. It is already present on
+ * every response, so reading it here adds no information the caller did not already have,
+ * and `null` is returned rather than throwing when the middleware has not run, because an
+ * absent correlation ID must not turn an audit write into a failed financial request.
+ */
+export const CurrentRequestId = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): string | null =>
+    context.switchToHttp().getRequest<Request & { requestId?: string }>().requestId ?? null,
+);

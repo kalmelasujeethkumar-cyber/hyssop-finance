@@ -24,6 +24,14 @@ import { referenceScopeForTransactionType } from '../references/reference-format
  * identity and history fields (`id`, `reference_id`, `created_at`, `created_by_admin_id`)
  * are immutable and enforced by the `financial_transaction_guard_update` trigger, so
  * they are not accepted here either.
+ *
+ * `memberId` is correctable, and `null` is a real value rather than "field omitted":
+ * `TransactionsService` permits detaching a member from a named offering or donation so a
+ * mis-keyed record can be corrected without voiding it. It must stay in `CORRECTABLE_FIELDS`
+ * — when it was absent, a member-only correction was rejected as "changes nothing" and a
+ * member correction sent alongside an amount was silently dropped, so the API answered 200
+ * while the stored record was unchanged. A correctable field the service computes but this
+ * allow-list omits is a silent data-loss defect, not a harmless omission.
  */
 export interface CorrectableTransactionFields {
   readonly amountPaise?: bigint;
@@ -32,6 +40,7 @@ export interface CorrectableTransactionFields {
   readonly occurredAt?: Date;
   readonly description?: string | null;
   readonly notes?: string | null;
+  readonly memberId?: string | null;
   readonly categoryId?: string | null;
 }
 
@@ -67,6 +76,7 @@ const CORRECTABLE_FIELDS: readonly (keyof CorrectableTransactionFields)[] = [
   'occurredAt',
   'description',
   'notes',
+  'memberId',
   'categoryId',
 ];
 
@@ -86,6 +96,62 @@ const CORRECTABLE_FIELDS: readonly (keyof CorrectableTransactionFields)[] = [
  *   * an edit preserves history, increments `revision`, and is written to
  *     `audit_event` with previous and new values.
  */
+/**
+ * The validated, indexed filter set for a transaction list.
+ *
+ * Every field is already narrowed by the DTO before it reaches here, so this layer can map
+ * each one to exactly one column or a bounded range. That is what keeps
+ * `docs/07-SECURITY-RULES.md`'s "filters are validated and cannot inject arbitrary query
+ * structure" true at the data layer as well as at the transport layer: a caller cannot
+ * pass an ordering, a relation traversal, or a column name through this interface.
+ */
+export interface TransactionQueryFilters {
+  readonly transactionType?: TransactionType;
+  readonly status?: 'ACTIVE' | 'VOIDED';
+  readonly paymentMethod?: PaymentMethod;
+  readonly incomeType?: IncomeType;
+  readonly categoryId?: string;
+  readonly memberId?: string;
+  /** Exact reference match on `HY-INC-000001` / `HY-EXP-000001`. */
+  readonly referenceId?: string;
+  /** Inclusive `business_date` lower bound, as UTC midnight. */
+  readonly from?: Date;
+  /** Inclusive `business_date` upper bound, as UTC midnight. */
+  readonly to?: Date;
+  readonly minAmountPaise?: bigint;
+  readonly maxAmountPaise?: bigint;
+  /**
+   * Bounded free text over the reference, the description, and the named member or
+   * category, as `REQ-SEARCH-002` allows. It never reaches `notes`, which is how an
+   * anonymous donation's private note cannot be turned into a search result.
+   */
+  readonly search?: string;
+}
+
+export type TransactionSortField = 'businessDate' | 'amount' | 'referenceId' | 'createdAt';
+
+export type TransactionSortDirection = 'asc' | 'desc';
+
+/** A transaction row with every relation a list or detail view needs. */
+export type TransactionWithRelations = Prisma.FinancialTransactionGetPayload<{
+  include: typeof TRANSACTION_LIST_INCLUDE;
+}>;
+
+/**
+ * The single relation set used by every transaction read.
+ *
+ * Listing needs the member name, the category label, the period, and whether any document
+ * is attached. Selecting them in one place means the list, the detail, the receipt, and the
+ * audit view cannot disagree about what a transaction shows, which is the
+ * `docs/02-ARCHITECTURE.md` requirement for one canonical representation.
+ */
+const TRANSACTION_LIST_INCLUDE = {
+  member: { select: { id: true, referenceId: true, name: true } },
+  category: { select: { id: true, name: true, status: true } },
+  contributionPeriod: { select: { id: true, year: true, month: true } },
+  _count: { select: { documents: true } },
+} as const satisfies Prisma.FinancialTransactionInclude;
+
 @Injectable()
 export class TransactionRepository {
   public constructor(
@@ -98,29 +164,47 @@ export class TransactionRepository {
   public async create(
     input: CreateTransactionInput,
     context: TransactionCommandContext,
-  ): Promise<FinancialTransaction> {
+  ): Promise<TransactionWithRelations> {
+    return this.prisma.$transaction((tx) => this.createWithinTransaction(tx, input, context));
+  }
+
+  /**
+   * The same create, inside a transaction the caller already opened.
+   *
+   * Required by the idempotency contract in `docs/06-API-SPEC.md`: the stored response and
+   * the financial write must commit together or not at all, so a retry can never be recorded
+   * for a financial operation that rolled back, and a recorded retry can never point at a
+   * write that did not happen. Opening a second `prisma.$transaction` here would use a
+   * different connection and break exactly that guarantee, so the outer transaction is
+   * reused instead.
+   */
+  public async createWithinTransaction(
+    tx: Prisma.TransactionClient,
+    input: CreateTransactionInput,
+    context: TransactionCommandContext,
+  ): Promise<TransactionWithRelations> {
     const data = this.toCreateData(input, context.actorAdminId);
+    const referenceId = await this.references.allocate(
+      tx,
+      referenceScopeForTransactionType(data.transactionType),
+    );
 
-    return this.prisma.$transaction(async (tx) => {
-      const referenceId = await this.references.allocate(
-        tx,
-        referenceScopeForTransactionType(data.transactionType),
-      );
-
-      const created = await tx.financialTransaction.create({ data: { ...data, referenceId } });
-
-      await this.audit.record(tx, {
-        action: 'TRANSACTION_CREATED',
-        entityType: AUDIT_ENTITY_TYPES.transaction,
-        entityId: created.id,
-        entityReference: created.referenceId,
-        actorAdminId: context.actorAdminId,
-        requestId: context.requestId ?? null,
-        after: this.toAuditSnapshot(created),
-      });
-
-      return created;
+    const created = await tx.financialTransaction.create({
+      data: { ...data, referenceId },
+      include: TRANSACTION_LIST_INCLUDE,
     });
+
+    await this.audit.record(tx, {
+      action: 'TRANSACTION_CREATED',
+      entityType: AUDIT_ENTITY_TYPES.transaction,
+      entityId: created.id,
+      entityReference: created.referenceId,
+      actorAdminId: context.actorAdminId,
+      requestId: context.requestId ?? null,
+      after: this.toAuditSnapshot(created),
+    });
+
+    return created;
   }
 
   /**
@@ -131,7 +215,17 @@ export class TransactionRepository {
     id: string,
     input: CorrectTransactionInput,
     context: TransactionCommandContext,
-  ): Promise<FinancialTransaction> {
+  ): Promise<TransactionWithRelations> {
+    return this.prisma.$transaction((tx) => this.correctWithinTransaction(tx, id, input, context));
+  }
+
+  /** The same correction, inside a transaction the caller already opened. */
+  public async correctWithinTransaction(
+    tx: Prisma.TransactionClient,
+    id: string,
+    input: CorrectTransactionInput,
+    context: TransactionCommandContext,
+  ): Promise<TransactionWithRelations> {
     const changes = this.toCorrectableData(input);
     const changeCount = Object.keys(changes).length;
 
@@ -139,39 +233,38 @@ export class TransactionRepository {
       throw validationFailed('A correction must change at least one field.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const current = await tx.financialTransaction.findUnique({ where: { id } });
+    const current = await tx.financialTransaction.findUnique({ where: { id } });
 
-      if (current === null) {
-        throw notFound('Transaction', id);
-      }
+    if (current === null) {
+      throw notFound('Transaction', id);
+    }
 
-      if (current.status === 'VOIDED') {
-        throw conflict('A voided transaction cannot be edited.', { field: 'status' });
-      }
+    if (current.status === 'VOIDED') {
+      throw conflict('A voided transaction cannot be edited.', { field: 'status' });
+    }
 
-      if (current.revision !== input.expectedRevision) {
-        throw staleRevision('Transaction', input.expectedRevision, current.revision);
-      }
+    if (current.revision !== input.expectedRevision) {
+      throw staleRevision('Transaction', input.expectedRevision, current.revision);
+    }
 
-      const updated = await tx.financialTransaction.update({
-        where: { id, revision: input.expectedRevision },
-        data: { ...changes, revision: { increment: 1 }, updatedAt: new Date() },
-      });
-
-      await this.audit.record(tx, {
-        action: 'TRANSACTION_UPDATED',
-        entityType: AUDIT_ENTITY_TYPES.transaction,
-        entityId: updated.id,
-        entityReference: updated.referenceId,
-        actorAdminId: context.actorAdminId,
-        requestId: context.requestId ?? null,
-        before: this.toAuditSnapshot(current),
-        after: this.toAuditSnapshot(updated),
-      });
-
-      return updated;
+    const updated = await tx.financialTransaction.update({
+      where: { id, revision: input.expectedRevision },
+      data: { ...changes, revision: { increment: 1 }, updatedAt: new Date() },
+      include: TRANSACTION_LIST_INCLUDE,
     });
+
+    await this.audit.record(tx, {
+      action: 'TRANSACTION_UPDATED',
+      entityType: AUDIT_ENTITY_TYPES.transaction,
+      entityId: updated.id,
+      entityReference: updated.referenceId,
+      actorAdminId: context.actorAdminId,
+      requestId: context.requestId ?? null,
+      before: this.toAuditSnapshot(current),
+      after: this.toAuditSnapshot(updated),
+    });
+
+    return updated;
   }
 
   /**
@@ -186,57 +279,72 @@ export class TransactionRepository {
     id: string,
     reason: string,
     context: TransactionCommandContext,
-  ): Promise<FinancialTransaction> {
+  ): Promise<TransactionWithRelations> {
+    return this.prisma.$transaction((tx) => this.voidWithinTransaction(tx, id, reason, context));
+  }
+
+  /** The same void, inside a transaction the caller already opened. */
+  public async voidWithinTransaction(
+    tx: Prisma.TransactionClient,
+    id: string,
+    reason: string,
+    context: TransactionCommandContext,
+  ): Promise<TransactionWithRelations> {
     const voidReason = reason.trim();
 
     if (voidReason === '') {
       throw validationFailed('A void reason is required.', { field: 'reason' });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const current = await tx.financialTransaction.findUnique({ where: { id } });
+    const current = await tx.financialTransaction.findUnique({ where: { id } });
 
-      if (current === null) {
-        throw notFound('Transaction', id);
-      }
+    if (current === null) {
+      throw notFound('Transaction', id);
+    }
 
-      if (current.status === 'VOIDED') {
-        if (current.voidReason === voidReason) {
-          return current;
-        }
-
-        throw conflict('This transaction is already voided with a different reason.', {
-          field: 'reason',
+    if (current.status === 'VOIDED') {
+      if (current.voidReason === voidReason) {
+        // The same reason again is a no-op rather than a conflict, so a retried void is
+        // safe. A *different* reason is rejected below: silently re-voiding would overwrite
+        // the recorded reason and destroy the original explanation of the void.
+        return tx.financialTransaction.findUniqueOrThrow({
+          where: { id },
+          include: TRANSACTION_LIST_INCLUDE,
         });
       }
 
-      const voidedAt = new Date();
-      const updated = await tx.financialTransaction.update({
-        where: { id, revision: current.revision },
-        data: {
-          status: 'VOIDED',
-          voidedAt,
-          voidedByAdminId: context.actorAdminId,
-          voidReason,
-          revision: { increment: 1 },
-          updatedAt: voidedAt,
-        },
+      throw conflict('This transaction is already voided with a different reason.', {
+        field: 'reason',
       });
+    }
 
-      await this.audit.record(tx, {
-        action: 'TRANSACTION_VOIDED',
-        entityType: AUDIT_ENTITY_TYPES.transaction,
-        entityId: updated.id,
-        entityReference: updated.referenceId,
-        actorAdminId: context.actorAdminId,
-        requestId: context.requestId ?? null,
-        reason: voidReason,
-        before: this.toAuditSnapshot(current),
-        after: this.toAuditSnapshot(updated),
-      });
-
-      return updated;
+    const voidedAt = new Date();
+    const updated = await tx.financialTransaction.update({
+      where: { id, revision: current.revision },
+      data: {
+        status: 'VOIDED',
+        voidedAt,
+        voidedByAdminId: context.actorAdminId,
+        voidReason,
+        revision: { increment: 1 },
+        updatedAt: voidedAt,
+      },
+      include: TRANSACTION_LIST_INCLUDE,
     });
+
+    await this.audit.record(tx, {
+      action: 'TRANSACTION_VOIDED',
+      entityType: AUDIT_ENTITY_TYPES.transaction,
+      entityId: updated.id,
+      entityReference: updated.referenceId,
+      actorAdminId: context.actorAdminId,
+      requestId: context.requestId ?? null,
+      reason: voidReason,
+      before: this.toAuditSnapshot(current),
+      after: this.toAuditSnapshot(updated),
+    });
+
+    return updated;
   }
 
   public async findById(id: string): Promise<FinancialTransaction> {
@@ -247,6 +355,52 @@ export class TransactionRepository {
     }
 
     return transaction;
+  }
+
+  /** One transaction with its relations, for a detail, receipt, or audit view. */
+  public async findWithRelations(id: string): Promise<TransactionWithRelations> {
+    const transaction = await this.prisma.financialTransaction.findUnique({
+      where: { id },
+      include: TRANSACTION_LIST_INCLUDE,
+    });
+
+    if (transaction === null) {
+      throw notFound('Transaction', id);
+    }
+
+    return transaction;
+  }
+
+  /**
+   * A filtered, ordered, paged page of transactions.
+   *
+   * Ordering always ends with `referenceId`, which is unique, so the order is total: two
+   * rows with the same business date and amount still come back in a fixed sequence and a
+   * page boundary cannot show a row twice or drop one. `docs/06-API-SPEC.md` requires
+   * deterministic ordering and pagination, and without the tiebreaker a page could repeat or
+   * omit a row whenever the Admin sorted by a non-unique column.
+   */
+  public async list(
+    filters: TransactionQueryFilters,
+    page: {
+      readonly limit: number;
+      readonly offset: number;
+      readonly sort: TransactionSortField;
+      readonly direction: TransactionSortDirection;
+    },
+  ): Promise<readonly TransactionWithRelations[]> {
+    return this.prisma.financialTransaction.findMany({
+      where: toPrismaWhere(filters),
+      include: TRANSACTION_LIST_INCLUDE,
+      orderBy: [{ [page.sort]: page.direction }, { referenceId: page.direction }],
+      take: page.limit,
+      skip: page.offset,
+    });
+  }
+
+  /** The total number of rows matching the same filter, across all pages. */
+  public async countMatching(filters: TransactionQueryFilters): Promise<number> {
+    return this.prisma.financialTransaction.count({ where: toPrismaWhere(filters) });
   }
 
   public async findByReferenceId(referenceId: string): Promise<FinancialTransaction> {
@@ -380,7 +534,12 @@ export class TransactionRepository {
         continue;
       }
 
-      if (field === 'description' || field === 'notes' || field === 'categoryId') {
+      if (
+        field === 'description' ||
+        field === 'notes' ||
+        field === 'memberId' ||
+        field === 'categoryId'
+      ) {
         const value = input[field];
 
         if (value !== undefined) {
@@ -422,4 +581,76 @@ export class TransactionRepository {
       revision: transaction.revision,
     };
   }
+}
+
+/**
+ * Translates a validated filter set into a Prisma `where` clause.
+ *
+ * The shape is built from a closed set of keys rather than forwarded from the request, so
+ * an unrecognised filter cannot reach the database at all. `businessDate` bounds are
+ * inclusive on both ends, matching the documented period boundaries, and the amount range
+ * is applied to `amountPaise` so it is exact rather than a float comparison.
+ *
+ * The free-text `search` covers the reference, the description, and the named member or
+ * category, which is exactly what `REQ-SEARCH-002` permits. It deliberately does not search
+ * `notes`: `REQ-INCOME-005` forbids an anonymous donation from revealing a contributor
+ * through a search result, and an identity written into a private note would otherwise be
+ * findable, and so attributable, through the search box.
+ */
+function toPrismaWhere(filters: TransactionQueryFilters): Prisma.FinancialTransactionWhereInput {
+  const where: Prisma.FinancialTransactionWhereInput = {};
+
+  if (filters.transactionType !== undefined) {
+    where.transactionType = filters.transactionType;
+  }
+
+  if (filters.status !== undefined) {
+    where.status = filters.status;
+  }
+
+  if (filters.paymentMethod !== undefined) {
+    where.paymentMethod = filters.paymentMethod;
+  }
+
+  if (filters.incomeType !== undefined) {
+    where.incomeType = filters.incomeType;
+  }
+
+  if (filters.categoryId !== undefined) {
+    where.categoryId = filters.categoryId;
+  }
+
+  if (filters.memberId !== undefined) {
+    where.memberId = filters.memberId;
+  }
+
+  if (filters.referenceId !== undefined) {
+    where.referenceId = filters.referenceId;
+  }
+
+  if (filters.from !== undefined || filters.to !== undefined) {
+    where.businessDate = {
+      ...(filters.from === undefined ? {} : { gte: filters.from }),
+      ...(filters.to === undefined ? {} : { lte: filters.to }),
+    };
+  }
+
+  if (filters.minAmountPaise !== undefined || filters.maxAmountPaise !== undefined) {
+    where.amountPaise = {
+      ...(filters.minAmountPaise === undefined ? {} : { gte: filters.minAmountPaise }),
+      ...(filters.maxAmountPaise === undefined ? {} : { lte: filters.maxAmountPaise }),
+    };
+  }
+
+  if (filters.search !== undefined) {
+    where.OR = [
+      { referenceId: { contains: filters.search, mode: 'insensitive' } },
+      { description: { contains: filters.search, mode: 'insensitive' } },
+      { member: { is: { name: { contains: filters.search, mode: 'insensitive' } } } },
+      { member: { is: { referenceId: { contains: filters.search, mode: 'insensitive' } } } },
+      { category: { is: { name: { contains: filters.search, mode: 'insensitive' } } } },
+    ];
+  }
+
+  return where;
 }

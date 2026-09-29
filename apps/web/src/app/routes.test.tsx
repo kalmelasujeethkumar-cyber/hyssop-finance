@@ -56,17 +56,18 @@ describe('foundation shell routing', () => {
 
     await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
-    // A link to a screen that does not exist would be a dead control. Members is the only
-    // product section built so far, so it is the only product link offered.
+    // A link to a screen that does not exist would be a dead control. Members and Income are
+    // the product sections built so far, so they are the only product links offered. Expenses
+    // arrives in Phase 06 and is still absent here, which is what keeps this assertion honest.
     const navigation = screen.getByRole('navigation', { name: 'Primary' });
 
     expect(
       within(navigation)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Foundation', 'Members']);
-    expect(within(navigation).queryByRole('link', { name: /Income/ })).not.toBeInTheDocument();
+    ).toEqual(['Foundation', 'Members', 'Income']);
     expect(within(navigation).queryByRole('link', { name: /Expenses/ })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('link', { name: /Documents/ })).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('link', { name: /Reports/ })).not.toBeInTheDocument();
   });
 

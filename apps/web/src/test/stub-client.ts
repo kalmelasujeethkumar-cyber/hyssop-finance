@@ -14,6 +14,10 @@ import {
   type MemberSummary,
   type MemberTransactionView,
   type SessionContext,
+  type TransactionAuditEventView,
+  type TransactionReceiptView,
+  type TransactionSortField,
+  type TransactionSummary,
 } from '@hyssop/contracts';
 import {
   ApiClientError,
@@ -228,6 +232,181 @@ export const CONTRIBUTION_SUMMARY: ContributionPeriodSummary = {
   remainingTotalPaise: '850.00',
 };
 
+/**
+ * A member contribution that is fully named.
+ *
+ * It carries every relation the income screens read — member, contribution period, and a
+ * description — so a test can prove the detail screen shows the stored record rather than a
+ * locally reconstructed one.
+ */
+export const INCOME_ONE: TransactionSummary = {
+  id: 'ccccccc1-0000-4000-8000-000000000001',
+  referenceId: 'HY-INC-000001',
+  type: 'INCOME',
+  incomeType: 'MEMBER_CONTRIBUTION',
+  amount: '500.00',
+  currency: 'INR',
+  paymentMethod: 'CASH',
+  status: 'ACTIVE',
+  businessDate: '2026-03-08',
+  description: 'March contribution',
+  notes: 'Collected at the morning service',
+  member: { id: MEMBER_ONE.id, referenceId: MEMBER_ONE.referenceId, name: MEMBER_ONE.name },
+  category: null,
+  contributionPeriod: { id: MEMBER_ONE_PERIODS[0]?.id ?? '', year: 2026, month: 3 },
+  voidReason: null,
+  voidedAt: null,
+  documentCount: 0,
+  revision: 1,
+  createdAt: '2026-03-08T06:15:00.000Z',
+  updatedAt: '2026-03-08T06:15:00.000Z',
+};
+
+/** A visitor offering with no member, so the "no member recorded" path is real. */
+export const INCOME_TWO: TransactionSummary = {
+  id: 'ccccccc1-0000-4000-8000-000000000002',
+  referenceId: 'HY-INC-000002',
+  type: 'INCOME',
+  incomeType: 'OFFERING',
+  amount: '1250.50',
+  currency: 'INR',
+  paymentMethod: 'UPI',
+  status: 'ACTIVE',
+  businessDate: '2026-04-06',
+  description: 'Sunday offering',
+  notes: null,
+  member: null,
+  category: null,
+  contributionPeriod: null,
+  voidReason: null,
+  voidedAt: null,
+  documentCount: 0,
+  revision: 1,
+  createdAt: '2026-04-06T10:30:00.000Z',
+  updatedAt: '2026-04-06T10:30:00.000Z',
+};
+
+/**
+ * A voided donation.
+ *
+ * `REQ-FIN-016` keeps a voided record in the list and out of every active total, so the stub
+ * holds one: a screen that hides voided rows, or counts them as income, is wrong and the test
+ * can say so.
+ */
+export const INCOME_VOIDED: TransactionSummary = {
+  id: 'ccccccc1-0000-4000-8000-000000000003',
+  referenceId: 'HY-INC-000003',
+  type: 'INCOME',
+  incomeType: 'DONATION',
+  amount: '300.00',
+  currency: 'INR',
+  paymentMethod: 'BANK_TRANSFER',
+  status: 'VOIDED',
+  businessDate: '2026-05-11',
+  description: 'Recorded against the wrong member',
+  notes: null,
+  member: { id: MEMBER_TWO.id, referenceId: MEMBER_TWO.referenceId, name: MEMBER_TWO.name },
+  category: null,
+  contributionPeriod: null,
+  voidReason: 'Recorded against the wrong member',
+  voidedAt: '2026-05-12T05:00:00.000Z',
+  documentCount: 0,
+  revision: 2,
+  createdAt: '2026-05-11T09:00:00.000Z',
+  updatedAt: '2026-05-12T05:00:00.000Z',
+};
+
+/**
+ * An anonymous donation.
+ *
+ * `REQ-INCOME-005` and `REQ-INCOME-006` mean this record has no member, a server-owned
+ * description, and no notes. A test that renders this row and finds a donor name, or a
+ * free-text description, is looking at a privacy breach.
+ */
+export const INCOME_ANONYMOUS: TransactionSummary = {
+  id: 'ccccccc1-0000-4000-8000-000000000004',
+  referenceId: 'HY-INC-000004',
+  type: 'INCOME',
+  incomeType: 'ANONYMOUS_DONATION',
+  amount: '100.00',
+  currency: 'INR',
+  paymentMethod: 'CASH',
+  status: 'ACTIVE',
+  businessDate: '2026-05-18',
+  description: 'Anonymous Donation',
+  notes: null,
+  member: null,
+  category: null,
+  contributionPeriod: null,
+  voidReason: null,
+  voidedAt: null,
+  documentCount: 0,
+  revision: 1,
+  createdAt: '2026-05-18T11:45:00.000Z',
+  updatedAt: '2026-05-18T11:45:00.000Z',
+};
+
+export const DEFAULT_INCOME_TRANSACTIONS: readonly TransactionSummary[] = [
+  INCOME_ONE,
+  INCOME_TWO,
+  INCOME_VOIDED,
+  INCOME_ANONYMOUS,
+];
+
+export const INCOME_ONE_AUDIT: readonly TransactionAuditEventView[] = [
+  {
+    id: 'ddddddd1-0000-4000-8000-000000000001',
+    action: 'TRANSACTION_CREATED',
+    actorDisplayName: ADMIN_PROFILE.displayName,
+    occurredAt: '2026-03-08T06:15:00.000Z',
+    reason: null,
+    requestId: '2a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c40',
+    before: null,
+    after: { amount_paise: 50000n.toString(), payment_method: 'CASH', status: 'ACTIVE' },
+  },
+];
+
+export const INCOME_ONE_RECEIPT: TransactionReceiptView = {
+  applicationName: 'HYSSOP FINANCE',
+  referenceId: INCOME_ONE.referenceId,
+  amount: INCOME_ONE.amount,
+  currency: 'INR',
+  incomeType: 'MEMBER_CONTRIBUTION',
+  paymentMethod: 'CASH',
+  businessDate: '2026-03-08',
+  receivedFrom: INCOME_ONE.member,
+  status: 'ACTIVE',
+  voidedAt: null,
+  voidReason: null,
+  issuedAt: '2026-03-08T06:20:00.000Z',
+};
+
+/** The `409` the API returns when a transaction was corrected or voided by someone else first. */
+export const staleTransactionRevision = new ApiClientError(
+  409,
+  'CONFLICT',
+  'This transaction was changed by another action. Reload the record and try again.',
+  '7d4e5f6a-8b9c-4d0e-9f0a-1b2c3d4e5f61',
+);
+
+export const notFound = new ApiClientError(
+  404,
+  'NOT_FOUND',
+  'The requested record was not found.',
+  '8e5f6a7b-9c0d-4e1f-a01b-2c3d4e5f6072',
+);
+
+export const incomeValidationFailed = new ApiClientError(
+  400,
+  'VALIDATION_FAILED',
+  'The request could not be accepted.',
+  '9f6a7b8c-0d1e-4f2a-b12c-3d4e5f607182',
+  [
+    { field: 'amount', message: 'The amount must be greater than zero.' },
+    { field: 'memberId', message: 'Choose the member this contribution is for.' },
+  ],
+);
+
 export type StubMethod = 'GET' | 'POST' | 'PATCH' | 'PUT';
 
 export interface RecordedCall {
@@ -237,6 +416,8 @@ export interface RecordedCall {
   readonly csrfToken: string | undefined;
   /** The `If-Match` revision the screen sent, for optimistic-lock assertions. */
   readonly ifMatch: string | undefined;
+  /** The `Idempotency-Key` the screen sent, so a duplicate submission can be detected. */
+  readonly idempotencyKey: string | undefined;
 }
 
 /** Answers the stub may be scripted to return instead of the default behaviour. */
@@ -257,12 +438,53 @@ export interface MemberStubOptions {
   readonly contributionsFail?: Error;
 }
 
+/**
+ * Answers the stub may be scripted to return for the income and shared transaction routes.
+ *
+ * Income is read through `GET /transactions` narrowed by `type=INCOME`, exactly as the browser
+ * requests it, so a test that passes here is asserting the real path rather than a convenient
+ * one. `listFails` therefore fails the transaction list, not an income-only endpoint that does
+ * not exist.
+ */
+export interface TransactionStubOptions {
+  readonly transactions?: readonly TransactionSummary[];
+  /** Overrides the audit trail returned for every transaction. */
+  readonly audit?: readonly TransactionAuditEventView[];
+  /** Overrides the receipt projection returned for every transaction. */
+  readonly receipt?: TransactionReceiptView;
+  /** Fails `GET /transactions`, for the list error state. */
+  readonly listFails?: Error;
+  /** Fails `GET /transactions/:id`, for the detail error state. */
+  readonly detailFails?: Error;
+  /** Fails `GET /transactions/:id/audit`. */
+  readonly auditFails?: Error;
+  /** Fails `GET /transactions/:id/receipt`. */
+  readonly receiptFails?: Error;
+  /** Fails `POST /income`, for the create error state. */
+  readonly createFails?: Error;
+  /**
+   * Fails only the first `POST /income`, for the retry path.
+   *
+   * The failure models a timeout or a dropped connection, which is the case where the browser's
+   * reuse of one key across a retry is the only thing preventing a second contribution.
+   */
+  readonly firstCreateFails?: Error;
+  /** Fails `PATCH /transactions/:id`, for the correction error state. */
+  readonly correctFails?: Error;
+  /** Fails `POST /transactions/:id/void`, for the void error state. */
+  readonly voidFails?: Error;
+}
+
 export interface StubApiClient extends ApiClient {
   readonly calls: RecordedCall[];
   /** The current member store, so a test can assert a create or edit actually applied. */
   readonly members: readonly MemberSummary[];
+  /** The current transaction store, so a test can assert an income, correction, or void applied. */
+  readonly transactions: readonly TransactionSummary[];
   /** The periods currently stored for one member, for period-configuration assertions. */
   periodsFor(memberId: string): readonly ContributionPeriodView[];
+  /** The stored transaction with this id, for asserting a write really changed the record. */
+  transactionById(id: string): TransactionSummary | undefined;
 }
 
 /**
@@ -286,6 +508,7 @@ export function stubApiClient(
     /** Reported as `LogoutResult.revoked`; defaults to the normal signed-in sign-out. */
     readonly revokedOnLogout?: boolean;
     readonly members?: MemberStubOptions;
+    readonly transactions?: TransactionStubOptions;
   } = {},
 ): StubApiClient {
   const calls: RecordedCall[] = [];
@@ -311,6 +534,22 @@ export function stubApiClient(
   const transactions: Readonly<Record<string, readonly MemberTransactionView[]>> =
     memberOptions.transactionsByMemberId ?? { [MEMBER_ONE.id]: MEMBER_ONE_TRANSACTIONS };
 
+  const transactionOptions = options.transactions ?? {};
+  // The transaction store is stateful for the same reason the member store is: recording income
+  // must add a row, a correction must bump `revision` and change the amount, and a void must set
+  // the status, because a stub that returned a fixture would let a screen pass with a dead
+  // write button.
+  const transactionStore: TransactionSummary[] = [
+    ...(transactionOptions.transactions ?? DEFAULT_INCOME_TRANSACTIONS),
+  ];
+  let nextIncomeNumber = transactionStore.length + 1;
+  let hasFailedFirstCreate = false;
+  // The real API rejects a mutation whose `Idempotency-Key` it has already answered, so the
+  // stub does too. That is what makes a double submit observable here instead of silently
+  // recording the same contribution twice.
+  const answeredIdempotencyKeys = new Map<string, unknown>();
+  const auditTrail = transactionOptions.audit ?? INCOME_ONE_AUDIT;
+
   function record(
     method: StubMethod,
     path: string,
@@ -323,6 +562,7 @@ export function stubApiClient(
       body,
       csrfToken: request?.csrfToken,
       ifMatch: request?.ifMatch,
+      idempotencyKey: request?.idempotencyKey,
     });
   }
 
@@ -352,12 +592,73 @@ export function stubApiClient(
     return member;
   }
 
+  /** Normalizes `/transactions/<id>[/audit|/receipt]` to the transaction id. */
+  function transactionIdOf(path: string): string | undefined {
+    const match = /^\/transactions\/([^/?]+)(?:\/|\?|$)/.exec(path);
+
+    return match?.[1];
+  }
+
+  function requireTransaction(id: string): TransactionSummary {
+    const transaction = transactionStore.find((row) => row.id === id);
+
+    if (transaction === undefined) {
+      throw notFound;
+    }
+
+    return transaction;
+  }
+
+  function replaceTransaction(updated: TransactionSummary): void {
+    const index = transactionStore.findIndex((row) => row.id === updated.id);
+
+    transactionStore[index] = updated;
+  }
+
+  /**
+   * Answers a repeated idempotency key with the first successful response.
+   *
+   * The stored value is the settled result, so a replay resolves with the *same*
+   * `TransactionSummary` rather than creating a second record. A test can then assert that
+   * submitting twice produced one row.
+   *
+   * A **failed** command is deliberately not remembered. The real API writes its idempotency
+   * record inside the same transaction as the financial write, so a failure rolls the record
+   * back and the caller may retry the same key as a fresh operation. Caching a rejection here
+   * would make every retry of a failed submission fail forever.
+   */
+  async function idempotent<TData>(
+    key: string | undefined,
+    run: () => Promise<unknown>,
+  ): Promise<TData> {
+    if (key === undefined || key === '') {
+      return run() as Promise<TData>;
+    }
+
+    const answered = answeredIdempotencyKeys.get(key);
+
+    if (answered !== undefined) {
+      return Promise.resolve(answered as TData);
+    }
+
+    const result = (await run()) as TData;
+
+    answeredIdempotencyKeys.set(key, result);
+
+    return result;
+  }
+
   return {
     calls,
     members: store,
+    transactions: transactionStore,
 
     periodsFor(memberId: string): readonly ContributionPeriodView[] {
       return periods.get(memberId) ?? [];
+    },
+
+    transactionById(id: string): TransactionSummary | undefined {
+      return transactionStore.find((row) => row.id === id);
     },
 
     get<TData>(path: string, request?: ApiRequestOptionsShape): Promise<TData> {
@@ -375,6 +676,46 @@ export function stubApiClient(
       }
       if (path === '/health') {
         return settle<TData>(health);
+      }
+
+      const transactionId = transactionIdOf(path);
+
+      if (transactionId !== undefined) {
+        if (path.includes('/audit')) {
+          return settleOrReject<TData>(auditTrail, transactionOptions.auditFails);
+        }
+        if (path.includes('/receipt')) {
+          if (transactionOptions.receiptFails !== undefined) {
+            return Promise.reject(transactionOptions.receiptFails);
+          }
+
+          const record = requireTransaction(transactionId);
+          const receipt: TransactionReceiptView = transactionOptions.receipt ?? {
+            applicationName: 'HYSSOP FINANCE',
+            referenceId: record.referenceId,
+            amount: record.amount,
+            currency: 'INR',
+            // A receipt exists only for income, so an expense reference here is a wrong link
+            // rather than a receipt with no type to print.
+            incomeType: record.incomeType ?? 'OFFERING',
+            paymentMethod: record.paymentMethod,
+            businessDate: record.businessDate,
+            // `receivedFrom` is `null` for an anonymous donation, which is the only honest value
+            // the contract can express for a donor-free record.
+            receivedFrom: record.member,
+            status: record.status,
+            voidedAt: record.voidedAt,
+            voidReason: record.voidReason,
+            issuedAt: '2026-09-28T07:00:00.000Z',
+          };
+
+          return Promise.resolve(receipt as TData);
+        }
+        if (transactionOptions.detailFails !== undefined) {
+          return Promise.reject(transactionOptions.detailFails);
+        }
+
+        return Promise.resolve(requireTransaction(transactionId) as TData);
       }
 
       const memberId = memberIdOf(path);
@@ -415,6 +756,14 @@ export function stubApiClient(
 
     getList<TItem>(path: string, request?: ApiRequestOptionsShape): Promise<ApiListPage<TItem>> {
       record('GET', path, undefined, request);
+
+      if (path.startsWith('/transactions')) {
+        if (transactionOptions.listFails !== undefined) {
+          return Promise.reject(transactionOptions.listFails);
+        }
+
+        return Promise.resolve(paginateTransactions(path, transactionStore) as ApiListPage<TItem>);
+      }
 
       if (!path.startsWith('/members')) {
         return unknown(path);
@@ -477,50 +826,212 @@ export function stubApiClient(
         return Promise.resolve(created as TData);
       }
 
+      if (path === '/income') {
+        if (transactionOptions.createFails !== undefined) {
+          return Promise.reject(transactionOptions.createFails);
+        }
+
+        if (transactionOptions.firstCreateFails !== undefined && !hasFailedFirstCreate) {
+          hasFailedFirstCreate = true;
+
+          return Promise.reject(transactionOptions.firstCreateFails);
+        }
+
+        return idempotent<TData>(request?.idempotencyKey, () => {
+          const input = (body ?? {}) as {
+            incomeType?: TransactionSummary['incomeType'];
+            amount?: string;
+            paymentMethod?: TransactionSummary['paymentMethod'];
+            businessDate?: string;
+            memberId?: string;
+            description?: string;
+            notes?: string;
+          };
+          const isAnonymous = input.incomeType === 'ANONYMOUS_DONATION';
+          const namedMember =
+            input.memberId === undefined
+              ? undefined
+              : store.find((row) => row.id === input.memberId);
+          const referenceId = `HY-INC-${String(nextIncomeNumber).padStart(6, '0')}`;
+
+          nextIncomeNumber += 1;
+
+          const created: TransactionSummary = {
+            id: 'eeeeeee1-0000-4000-8000-000000000001',
+            referenceId,
+            type: 'INCOME',
+            incomeType: input.incomeType ?? 'MEMBER_CONTRIBUTION',
+            amount: formatPaise(toPaise(input.amount ?? '0')),
+            currency: 'INR',
+            paymentMethod: input.paymentMethod ?? 'CASH',
+            status: 'ACTIVE',
+            businessDate: input.businessDate ?? '2026-09-28',
+            // The server owns the description and clears the notes of an anonymous donation, so
+            // the stub refuses to store Admin free text for that income type. A value that is
+            // never sent cannot be stored, searched, or exported, which is the whole point of
+            // the rule and the reason the browser omits it too.
+            description: isAnonymous ? 'Anonymous Donation' : (input.description ?? null),
+            notes: isAnonymous ? null : (input.notes ?? null),
+            member:
+              isAnonymous || namedMember === undefined
+                ? null
+                : {
+                    id: namedMember.id,
+                    referenceId: namedMember.referenceId,
+                    name: namedMember.name,
+                  },
+            category: null,
+            contributionPeriod:
+              input.incomeType === 'MEMBER_CONTRIBUTION' && namedMember !== undefined
+                ? { id: 'aaaaaaa1-0000-4000-8000-000000000004', year: 2026, month: 9 }
+                : null,
+            voidReason: null,
+            voidedAt: null,
+            documentCount: 0,
+            revision: 1,
+            createdAt: '2026-09-28T07:30:00.000Z',
+            updatedAt: '2026-09-28T07:30:00.000Z',
+          };
+
+          transactionStore.unshift(created);
+
+          return Promise.resolve(created);
+        });
+      }
+
+      const voidMatch = /^\/transactions\/([^/]+)\/void$/.exec(path);
+
+      if (voidMatch !== null) {
+        const transactionId = voidMatch[1] ?? '';
+
+        if (transactionOptions.voidFails !== undefined) {
+          return Promise.reject(transactionOptions.voidFails);
+        }
+
+        return idempotent<TData>(request?.idempotencyKey, () => {
+          const existing = requireTransaction(transactionId);
+          const input = (body ?? {}) as { reason?: string };
+          const reason = (input.reason ?? '').trim();
+
+          if (reason === '') {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'A reason is required to void a transaction.',
+                '0a7b8c9d-1e2f-4a3b-c23d-4e5f60718293',
+                [{ field: 'reason', message: 'A reason is required to void a transaction.' }],
+              ),
+            );
+          }
+
+          const voided: TransactionSummary = {
+            ...existing,
+            status: 'VOIDED',
+            voidReason: reason,
+            voidedAt: '2026-09-28T08:00:00.000Z',
+            revision: existing.revision + 1,
+            updatedAt: '2026-09-28T08:00:00.000Z',
+          };
+
+          replaceTransaction(voided);
+
+          return Promise.resolve(voided);
+        });
+      }
+
       return unknown(path);
     },
 
     patch<TData>(path: string, body?: unknown, request?: ApiRequestOptionsShape): Promise<TData> {
       record('PATCH', path, body, request);
 
+      const transactionId = transactionIdOf(path);
+
+      if (transactionId !== undefined && path.startsWith('/transactions/')) {
+        if (transactionOptions.correctFails !== undefined) {
+          return Promise.reject(transactionOptions.correctFails);
+        }
+
+        return idempotent<TData>(request?.idempotencyKey, () => {
+          const existing = requireTransaction(transactionId);
+          const sentRevision = parseEntityTagRevision(request?.ifMatch);
+
+          // The real API refuses a correction against a revision that is no longer current and
+          // refuses to correct a voided record at all, so a screen that sends a stale
+          // `If-Match`, or edits a void, fails here rather than in production.
+          if (sentRevision === undefined || sentRevision !== existing.revision) {
+            return Promise.reject(staleTransactionRevision);
+          }
+
+          if (existing.status === 'VOIDED') {
+            return Promise.reject(staleTransactionRevision);
+          }
+
+          const input = (body ?? {}) as {
+            amount?: string;
+            paymentMethod?: TransactionSummary['paymentMethod'];
+            businessDate?: string;
+            description?: string;
+            notes?: string;
+          };
+          const corrected: TransactionSummary = {
+            ...existing,
+            amount:
+              input.amount === undefined ? existing.amount : formatPaise(toPaise(input.amount)),
+            paymentMethod: input.paymentMethod ?? existing.paymentMethod,
+            businessDate: input.businessDate ?? existing.businessDate,
+            description:
+              input.description === undefined ? existing.description : input.description || null,
+            notes: input.notes === undefined ? existing.notes : input.notes || null,
+            revision: existing.revision + 1,
+            updatedAt: '2026-09-28T07:45:00.000Z',
+          };
+
+          replaceTransaction(corrected);
+
+          return Promise.resolve(corrected);
+        });
+      }
+
       const memberId = memberIdOf(path);
 
-      if (memberId === undefined || !path.startsWith('/members/')) {
-        return unknown(path);
+      if (memberId !== undefined && path.startsWith('/members/')) {
+        if (memberOptions.updateFails !== undefined) {
+          return Promise.reject(memberOptions.updateFails);
+        }
+
+        const member = requireMember(memberId);
+        const input = (body ?? {}) as { name?: string; phone?: string; notes?: string };
+        // The real API rejects a stale `If-Match`; the stub does too, so a screen that
+        // ignores the revision fails in the test instead of in production.
+        //
+        // `If-Match` carries an entity-tag, which the API spec requires to be a *quoted*
+        // revision such as `"3"`. The quotes are part of the header value, so the stub has to
+        // remove them before reading the number. Parsing the raw header with `parseInt` would
+        // yield `NaN` for every well-formed request and reject all of them as stale, which
+        // would quietly turn the success path into a permanent false conflict.
+        const sentRevision = parseEntityTagRevision(request?.ifMatch);
+
+        if (sentRevision === undefined || sentRevision !== member.revision) {
+          return Promise.reject(staleMemberRevision);
+        }
+
+        const updated: MemberSummary = {
+          ...member,
+          name: input.name ?? member.name,
+          phone: input.phone === undefined ? member.phone : input.phone || null,
+          notes: input.notes === undefined ? member.notes : input.notes || null,
+          revision: member.revision + 1,
+          updatedAt: '2026-09-28T06:05:00.000Z',
+        };
+        const index = store.findIndex((row) => row.id === memberId);
+        store[index] = updated;
+
+        return Promise.resolve(updated as TData);
       }
 
-      if (memberOptions.updateFails !== undefined) {
-        return Promise.reject(memberOptions.updateFails);
-      }
-
-      const member = requireMember(memberId);
-      const input = (body ?? {}) as { name?: string; phone?: string; notes?: string };
-      // The real API rejects a stale `If-Match`; the stub does too, so a screen that
-      // ignores the revision fails in the test instead of in production.
-      //
-      // `If-Match` carries an entity-tag, which the API spec requires to be a *quoted*
-      // revision such as `"3"`. The quotes are part of the header value, so the stub has to
-      // remove them before reading the number. Parsing the raw header with `parseInt` would
-      // yield `NaN` for every well-formed request and reject all of them as stale, which
-      // would quietly turn the success path into a permanent false conflict.
-      const sentRevision = parseEntityTagRevision(request?.ifMatch);
-
-      if (sentRevision === undefined || sentRevision !== member.revision) {
-        return Promise.reject(staleMemberRevision);
-      }
-
-      const updated: MemberSummary = {
-        ...member,
-        name: input.name ?? member.name,
-        phone: input.phone === undefined ? member.phone : input.phone || null,
-        notes: input.notes === undefined ? member.notes : input.notes || null,
-        revision: member.revision + 1,
-        updatedAt: '2026-09-28T06:05:00.000Z',
-      };
-      const index = store.findIndex((row) => row.id === memberId);
-      store[index] = updated;
-
-      return Promise.resolve(updated as TData);
+      return unknown(path);
     },
 
     put<TData>(path: string, body?: unknown, request?: ApiRequestOptionsShape): Promise<TData> {
@@ -646,9 +1157,118 @@ function compareBy(sort: MemberSortField, a: MemberSummary, b: MemberSummary): n
   return a.name.localeCompare(b.name);
 }
 
+/**
+ * Applies the documented transaction filters, sort, and paging.
+ *
+ * The income screen narrows the one canonical list with `type=INCOME` and adds its own
+ * `incomeType`, and this mirrors the API's filtering rather than returning a fixture. A test can
+ * therefore prove the income-type filter, the status filter, the date range, the amount range,
+ * the search box, the sort columns, and the pager all reach the API with the right parameters —
+ * and that a voided row is still listed but excluded when only active income is asked for.
+ */
+function paginateTransactions(
+  path: string,
+  store: readonly TransactionSummary[],
+): ApiListPage<TransactionSummary> {
+  const query = new URLSearchParams(path.includes('?') ? path.slice(path.indexOf('?') + 1) : '');
+  const search = (query.get('search') ?? '').trim().toLowerCase();
+  const page = Math.max(1, Number.parseInt(query.get('page') ?? '1', 10) || 1);
+  const pageSize = Math.max(1, Number.parseInt(query.get('pageSize') ?? '20', 10) || 20);
+  const sort = (query.get('sort') ?? 'businessDate') as TransactionSortField;
+  const direction = query.get('direction') === 'asc' ? 'asc' : 'desc';
+  const type = query.get('type');
+  const incomeType = query.get('incomeType');
+  const status = query.get('status');
+  const paymentMethod = query.get('paymentMethod');
+  const from = query.get('from');
+  const to = query.get('to');
+  const minAmount = query.get('minAmount');
+  const maxAmount = query.get('maxAmount');
+
+  const matched = store.filter((row) => {
+    if (type !== null && type !== '' && row.type !== type) {
+      return false;
+    }
+    if (incomeType !== null && incomeType !== '' && row.incomeType !== incomeType) {
+      return false;
+    }
+    if (status !== null && status !== '' && row.status !== status) {
+      return false;
+    }
+    if (paymentMethod !== null && paymentMethod !== '' && row.paymentMethod !== paymentMethod) {
+      return false;
+    }
+    if (from !== null && from !== '' && row.businessDate < from) {
+      return false;
+    }
+    if (to !== null && to !== '' && row.businessDate > to) {
+      return false;
+    }
+    if (minAmount !== null && minAmount !== '' && toPaise(row.amount) < toPaise(minAmount)) {
+      return false;
+    }
+    if (maxAmount !== null && maxAmount !== '' && toPaise(row.amount) > toPaise(maxAmount)) {
+      return false;
+    }
+
+    return (
+      search === '' ||
+      row.referenceId.toLowerCase().includes(search) ||
+      (row.description ?? '').toLowerCase().includes(search) ||
+      (row.member?.name ?? '').toLowerCase().includes(search)
+    );
+  });
+
+  const ordered = [...matched].sort((a, b) => {
+    const order = compareTransactionBy(sort, a, b);
+
+    return direction === 'desc' ? -order : order;
+  });
+  const totalItems = ordered.length;
+  const start = (page - 1) * pageSize;
+
+  return {
+    items: ordered.slice(start, start + pageSize),
+    pagination: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages: Math.ceil(totalItems / pageSize),
+    },
+  };
+}
+
+function compareTransactionBy(
+  sort: TransactionSortField,
+  a: TransactionSummary,
+  b: TransactionSummary,
+): number {
+  if (sort === 'amount') {
+    // Compared as exact paise, never as a JavaScript number, so the order matches the ledger
+    // rather than floating-point rounding.
+    const left = toPaise(a.amount);
+    const right = toPaise(b.amount);
+
+    return left === right ? a.referenceId.localeCompare(b.referenceId) : left < right ? -1 : 1;
+  }
+  if (sort === 'createdAt') {
+    return a.createdAt === b.createdAt
+      ? a.referenceId.localeCompare(b.referenceId)
+      : a.createdAt.localeCompare(b.createdAt);
+  }
+  if (sort === 'referenceId') {
+    return a.referenceId.localeCompare(b.referenceId);
+  }
+
+  return a.businessDate === b.businessDate
+    ? a.referenceId.localeCompare(b.referenceId)
+    : a.businessDate.localeCompare(b.businessDate);
+}
+
 interface ApiRequestOptionsShape {
   readonly csrfToken?: string;
   readonly ifMatch?: string;
+  readonly idempotencyKey?: string;
 }
 
 function settleOrReject<TData>(value: unknown, failure: Error | undefined): Promise<TData> {

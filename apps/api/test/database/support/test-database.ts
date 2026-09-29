@@ -38,6 +38,7 @@ import { PrismaService } from '../../../src/database/prisma/prisma.service';
 import { ReconciliationService } from '../../../src/database/reconciliation/reconciliation.service';
 import { ReferenceAllocatorService } from '../../../src/database/references/reference-allocator.service';
 import { AppSettingRepository } from '../../../src/database/settings/app-setting.repository';
+import { INITIAL_APP_SETTING_VALUES } from '../../../src/database/settings/app-setting.validation';
 import { TransactionRepository } from '../../../src/database/transactions/transaction.repository';
 import { requireTestDatabaseUrls } from './database-connection';
 
@@ -178,11 +179,25 @@ export async function createHarness(): Promise<TestHarness> {
    * Returns the suite to a known empty state and creates the Admin actor. The truncate
    * runs through the schema-owner connection because the least-privilege runtime role has
    * no `TRUNCATE` grant, which is itself part of what the suite proves.
+   *
+   * `app_setting` is truncated together with the application data and is then restored
+   * immediately. The initial key set is not demo content owned by the seed: the forward
+   * migration `20260929210000_app_setting_initial_keys` owns it, and the application treats a
+   * missing row as a server fault rather than guessing a default. Leaving the table empty here
+   * therefore left the shared `_test` database unusable for every later consumer — the browser
+   * suite that runs against the same database answered `App setting was not found.` and could
+   * not record a member contribution. `skipDuplicates` keeps a reset idempotent and preserves a
+   * value a test changed on purpose.
    */
   const reset = async (): Promise<AdminUser> => {
     await migration.$executeRawUnsafe(
       `TRUNCATE TABLE ${TABLES_TO_TRUNCATE.map((table) => `"${table}"`).join(', ')} RESTART IDENTITY CASCADE`,
     );
+
+    await migration.appSetting.createMany({
+      data: Object.entries(INITIAL_APP_SETTING_VALUES).map(([key, value]) => ({ key, value })),
+      skipDuplicates: true,
+    });
 
     return migration.adminUser.create({
       data: {
