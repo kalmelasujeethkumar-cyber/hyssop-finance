@@ -11,6 +11,8 @@
 
 **The Phase 04 members quality gate passed on 2026-09-28 and its Git gate is closed: commit `b1477379dee465c1129bb7a32e22a4c713e4d4ea` is pushed to `origin/main` and the remote hash matches. `npm run verify` exited `0` and `npm run test:e2e` reported `16 passed`. Phase 03 remains closed with commit `ab7847037120b3deeb519d053c11d4d09afc3746`. No phase is marked `COMPLETE` until its Git gate evidence is recorded below.**
 
+**The whole Phase 04 gate was independently re-executed on 2026-09-29 after an accidental editor close, and every command passed again against the same committed tree; see "Phase 04 re-verification after the accidental session close" below. Phase 05 has not started.**
+
 Phase 04 implemented the Members domain: member create/read/update, `HY-MEM-0001` reference allocation, name/phone/notes validation, search, sorting, pagination, contribution periods with an expected amount, ledger-derived received/remaining/status projections, and the Members list and detail screens with browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
 
 ## Phase 04 members gate
@@ -40,6 +42,34 @@ Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, Power
 | Secret and staged-file review | Pass | A credential-pattern scan over all changed and added files matched no Argon2 hash, JWT, private key, token prefix, or literal password. `.env` is ignored and untracked, only `.env.example` is tracked with every value commented out, and no build output, dependency, Playwright report, or local database artifact is staged |
 | Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit. Re-verified mechanically after the implementation |
 | Git gate | Pass | Intended files committed and pushed to `origin/main`; `git rev-parse HEAD` and `git rev-parse origin/main` both return the Phase 04 hash after a fresh `git fetch` |
+
+## Phase 04 re-verification after the accidental session close
+
+On 2026-09-29 the editing session was closed accidentally and reopened. No work was lost: the working tree was clean, `git status` reported nothing to commit, and `HEAD` already held the Phase 04 implementation commit `b1477379dee465c1129bb7a32e22a4c713e4d4ea` plus the evidence commit `25bac9fdcb1cc269e55d88a33773f170c3c8d060`, both equal to the locally known `origin/main`. Phase 04 was therefore neither restarted nor re-implemented.
+
+Because the recorded evidence is only trustworthy if it is reproducible, every mandatory gate was re-executed against the committed tree rather than being assumed. All of them passed, and the test counts are identical to the 2026-09-28 run, which independently corroborates the committed evidence.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run lint` | Pass | `eslint .` exited `0` with no reported problems |
+| `npm run format:check` | Pass | `All matched files use Prettier code style!` |
+| `npm run typecheck` | Pass | Contracts build plus `apps/api` and `apps/web` `tsc --noEmit`, all clean |
+| `npm run typecheck:scripts` | Pass | `tsc -p tsconfig.scripts.json` exited `0` |
+| `npm run test:api` | Pass | 23 suites, 241 tests, identical to the 2026-09-28 count |
+| `npm run test:web` | Pass | 8 files, 134 tests, identical to the 2026-09-28 count |
+| `npm run build` | Pass | Contracts build, `nest build`, and `vite build` (`✓ built in 344ms`) |
+| `npm run verify` | Pass | The full gate exited `0` |
+| `npm run db:validate` | Pass | `The schema at prisma\schema.prisma is valid` |
+| `npm run db:status` | Pass | `4 migrations found` and `Database schema is up to date!` |
+| `npm run db:seed` | Pass | `Members: 8`, `Contribution periods: 24`, `Transactions created this run: 48` on a freshly initialised cluster, matching the documented seed totals |
+| `npm run db:drift` | Pass | `No difference detected.` for both the migration history and the live development database, then the disposable shadow database was dropped |
+| `npm run test:db` | Pass | 6 suites, 103 tests against real PostgreSQL, identical to the 2026-09-28 count |
+| `npm run test:e2e` | Pass | `16 passed (21.7s)`, including the six `member management` journeys |
+| Phase boundary review | Pass | `apps/api` still exposes only `health`, `auth`, `members`, and `contribution-periods`; `apps/web` still routes only `/`, `/members`, `/members/:memberId`, `/login`, and the not-found screen. No income, offering, donation, expense, document, dashboard, or report route or screen exists, so Phase 05 and Phase 07 have not begun |
+| Financial-arithmetic review | Pass | Money crosses the API as decimal INR strings (`expectedPaise`, `receivedPaise`, `remainingPaise`, `amountPaise`) and is held as `bigint` paise in the calculation layer; `receivedPaise` sums only transactions with `status: 'ACTIVE'`, so a voided transaction cannot reach a total |
+| Secret and staged-file review | Pass | A credential-pattern scan over all 215 tracked files matched only the `$argon2id$` algorithm prefix asserted in the authentication tests and the `password.service.ts` pattern checks, never a hash value, token, key, or literal password. `.env` is ignored by `.gitignore:1`, is untracked, and the working tree is clean |
+
+One environmental incident occurred during this re-verification and is recorded as `ISSUE-024`. It did not affect the committed tree, and every database-backed result above was produced after it was resolved.
 
 ## Phase 04 defects found and fixed
 

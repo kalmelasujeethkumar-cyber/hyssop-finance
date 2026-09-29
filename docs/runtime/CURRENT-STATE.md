@@ -43,9 +43,11 @@ Phase 04 is implemented and has passed its quality gate. It owns `REQ-MEM-001`�
 
 The Phase 04 Git gate is closed: the Phase 04 commit was pushed to `origin/main` and the remote hash matches. Phase 04 is stopped here for review; `PHASE-05-INCOME` requires explicit approval before any work starts.
 
+On 2026-09-29, after the editing session was closed accidentally, the whole Phase 04 gate was re-executed against the committed tree rather than assumed. Every command passed again with identical test counts — 241 API tests, 134 web tests, 103 real-PostgreSQL tests, and `16 passed` Playwright journeys — and `npm run verify` exited `0`. No work was lost and nothing was re-implemented; the evidence is recorded in `TEST-RESULTS.md`.
+
 ## Blockers
 
-No current blockers are known. Nine advisories are recorded in `docs/runtime/ISSUES.md` (`ISSUE-011` through `ISSUE-016`, `ISSUE-021`, `ISSUE-022`, and `ISSUE-023`); none of them blocks the phase, and each records the condition that would require user approval. `ISSUE-021` (a new sign-in currently leaves an earlier session live), `ISSUE-022` (the login rate limit is per API process), and `ISSUE-023` (the contribution-period panel shows only the current business year) are recorded rather than silently decided, because no locked requirement owns either behavior. If a locked-requirement conflict, authorization need, secret requirement, or unsafe operation arises, record it in `docs/runtime/ISSUES.md` and stop.
+No current blockers are known. Ten advisories are recorded in `docs/runtime/ISSUES.md` (`ISSUE-011` through `ISSUE-016`, `ISSUE-021`, `ISSUE-022`, `ISSUE-023`, and the resolved `ISSUE-024`); none of them blocks the phase, and each records the condition that would require user approval. `ISSUE-021` (a new sign-in currently leaves an earlier session live), `ISSUE-022` (the login rate limit is per API process), and `ISSUE-023` (the contribution-period panel shows only the current business year) are recorded rather than silently decided, because no locked requirement owns any of those behaviors. If a locked-requirement conflict, authorization need, secret requirement, or unsafe operation arises, record it in `docs/runtime/ISSUES.md` and stop.
 
 ## Authorization reminder
 
