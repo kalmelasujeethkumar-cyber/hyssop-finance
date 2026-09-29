@@ -17,8 +17,8 @@
 
 - Current stage: **PHASE 05 — INCOME (QUALITY GATE PASSED), PHASE 06 — EXPENSES (NOT STARTED)**
 - Current phase: `PHASE-06-EXPENSES`
-- Status: **PHASE 05 QUALITY GATE PASSED ON 2026-09-29; GIT GATE PENDING**
-- Next gate: the Phase 05 Git gate, then `PHASE-06-EXPENSES`
+- Status: **PHASE 05 QUALITY GATE PASSED ON 2026-09-29; GIT GATE CLOSED (commit `c639fa8` pushed and verified)**
+- Next gate: `PHASE-06-EXPENSES`
 - Phase 06: **NOT STARTED** apart from the `packages/contracts/src/expenses.ts` contract scaffold
 - Phase 07: **NOT STARTED**; document upload, download, and the storage adapter remain out of scope for every phase completed so far
 - Application implementation: **PHASE 01, PHASE 02, PHASE 03, PHASE 04, AND PHASE 05 COMPLETE** (foundation, persistence, authentication, members, and income)
@@ -46,7 +46,9 @@ Phase 05 is implemented and has passed its quality gate. It owns `REQ-INCOME-001
 
 Close the Phase 05 Git gate: inspect the status, the diff, and the recent history, review the staged file list and secret safety, commit only the intended Phase 05 files, push to `origin/main` after the gate passes, verify the push, and record the verified hash in `PHASE-HISTORY.md`.
 
-Then begin `PHASE-06-EXPENSES` by rereading the phase contract, `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `05-DATABASE-SPEC.md`, and `06-API-SPEC.md`, and planning the expense category, expense create, correction, and void work on top of the shared transaction layer Phase 05 established. `packages/contracts/src/expenses.ts` already exists as a contract scaffold and must be reviewed against the specification rather than assumed correct. Phase 07 remains out of scope.
+The Phase 05 Git gate is closed: 45 files were committed as `c639fa89504ee5be09e17d8bb2206b89139d9ccf` and pushed to `origin/main`, and the local and remote hashes match.
+
+Then begin `PHASE-06-EXPENSES` by rereading the phase contract, `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `05-DATABASE-SPEC.md`, and `06-API-SPEC.md`, and planning the expense category, expense create, correction, and void work on top of the shared transaction layer Phase 05 established. `packages/contracts/src/expenses.ts` already exists as an untracked contract scaffold and must be reviewed against the specification rather than assumed correct. Phase 07 remains out of scope.
 
 ## Blockers
 

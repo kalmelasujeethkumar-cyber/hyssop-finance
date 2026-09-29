@@ -39,7 +39,7 @@ Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, Power
 | Anonymous-privacy evidence | Pass | An anonymous donation is stored with no member, description, or notes anywhere, the member control is absent rather than disabled, and the receipt reports `Not recorded (anonymous)` |
 | Secret and staged-file review | Pass | A credential-pattern scan over all changed and added files matched no Argon2 hash, JWT, private key, token prefix, or literal password. `.env` is ignored and untracked, only `.env.example` is tracked, and no build output, dependency, Playwright report, trace, or local database artifact is staged |
 | Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit |
-| Git gate | Pending at the time this table was written | The verified commit hash and push result are recorded in `PHASE-HISTORY.md` by the evidence commit, which does not change the implementation verdict |
+| Git gate | Pass | 45 intended files committed and pushed to `origin/main` as `c639fa89504ee5be09e17d8bb2206b89139d9ccf`; after a fresh `git fetch`, `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash |
 
 ## Phase 05 defects found and fixed
 
