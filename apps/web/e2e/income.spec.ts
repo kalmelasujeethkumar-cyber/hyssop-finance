@@ -554,6 +554,21 @@ test.describe('income management', () => {
     // rather than leave it on screen behind a criterion that does not match it. The list
     // identifies a record by the reference the API allocated, so that is what is asserted.
     await page.getByRole('button', { name: 'Reset all filters' }).first().click();
+    // Wait for the reset to finish clearing the criteria before typing. The search box is
+    // controlled, so filling it while the reset is still re-rendering has the reset overwrite the
+    // value and the search never being submitted.
+    await expect(page.getByRole('button', { name: /Remove filter: Search:/ })).toHaveCount(0);
+    // The E2E database is reused across runs rather than reset, so the ledger grows and this run's
+    // record is not guaranteed to be on the first page. Searching for this run's unique text first
+    // narrows the list to exactly the record under test, which makes every assertion below real:
+    // without it, "the record is absent" would also pass for a record that was simply on page two.
+    await searchIncome(page, description);
+    await expect(page.getByTestId('result-count')).toHaveText('1 record found');
+
+    // The income-type criterion is a real server-side filter, not a client-side one. This run's
+    // record is an offering, so choosing member contributions has to remove it from the list
+    // rather than leave it on screen behind a criterion that does not match it. The list
+    // identifies a record by the reference the API allocated, so that is what is asserted.
     await page.getByLabel('Income type', { exact: true }).selectOption('MEMBER_CONTRIBUTION');
     await expect(page.getByRole('button', { name: /Remove filter: Type:/ })).toBeVisible();
     await expect(page.getByText(referenceId, { exact: true })).toHaveCount(0);

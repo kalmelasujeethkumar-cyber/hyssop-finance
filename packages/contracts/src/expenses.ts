@@ -34,9 +34,10 @@ export interface ExpenseSummary extends TransactionSummary {
    * `false` here and a `documentCount` of zero are the same fact read two ways, and the browser
    * renders `RECEIPT_MISSING_LABEL` for it.
    *
-   * Phase 07 owns attaching, previewing, and removing documents. Until that subsystem exists
-   * nothing can set this to `true` through the product, and an expense honestly reports
-   * `false` rather than the interface pretending a receipt exists.
+   * Phase 07 owns attaching, previewing, downloading, and removing documents, and this field
+   * becomes `true` the moment an `AVAILABLE` document is attached. A removed document does not
+   * restore it: the receipt is gone, so the expense honestly reports **Receipt Missing** again
+   * even though `documentCount` still counts the retained record.
    */
   readonly hasReceipt: boolean;
 }

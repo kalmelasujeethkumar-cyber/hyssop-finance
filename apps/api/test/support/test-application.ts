@@ -1,5 +1,7 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap/configure-app';
 import { StructuredLogger } from '../../src/common/logging/structured-logger';
@@ -11,6 +13,7 @@ import {
   DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
   DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES,
   DEFAULT_SESSION_TTL_HOURS,
+  DEFAULT_UPLOAD_MAX_BYTES,
   type AppEnvironment,
 } from '../../src/config/environment';
 
@@ -28,6 +31,20 @@ export const TEST_DIRECT_DATABASE_URL =
 
 export const TEST_SESSION_COOKIE = 'hyssop_session';
 export const TEST_CSRF_COOKIE = 'hyssop_csrf';
+
+/**
+ * Storage settings for HTTP-level tests.
+ *
+ * The path points into the OS temporary directory rather than the real project `storage/uploads`,
+ * so a foundation test that exercises an upload cannot leave bytes in the working tree or collide
+ * with a developer's own files. Tests that need to assert on the bytes read it through the same
+ * temporary path they configured here.
+ */
+export const TEST_STORAGE_ENVIRONMENT: AppEnvironment['storage'] = {
+  driver: 'local',
+  localStoragePath: join(tmpdir(), 'hyssop-finance-test-storage'),
+  uploadMaxBytes: DEFAULT_UPLOAD_MAX_BYTES,
+};
 
 /**
  * Cookie policy for HTTP-level tests. The names are stable so a test can assert on them,
@@ -57,6 +74,7 @@ export const TEST_ENVIRONMENT: AppEnvironment = {
   databaseUrl: TEST_DATABASE_URL,
   directDatabaseUrl: TEST_DIRECT_DATABASE_URL,
   auth: TEST_AUTH_ENVIRONMENT,
+  storage: TEST_STORAGE_ENVIRONMENT,
 };
 
 /** Every authentication variable, so a test can assert on the process environment. */

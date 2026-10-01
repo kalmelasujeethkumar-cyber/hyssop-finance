@@ -1,6 +1,7 @@
 import {
   CSRF_TOKEN_HEADER,
   HEALTH_SERVICE_NAME,
+  IDEMPOTENCY_KEY_HEADER,
   REQUEST_ID_HEADER,
   type LogoutResult,
 } from '@hyssop/contracts';
@@ -228,6 +229,111 @@ describe('session-carrying requests', () => {
       const failure = await client.post('/auth/logout').catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(ApiTransportError);
+    });
+  });
+
+  describe('document transport contract', () => {
+    it('passes the FormData through untouched and sets no content type', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { id: 'doc-1' } }));
+      const client = createApiClient({ baseUrl: BASE_URL, fetchImpl });
+      const form = new FormData();
+      const file = new File([new Uint8Array([1, 2, 3])], 'receipt.png', { type: 'image/png' });
+
+      form.append('file', file);
+      await client.upload<{ id: string }>('/transactions/t1/documents', form, {
+        csrfToken: 'session-token',
+        idempotencyKey: 'key-1',
+      });
+
+      const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+
+      expect(url).toBe(`${BASE_URL}/transactions/t1/documents`);
+      expect(init.method).toBe('POST');
+      // The boundary must come from FormData itself. A client-supplied `Content-Type` here would
+      // replace the generated boundary and the server would parse an unparseable body.
+      expect(init.body).toBe(form);
+      expect(init.headers).not.toHaveProperty('Content-Type');
+      expect(init.credentials).toBe('include');
+      expect(init.headers).toMatchObject({
+        [CSRF_TOKEN_HEADER]: 'session-token',
+        [IDEMPOTENCY_KEY_HEADER]: 'key-1',
+      });
+    });
+
+    it('sends the audited JSON reason in a DELETE body', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { id: 'doc-1' } }));
+      const client = createApiClient({ baseUrl: BASE_URL, fetchImpl });
+
+      await client.delete<{ id: string }>(
+        '/documents/doc-1',
+        { reason: 'wrong expense' },
+        { csrfToken: 'session-token', idempotencyKey: 'key-2' },
+      );
+
+      const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+
+      expect(url).toBe(`${BASE_URL}/documents/doc-1`);
+      expect(init.method).toBe('DELETE');
+      expect(init.body).toBe(JSON.stringify({ reason: 'wrong expense' }));
+      expect(init.headers).toMatchObject({
+        'Content-Type': 'application/json',
+        [CSRF_TOKEN_HEADER]: 'session-token',
+        [IDEMPOTENCY_KEY_HEADER]: 'key-2',
+      });
+    });
+
+    it('raises a typed error for a refused upload rather than reporting success', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            error: {
+              code: 'VALIDATION_FAILED',
+              message: 'The uploaded file is not a supported receipt.',
+              requestId: 'a3f0c1d2-4b5e-4c60-8a71-9b2c3d4e5f60',
+              fields: [{ field: 'file', message: 'The uploaded file is not a supported receipt.' }],
+            },
+          },
+          { status: 400 },
+        ),
+      );
+      const client = createApiClient({ baseUrl: BASE_URL, fetchImpl });
+
+      const failure = await client
+        .upload('/transactions/t1/documents', new FormData())
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(ApiClientError);
+      expect((failure as ApiClientError).status).toBe(400);
+      // The field issue is what the panel renders against the file input, so it must survive the
+      // transport as a `field`/`message` pair rather than being dropped or flattened to a string.
+      expect((failure as ApiClientError).fields).toStrictEqual([
+        { field: 'file', message: 'The uploaded file is not a supported receipt.' },
+      ]);
+    });
+
+    it('raises a typed error for a 410 on removed content instead of pretending it loaded', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            error: {
+              code: 'DOCUMENT_GONE',
+              message: 'This receipt was removed and its file is no longer available.',
+              requestId: 'b4e1d2c3-5c6f-4d70-8a71-9b2c3d4e5f60',
+            },
+          },
+          { status: 410 },
+        ),
+      );
+      const client = createApiClient({ baseUrl: BASE_URL, fetchImpl });
+
+      const failure = await client
+        .delete('/documents/doc-1', { reason: 'duplicate' })
+        .catch((error: unknown) => error);
+
+      // `410` is a retained state, not a transport fault, so the panel can show "removed" instead
+      // of an error banner.
+      expect(failure).toBeInstanceOf(ApiClientError);
+      expect((failure as ApiClientError).status).toBe(410);
     });
   });
 });

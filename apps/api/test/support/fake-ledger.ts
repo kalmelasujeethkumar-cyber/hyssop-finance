@@ -215,6 +215,17 @@ export class FakeTransactions {
       contributionPeriod:
         period === undefined ? null : { id: period.id, year: period.year, month: period.month },
       _count: { documents: row.documentCount },
+      // Phase 07: the repository now selects the *available* documents alongside the total count,
+      // so `hasReceipt` can distinguish "has a viewable receipt" from "was attached and later
+      // removed" while `documentCount` still reports the full history.
+      //
+      // This fake ledger models no removals, so every counted document is an available one. That
+      // is what makes `documentCount: 1` mean `hasReceipt: true` here, exactly as it does in the
+      // database for a seeded expense. A removal is exercised where it is modelled — by the
+      // document tests — rather than being faked into the shared transaction fixtures.
+      documents: Array.from({ length: row.documentCount }, (_unused, index) => ({
+        id: `${row.id}-document-${index + 1}`,
+      })),
     };
   }
 

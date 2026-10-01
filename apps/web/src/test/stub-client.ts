@@ -5,6 +5,9 @@ import {
   type ContributionPeriodView,
   type CsrfTokenResult,
   type CurrentSessionResult,
+  DOCUMENT_UPLOAD_FIELD,
+  type DocumentMimeType,
+  type DocumentSummary,
   type ExpenseCategoryView,
   type ExpenseSummary,
   type HealthReport,
@@ -620,7 +623,7 @@ export const incomeValidationFailed = new ApiClientError(
   ],
 );
 
-export type StubMethod = 'GET' | 'POST' | 'PATCH' | 'PUT';
+export type StubMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 export interface RecordedCall {
   readonly method: StubMethod;
@@ -712,6 +715,31 @@ export interface ExpenseStubOptions {
   readonly updateCategoryFails?: Error;
 }
 
+/**
+ * Answers the stub may be scripted to return for the document routes.
+ *
+ * The document store is stateful for the same reason every other store here is: an upload has to
+ * really append a row and a removal has to really flip `status` and `contentAvailable`, otherwise
+ * a receipt panel would pass while its upload and remove controls were dead.
+ */
+export interface DocumentStubOptions {
+  /** Seeds the store, keyed by transaction id. */
+  readonly documentsByTransactionId?: Readonly<Record<string, readonly DocumentSummary[]>>;
+  /** Fails `GET /transactions/:id/documents`, for the list error state. */
+  readonly listFails?: Error;
+  /** Fails `POST /transactions/:id/documents`, for the upload error state. */
+  readonly uploadFails?: Error;
+  /**
+   * Fails only the first upload, for the retry-under-one-key path.
+   *
+   * Models the dropped-connection case where reusing one `Idempotency-Key` is the only thing
+   * preventing the same receipt being stored twice.
+   */
+  readonly firstUploadFails?: Error;
+  /** Fails `DELETE /documents/:id`, for the removal error state. */
+  readonly removeFails?: Error;
+}
+
 export interface StubApiClient extends ApiClient {
   readonly calls: RecordedCall[];
   /** The current member store, so a test can assert a create or edit actually applied. */
@@ -722,6 +750,8 @@ export interface StubApiClient extends ApiClient {
   periodsFor(memberId: string): readonly ContributionPeriodView[];
   /** The stored transaction with this id, for asserting a write really changed the record. */
   transactionById(id: string): TransactionSummary | undefined;
+  /** The documents currently stored for one transaction, for asserting an upload or removal. */
+  documentsFor(transactionId: string): readonly DocumentSummary[];
 }
 
 /**
@@ -747,6 +777,7 @@ export function stubApiClient(
     readonly members?: MemberStubOptions;
     readonly transactions?: TransactionStubOptions;
     readonly expenses?: ExpenseStubOptions;
+    readonly documents?: DocumentStubOptions;
   } = {},
 ): StubApiClient {
   const calls: RecordedCall[] = [];
@@ -796,6 +827,35 @@ export function stubApiClient(
   // recording the same contribution twice.
   const answeredIdempotencyKeys = new Map<string, unknown>();
   const auditTrail = transactionOptions.audit ?? INCOME_ONE_AUDIT;
+  const documentOptions = options.documents ?? {};
+  // The document store mirrors the real lifecycle: an upload appends an `AVAILABLE` row, and a
+  // removal keeps the row but flips `status`, `contentAvailable`, and `contentDeleted` semantics,
+  // because `docs/05-DATABASE-SPEC.md` retains metadata after removal.
+  const documentStore = new Map<string, DocumentSummary[]>(
+    Object.entries(documentOptions.documentsByTransactionId ?? {}).map(([transactionId, rows]) => [
+      transactionId,
+      [...rows],
+    ]),
+  );
+
+  // A fixture that says `documentCount: 1` and `hasReceipt: true` must really have a document, or
+  // the detail screen would show "Attached" beside a receipt panel that says Receipt Missing — a
+  // screen contradicting itself, which is exactly what the state-honesty rule forbids. Any
+  // transaction the caller seeded is left untouched, so a test can still assert an empty list for a
+  // transaction that carries a count, and a test that wants a specific row states it explicitly.
+  for (const transaction of transactionStore) {
+    if (documentStore.has(transaction.id) || transaction.documentCount < 1) {
+      continue;
+    }
+
+    documentStore.set(
+      transaction.id,
+      Array.from({ length: transaction.documentCount }, (_, index) =>
+        seededDocument(transaction, index),
+      ),
+    );
+  }
+  let hasFailedFirstDocumentUpload = false;
 
   function record(
     method: StubMethod,
@@ -939,6 +999,16 @@ export function stubApiClient(
       if (transactionId !== undefined) {
         if (path.includes('/audit')) {
           return settleOrReject<TData>(auditTrail, transactionOptions.auditFails);
+        }
+        if (path.endsWith('/documents')) {
+          // A transaction's documents are read as a plain array, not a paged list envelope, exactly
+          // as `docs/06-API-SPEC.md` documents the route. Removed rows are returned too: the
+          // history is retained, so dropping them here would let a panel claim a receipt that the
+          // audit trail still explains.
+          return settleOrReject<TData>(
+            documentStore.get(transactionId) ?? [],
+            documentOptions.listFails,
+          );
         }
         if (path.includes('/receipt')) {
           if (transactionOptions.receiptFails !== undefined) {
@@ -1597,7 +1667,260 @@ export function stubApiClient(
 
       return Promise.resolve(view as TData);
     },
+
+    /**
+     * The list is not a paginated envelope here on purpose.
+     *
+     * `docs/06-API-SPEC.md` documents a transaction's documents as a plain array, not a
+     * `/transactions/:id/documents` list envelope, so the stub answers exactly what the browser
+     * asked for rather than what a member list would need.
+     */
+    upload<TData>(path: string, form: FormData, request?: ApiRequestOptionsShape): Promise<TData> {
+      record('POST', path, form, request);
+
+      const match = /^\/transactions\/([^/?]+)\/documents$/.exec(path);
+
+      if (match === null) {
+        return unknown(path);
+      }
+
+      if (documentOptions.uploadFails !== undefined) {
+        return Promise.reject(documentOptions.uploadFails);
+      }
+
+      if (!hasFailedFirstDocumentUpload && documentOptions.firstUploadFails !== undefined) {
+        hasFailedFirstDocumentUpload = true;
+
+        return Promise.reject(documentOptions.firstUploadFails);
+      }
+
+      const transactionId = match[1] ?? '';
+      const transaction = transactionStore.find((row) => row.id === transactionId);
+
+      if (transaction === undefined) {
+        return Promise.reject(
+          new ApiClientError(404, 'NOT_FOUND', 'That transaction was not found.', 'stub-request'),
+        );
+      }
+
+      const file = form.get(DOCUMENT_UPLOAD_FIELD);
+
+      if (!(file instanceof File)) {
+        return Promise.reject(
+          new ApiClientError(
+            400,
+            'VALIDATION_FAILED',
+            `The upload was missing the "${DOCUMENT_UPLOAD_FIELD}" file field.`,
+            'stub-request',
+          ),
+        );
+      }
+
+      return settleOrReject<TData>(
+        storeDocument(transactionId, transaction.referenceId, file.name, file.size),
+        undefined,
+      );
+    },
+
+    delete<TData>(path: string, body?: unknown, request?: ApiRequestOptionsShape): Promise<TData> {
+      record('DELETE', path, body, request);
+
+      const match = /^\/documents\/([^/?]+)$/.exec(path);
+
+      if (match === null) {
+        return unknown(path);
+      }
+
+      if (documentOptions.removeFails !== undefined) {
+        return Promise.reject(documentOptions.removeFails);
+      }
+
+      const documentId = match[1] ?? '';
+      const located = findDocument(documentId);
+
+      if (located === undefined) {
+        return Promise.reject(
+          new ApiClientError(404, 'NOT_FOUND', 'That document was not found.', 'stub-request'),
+        );
+      }
+
+      const input = (body ?? {}) as { reason?: string };
+      const reason = input.reason?.trim() ?? '';
+      const removalError = reason === '' ? 'A removal reason is required.' : undefined;
+
+      if (removalError !== undefined) {
+        return Promise.reject(
+          new ApiClientError(400, 'VALIDATION_FAILED', removalError, 'stub-request'),
+        );
+      }
+
+      return settleOrReject<TData>(
+        removeDocument(located.transactionId, located.document, reason),
+        undefined,
+      );
+    },
+
+    documentsFor(transactionId: string): readonly DocumentSummary[] {
+      return documentStore.get(transactionId) ?? [];
+    },
   };
+
+  /** Locates a document across every transaction, the way a real id-keyed read would. */
+  function findDocument(
+    documentId: string,
+  ): { transactionId: string; document: DocumentSummary } | undefined {
+    for (const [transactionId, rows] of documentStore) {
+      const found = rows.find((row) => row.id === documentId);
+
+      if (found !== undefined) {
+        return { transactionId, document: found };
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Appends an uploaded document.
+   *
+   * The reference is generated rather than supplied, so a test cannot pass by asserting a value it
+   * handed in itself, and the transaction's `documentCount` moves with the store for the same
+   * reason: `docs/06-API-SPEC.md` returns that count on the transaction.
+   */
+  function storeDocument(
+    transactionId: string,
+    transactionReferenceId: string,
+    originalFilename: string,
+    byteSize: number,
+  ): DocumentSummary {
+    const existing = documentStore.get(transactionId) ?? [];
+    const id = `dddddddd${String(existing.length + 1).padStart(4, '0')}-4000-8000-000000000000`;
+    const mimeType = guessMimeType(originalFilename) ?? 'application/pdf';
+    const isImage = mimeType.startsWith('image/');
+    const document: DocumentSummary = {
+      id,
+      referenceId: `HY-DOC-${String(existing.length + 1).padStart(6, '0')}`,
+      transactionId,
+      transactionReferenceId,
+      originalFilename,
+      declaredMimeType: mimeType,
+      detectedMimeType: mimeType,
+      byteSize,
+      checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      status: 'AVAILABLE',
+      contentAvailable: true,
+      // Only images render inline. A PDF is downloadable but not previewable, matching the server
+      // decision `docs/06-API-SPEC.md` describes, so the browser cannot offer a control that the API
+      // would refuse.
+      previewAvailable: isImage,
+      downloadPath: `/documents/${id}/content`,
+      previewPath: isImage ? `/documents/${id}/content` : null,
+      uploadedAt: '2026-03-01T09:00:00.000Z',
+      removedAt: null,
+      removalReason: null,
+      storageDeleted: false,
+      cleanupPending: false,
+    };
+
+    documentStore.set(transactionId, [...existing, document]);
+
+    // `documentCount` is readonly on the contract, so the row is replaced through the existing
+    // store helper rather than mutated. The count moves because `docs/06-API-SPEC.md` returns it on
+    // every transaction projection, and a stale value would contradict the list rendered beside it.
+    const transaction = transactionStore.find((row) => row.id === transactionId);
+
+    if (transaction !== undefined) {
+      replaceTransaction({ ...transaction, documentCount: transaction.documentCount + 1 });
+    }
+
+    return document;
+  }
+
+  /** Applies removal: the row is retained, and the bytes stop being available. */
+  function removeDocument(
+    transactionId: string,
+    document: DocumentSummary,
+    reason: string,
+  ): DocumentSummary {
+    const removed: DocumentSummary = {
+      ...document,
+      status: 'REMOVED',
+      contentAvailable: false,
+      previewAvailable: false,
+      previewPath: null,
+      removedAt: '2026-03-02T09:00:00.000Z',
+      removalReason: reason,
+      storageDeleted: true,
+      cleanupPending: false,
+    };
+    const rows = documentStore.get(transactionId) ?? [];
+
+    documentStore.set(
+      transactionId,
+      rows.map((row) => (row.id === document.id ? removed : row)),
+    );
+
+    // `documentCount` on `TransactionSummary` counts *retained* records, so it deliberately does not
+    // move: `docs/05-DATABASE-SPEC.md` keeps the metadata after removal. The availability flag lives
+    // on the document row itself, which is what this panel renders, and the panel's own query is
+    // invalidated so it re-reads the list rather than trusting a local guess.
+
+    return removed;
+  }
+}
+
+/**
+ * Builds the document a fixture implies by declaring a `documentCount`.
+ *
+ * Only ever a JPG receipt, so the row is *available* and therefore previewable: that exercises the
+ * richer of the two presentations. Every field the contract requires is present because the browser
+ * validates the payload, and a half-filled row would fail for the wrong reason.
+ */
+function seededDocument(transaction: TransactionSummary, index: number): DocumentSummary {
+  const suffix = String(index + 1).padStart(12, '0');
+  const id = `dddddddd0-0000-4000-8000-${suffix}`;
+  const originalFilename = index === 0 ? 'receipt.jpg' : `receipt-${index + 1}.jpg`;
+
+  return {
+    id,
+    referenceId: `HY-DOC-${String(index + 1).padStart(6, '0')}`,
+    transactionId: transaction.id,
+    transactionReferenceId: transaction.referenceId,
+    originalFilename,
+    declaredMimeType: 'image/jpeg',
+    detectedMimeType: 'image/jpeg',
+    byteSize: 3,
+    checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    status: 'AVAILABLE',
+    contentAvailable: true,
+    previewAvailable: true,
+    downloadPath: `/api/v1/documents/${id}/download`,
+    previewPath: `/api/v1/documents/${id}/preview`,
+    uploadedAt: transaction.createdAt,
+    removedAt: null,
+    removalReason: null,
+    storageDeleted: false,
+    cleanupPending: false,
+  };
+}
+
+/** Maps a filename to a demo-supported type, so the stub does not invent an unsupported one. */
+function guessMimeType(filename: string): DocumentMimeType | undefined {
+  const extension = filename.slice(filename.lastIndexOf('.') + 1).toLowerCase();
+
+  switch (extension) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'pdf':
+      return 'application/pdf';
+    default:
+      return undefined;
+  }
 }
 
 /** Reads a decimal INR string into exact paise, the same way the API does. */

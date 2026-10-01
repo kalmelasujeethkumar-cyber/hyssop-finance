@@ -134,8 +134,12 @@ describe('connectivity status', () => {
         base.patch<TData>(path, body, options),
       put: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
         base.put<TData>(path, body, options),
+      delete: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        base.delete<TData>(path, body, options),
       getList: <TItem,>(path: string, options?: ApiRequestOptions) =>
         base.getList<TItem>(path, options),
+      upload: <TData,>(path: string, form: FormData, options?: ApiRequestOptions) =>
+        base.upload<TData>(path, form, options),
     };
 
     renderRoute({ client });

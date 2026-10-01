@@ -33,8 +33,25 @@ export interface ApiClient {
   post<TData>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<TData>;
   patch<TData>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<TData>;
   put<TData>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<TData>;
+  /**
+   * A `DELETE` that carries a request body.
+   *
+   * Present as its own method because `docs/06-API-SPEC.md` documents document removal as
+   * `DELETE /documents/:id` with a required `reason`. A removal is audited, so the reason has to
+   * travel in the request rather than being guessed from the absence of a record.
+   */
+  delete<TData>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<TData>;
   /** Returns the `data` array and the `pagination` block of a list response. */
   getList<TItem>(path: string, options?: ApiRequestOptions): Promise<ApiListPage<TItem>>;
+  /**
+   * Posts a `multipart/form-data` body.
+   *
+   * Separate from `post` because `post` sets `Content-Type: application/json` and serialises the
+   * body. A multipart body must not set `Content-Type` at all: the value has to include the
+   * boundary the browser generated, and hard-coding `multipart/form-data` without it produces a
+   * body the server cannot parse.
+   */
+  upload<TData>(path: string, form: FormData, options?: ApiRequestOptions): Promise<TData>;
 }
 
 export interface ApiListPage<TItem> {
@@ -77,10 +94,10 @@ export interface ApiClientConfig {
   readonly createRequestId?: () => string;
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'PUT';
+type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 /** Methods that may carry a request body. */
-const METHODS_WITH_BODY: readonly Method[] = ['POST', 'PATCH', 'PUT'];
+const METHODS_WITH_BODY: readonly Method[] = ['POST', 'PATCH', 'PUT', 'DELETE'];
 
 export function createApiClient(config: ApiClientConfig): ApiClient {
   const doFetch = config.fetchImpl ?? globalThis.fetch.bind(globalThis);
@@ -98,6 +115,14 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     path: string,
     body: unknown,
     options: ApiRequestOptions,
+    /**
+     * The body is already a `BodyInit` (a `FormData`) and must be sent untouched.
+     *
+     * `Content-Type` is then left unset on purpose: the browser has to append the multipart
+     * boundary it generated, and any value set here would either override it or produce a boundary
+     * the server cannot parse.
+     */
+    rawBody = false,
   ): Promise<unknown> {
     const requestId = nextRequestId();
     const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
@@ -107,7 +132,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       [REQUEST_ID_HEADER]: requestId,
     };
 
-    if (hasBody) {
+    if (hasBody && !rawBody) {
       headers['Content-Type'] = 'application/json';
     }
     if (options.csrfToken !== undefined) {
@@ -129,7 +154,14 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         // when the API is on a different origin during local development. No token is ever
         // read from or written to browser storage.
         credentials: 'include',
-        ...(hasBody ? { body: JSON.stringify(body) } : {}),
+        ...(hasBody
+          ? {
+              body: rawBody
+                ? // Only ever a `FormData`, supplied by `upload`.
+                  (body as BodyInit)
+                : JSON.stringify(body),
+            }
+          : {}),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
     } catch (error: unknown) {
@@ -168,19 +200,27 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     return payload;
   }
 
+  /**
+   * Extracts the `data` block of a success envelope.
+   *
+   * Shared by the JSON and multipart paths so a malformed success body is rejected identically,
+   * whichever transport produced it.
+   */
+  function unwrapSuccess<TData>(payload: unknown): TData {
+    if (!isApiSuccessEnvelope<TData>(payload)) {
+      throw new ApiTransportError('The API returned an unexpected response shape.');
+    }
+
+    return payload.data;
+  }
+
   async function send<TData>(
     method: Method,
     path: string,
     body: unknown,
     options: ApiRequestOptions,
   ): Promise<TData> {
-    const payload = await request(method, path, body, options);
-
-    if (!isApiSuccessEnvelope<TData>(payload)) {
-      throw new ApiTransportError('The API returned an unexpected response shape.');
-    }
-
-    return payload.data;
+    return unwrapSuccess<TData>(await request(method, path, body, options));
   }
 
   async function sendList<TItem>(
@@ -196,6 +236,16 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     return { items: payload.data, pagination: payload.pagination };
   }
 
+  async function sendUpload<TData>(
+    path: string,
+    form: FormData,
+    options: ApiRequestOptions = {},
+  ): Promise<TData> {
+    const payload = await request('POST', path, form, options, true);
+
+    return unwrapSuccess<TData>(payload);
+  }
+
   return {
     get: <TData>(path: string, options: ApiRequestOptions = {}): Promise<TData> =>
       send<TData>('GET', path, undefined, options),
@@ -205,8 +255,18 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       send<TData>('PATCH', path, body, options),
     put: <TData>(path: string, body?: unknown, options: ApiRequestOptions = {}): Promise<TData> =>
       send<TData>('PUT', path, body, options),
+    delete: <TData>(
+      path: string,
+      body?: unknown,
+      options: ApiRequestOptions = {},
+    ): Promise<TData> => send<TData>('DELETE', path, body, options),
     getList: <TItem>(path: string, options: ApiRequestOptions = {}): Promise<ApiListPage<TItem>> =>
       sendList<TItem>(path, options),
+    upload: <TData>(
+      path: string,
+      form: FormData,
+      options: ApiRequestOptions = {},
+    ): Promise<TData> => sendUpload<TData>(path, form, options),
   };
 }
 

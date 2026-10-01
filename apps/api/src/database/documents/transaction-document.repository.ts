@@ -194,6 +194,25 @@ export class TransactionDocumentRepository {
       data: { storageDeletedAt: new Date() },
     });
   }
+
+  /**
+   * Documents whose removal committed but whose bytes are still on disk.
+   *
+   * The controlled-cleanup query behind `docs/02-ARCHITECTURE.md`: "A storage failure leaves the
+   * object inaccessible, records a cleanup-pending condition, and is retried by a controlled
+   * maintenance path without restoring content access."
+   *
+   * Both conditions are in the `where` clause rather than filtered in memory, so the query can only
+   * ever return rows that are already inaccessible. `status = 'REMOVED'` alone would be enough to
+   * guarantee that, and including `storageDeletedAt IS NULL` means a document already cleaned up is
+   * never retried.
+   */
+  public async listPendingStorageDeletion(): Promise<readonly TransactionDocument[]> {
+    return this.prisma.transactionDocument.findMany({
+      where: { status: 'REMOVED', storageDeletedAt: null },
+      orderBy: { removedAt: 'asc' },
+    });
+  }
 }
 
 function assertAllowedMimeType(value: string, field: string): void {

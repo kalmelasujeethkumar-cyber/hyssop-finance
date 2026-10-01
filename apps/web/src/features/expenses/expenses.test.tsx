@@ -181,7 +181,8 @@ describe('the expense list', () => {
 
     expect(within(table).getAllByText('Receipt Missing').length).toBeGreaterThan(0);
     expect(within(table).getByText('Attached')).toBeInTheDocument();
-    // Nothing on this screen pretends a receipt can be uploaded, because Phase 07 owns that.
+    // The list stays read-only: it states the receipt state and opens the detail screen, which owns
+    // the upload control. A list button would duplicate the flow and add a second way to be wrong.
     expect(within(table).queryByRole('button', { name: /attach|upload/i })).toBeNull();
   });
 
@@ -609,8 +610,9 @@ describe('recording an expense', () => {
   });
 
   it('states up front that the expense is recorded with no receipt', async () => {
-    // Phase 07 owns attaching documents. The form says so rather than offering a file control
-    // that cannot succeed, and it names the state the record will carry.
+    // A document belongs to a transaction by id, so it can only be attached once the expense exists.
+    // The create form therefore states the state the record will carry and sends the Admin to the
+    // detail screen to attach, rather than holding a file control that has nothing to attach to yet.
     const user = userEvent.setup({ delay: null });
     renderExpenses(stubApiClient());
 
@@ -618,7 +620,7 @@ describe('recording an expense', () => {
     await openRecordForm(user);
 
     expect(await screen.findByText(/recorded with no receipt attached/)).toBeInTheDocument();
-    // No file input, because a control that cannot work is a dead control.
+    // No file input, because there is no transaction id to attach it to.
     expect(document.querySelector('input[type="file"]')).toBeNull();
   });
 
@@ -739,14 +741,16 @@ describe('one expense record', () => {
     expect(screen.getAllByText('Receipt Missing').length).toBeGreaterThan(0);
   });
 
-  it('says the expense has no receipt rather than showing a control that cannot work', async () => {
+  it('states the missing receipt and offers the real upload control', async () => {
     renderExpenses(stubApiClient(), `/expenses/${EXPENSE_TWO.id}`);
 
     await screen.findByText('Recorded details');
-    expect(screen.getByText(/Attaching one is not available yet/)).toBeInTheDocument();
-    // No upload control, because Phase 07 owns it and a dead control is forbidden.
-    expect(document.querySelector('input[type="file"]')).toBeNull();
-    expect(screen.queryByRole('button', { name: /attach|upload/i })).toBeNull();
+    expect(screen.getAllByText('Receipt Missing').length).toBeGreaterThan(0);
+    // Phase 07 replaced the placeholder with a control that works, so the file input and the upload
+    // button are present rather than absent. `features/documents/documents.test.tsx` asserts what
+    // happens when that button is used.
+    expect(document.querySelector('input[type="file"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /upload receipt/i })).toBeInTheDocument();
   });
 
   it('shows an attached receipt as attached, from the API-derived flag', async () => {
@@ -754,7 +758,11 @@ describe('one expense record', () => {
 
     await screen.findByText('Recorded details');
     expect(screen.getByText('Attached')).toBeInTheDocument();
-    expect(screen.getByText('A document is attached to this expense.')).toBeInTheDocument();
+    // The detail line and the receipt panel must agree, so the panel lists the real stored document
+    // rather than contradicting "Attached" with a missing state. Awaited, because the transaction
+    // and its documents are separate reads and the panel fills in after the detail line appears.
+    expect(await screen.findByText(/receipt\.jpg \(HY-DOC-000001\)/)).toBeInTheDocument();
+    expect(screen.queryByText('Receipt Missing')).not.toBeInTheDocument();
   });
 
   it('explains a voided expense and withdraws the controls that would change it', async () => {

@@ -34,8 +34,14 @@ export function AppProviders({
         watchForSessionExpiry(client.patch<TData>(path, body, options), onSessionExpired),
       put: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
         watchForSessionExpiry(client.put<TData>(path, body, options), onSessionExpired),
+      delete: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.delete<TData>(path, body, options), onSessionExpired),
       getList: <TItem,>(path: string, options?: ApiRequestOptions) =>
         watchForSessionExpiry(client.getList<TItem>(path, options), onSessionExpired),
+      // A session can expire while an upload is in flight exactly as it can while a read is, so the
+      // upload path needs the same expiry watch rather than leaving it to fail silently.
+      upload: <TData,>(path: string, form: FormData, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.upload<TData>(path, form, options), onSessionExpired),
     }),
     [client, onSessionExpired],
   );

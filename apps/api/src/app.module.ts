@@ -9,6 +9,7 @@ import { LoggingModule } from './common/logging/logging.module';
 import { loadAppEnvironment } from './config/environment.loader';
 import { DatabaseModule } from './database/database.module';
 import { PrismaModule } from './database/prisma/prisma.module';
+import { DocumentsModule } from './documents/documents.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { HealthModule } from './health/health.module';
 import { IncomeModule } from './income/income.module';
@@ -32,6 +33,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     TransactionsModule,
     IncomeModule,
     ExpensesModule,
+    DocumentsModule,
   ],
   providers: [
     {

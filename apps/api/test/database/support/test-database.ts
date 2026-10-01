@@ -12,6 +12,8 @@
  */
 
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
 import { UNPROVISIONED_PASSWORD_HASH, type AdminProfile } from '@hyssop/contracts';
 import type { AdminUser } from '@prisma/client';
@@ -24,6 +26,7 @@ import {
   DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
   DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES,
   DEFAULT_SESSION_TTL_HOURS,
+  DEFAULT_UPLOAD_MAX_BYTES,
   type AppEnvironment,
 } from '../../../src/config/environment';
 import { AuditEventRepository } from '../../../src/database/audit/audit-event.repository';
@@ -120,6 +123,11 @@ export function testAppEnvironment(overrides: Partial<AppEnvironment> = {}): App
     databaseUrl: 'postgresql://unused/used-by-injection',
     directDatabaseUrl: null,
     auth: testAuthEnvironment(),
+    storage: {
+      driver: 'local',
+      localStoragePath: join(tmpdir(), 'hyssop-finance-test-storage'),
+      uploadMaxBytes: DEFAULT_UPLOAD_MAX_BYTES,
+    },
     ...overrides,
   };
 }

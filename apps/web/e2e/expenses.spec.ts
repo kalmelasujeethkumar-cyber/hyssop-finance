@@ -99,6 +99,40 @@ function recordedDetail(page: Page, label: string): Locator {
     .locator('xpath=following-sibling::dd[1]');
 }
 
+/**
+ * A real one-pixel PNG.
+ *
+ * The API validates the bytes rather than trusting the declared type, so a receipt upload needs a
+ * file whose content is genuinely a supported image. A file of arbitrary bytes would be refused
+ * correctly and the journey would prove nothing about a successful upload.
+ */
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/**
+ * The open record's own reference, read from the record rather than guessed.
+ *
+ * The receipt panel is titled with the reference it belongs to, so taking the reference from the
+ * record's own "Expense reference" field keeps the panel's landmark unambiguous however many
+ * expenses a reused test database already holds. Hard-coding `HY-EXP-000001` would silently break
+ * the moment the database is not empty.
+ */
+async function expenseReference(page: Page): Promise<string> {
+  return (await recordedDetail(page, 'Expense reference').textContent())?.trim() ?? '';
+}
+
+/** The record's own UUID, read from the record form's action rather than from a URL. */
+async function expenseId(page: Page): Promise<string> {
+  return (
+    new URL(page.url()).pathname
+      .split('/')
+      .filter((segment) => segment !== '')
+      .pop() ?? ''
+  );
+}
+
 /** Opens the create form. */
 async function openRecordForm(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Record expense', exact: true }).click();
@@ -243,7 +277,7 @@ test.describe('expense management', () => {
     expect(browserErrors).toEqual([]);
   });
 
-  test('an expense without a receipt is shown as Receipt Missing, not as an empty control', async ({
+  test('a receipt can be attached to an expense and removed again, and both states are stated', async ({
     page,
   }) => {
     const browserErrors = collectBrowserErrors(page);
@@ -253,20 +287,211 @@ test.describe('expense management', () => {
     await recordExpense(page, { amount: '310.00', category: 'Water', description });
     await openRecordByDescription(page, description);
 
-    // `REQ-DOC-003`. The fact is stated in words, and the panel offers no control that cannot
-    // succeed, because attaching a document belongs to Phase 07. The words appear twice on the
-    // screen — in the receipt panel and in the recorded details — so the panel is addressed by
-    // its landmark; a bare text match would violate strict mode and prove nothing.
-    await expect(
-      page.getByRole('region', { name: 'Receipt' }).getByText('Receipt Missing', { exact: true }),
-    ).toBeVisible();
-    await expect(recordedDetail(page, 'Receipt')).toHaveText('Receipt Missing');
-    await expect(page.getByText(/Attaching one is not available yet/)).toBeVisible();
-    await expect(page.getByRole('button', { name: /Attach receipt|Upload/i })).toHaveCount(0);
+    // `REQ-DOC-003`. The fact is stated in words. The words appear twice on the screen — in the
+    // receipt panel and in the recorded details — so the panel is addressed by its landmark; a bare
+    // text match would violate strict mode and prove nothing.
+    const receiptPanel = page.getByRole('region', {
+      name: `Receipt for ${await expenseReference(page)}`,
+    });
 
-    // The record is still a real, counted expense: the void control is live, which it would not
-    // be if the missing receipt had left the record in a broken state.
+    await expect(receiptPanel.getByText('Receipt Missing', { exact: true })).toBeVisible();
+    await expect(recordedDetail(page, 'Receipt')).toHaveText('Receipt Missing');
+
+    // A real file, uploaded through the real multipart route against the real API and the real
+    // storage adapter. The bytes are a valid one-pixel PNG, because the API validates the content
+    // rather than the declared type, and a file of the wrong content would be refused.
+    await receiptPanel.getByLabel('Receipt file').setInputFiles({
+      name: 'water-bill.png',
+      mimeType: 'image/png',
+      buffer: ONE_PIXEL_PNG,
+    });
+    await receiptPanel.getByRole('button', { name: 'Upload receipt' }).click();
+
+    // The stored row carries the reference the server allocated and the filename the Admin chose,
+    // which is what proves the bytes really went through upload, storage, and persistence.
+    await expect(receiptPanel.getByText(/water-bill\.png \(HY-DOC-\d{6}\)/)).toBeVisible();
+    await expect(recordedDetail(page, 'Receipt')).toHaveText('Attached');
+    await expect(receiptPanel.getByRole('button', { name: 'Download receipt' })).toBeVisible();
+    await expect(receiptPanel.getByRole('button', { name: 'Preview receipt' })).toBeVisible();
+
+    // Removal requires a reason, and the removed record is retained rather than erased, so the panel
+    // explains itself instead of quietly losing the audit trail.
+    await receiptPanel.getByRole('button', { name: 'Remove receipt' }).click();
+    await expect(receiptPanel.getByText('Enter a reason for removing this receipt.')).toBeVisible();
+    await receiptPanel.getByLabel('Reason for removing this receipt').fill('wrong expense');
+    await receiptPanel.getByRole('button', { name: 'Remove receipt' }).click();
+    await expect(receiptPanel.getByText('This receipt was removed.')).toBeVisible();
+    await expect(receiptPanel.getByText('Reason: wrong expense')).toBeVisible();
+    await expect(recordedDetail(page, 'Receipt')).toHaveText('Receipt Missing');
+    // The bytes are gone, so no control offers to fetch them.
+    await expect(receiptPanel.getByRole('button', { name: 'Download receipt' })).toHaveCount(0);
+
+    // The record is still a real, counted expense: the void control is live, which it would not be if
+    // the missing receipt had left the record in a broken state.
     await expect(page.getByRole('button', { name: 'Void this expense' }).first()).toBeVisible();
+
+    expect(browserErrors).toEqual([]);
+  });
+
+  test('a stored receipt is served again as the same bytes, proving the download really works', async ({
+    page,
+  }) => {
+    const browserErrors = collectBrowserErrors(page);
+    const description = uniqueRunTag();
+
+    await openExpenses(page);
+    await recordExpense(page, { amount: '318.00', category: 'Water', description });
+    await openRecordByDescription(page, description);
+
+    const receiptPanel = page.getByRole('region', {
+      name: `Receipt for ${await expenseReference(page)}`,
+    });
+
+    await receiptPanel.getByLabel('Receipt file').setInputFiles({
+      name: 'receipt-bytes.png',
+      mimeType: 'image/png',
+      buffer: ONE_PIXEL_PNG,
+    });
+    await receiptPanel.getByRole('button', { name: 'Upload receipt' }).click();
+    await expect(receiptPanel.getByText(/receipt-bytes\.png \(HY-DOC-\d{6}\)/)).toBeVisible();
+
+    // The panel must not synthesize this path from the document id: the server decides it, and
+    // the browser uses whatever the API returned. Capturing the request proves both the path the
+    // browser chose and that the session cookie was carried on the content request.
+    // The panel must not synthesize this path from the document id: the server decides it, and the
+    // browser requests whatever the API returned. Capturing the outgoing request proves both that
+    // the click did real work and that the session cookie was carried on the content request.
+    const contentRequest = page.waitForRequest(
+      (request) =>
+        /\/api\/v1\/documents\/[0-9a-f-]+\/download$/.test(new URL(request.url()).pathname) &&
+        request.method() === 'GET',
+    );
+
+    await receiptPanel.getByRole('button', { name: 'Download receipt' }).click();
+
+    const requestedPath = new URL((await contentRequest).url()).pathname;
+
+    // The same must hold for the inline preview, which the API only offers for a format it can
+    // render. Asserting the control exists proves nothing; requesting the route proves it.
+    const previewRequest = page.waitForRequest(
+      (request) =>
+        /\/api\/v1\/documents\/[0-9a-f-]+\/preview$/.test(new URL(request.url()).pathname) &&
+        request.method() === 'GET',
+    );
+
+    await receiptPanel.getByRole('button', { name: 'Preview receipt' }).click();
+
+    await previewRequest;
+
+    // The stored bytes are then read back over the server-authenticated request context, which is
+    // the only place the real payload can be inspected: the panel fetches it into a blob URL, so
+    // the body never reaches Playwright's response recorder.
+    for (const route of [requestedPath, requestedPath.replace(/\/download$/, '/preview')]) {
+      const served = await page.request.get(route);
+
+      expect(served.status()).toBe(200);
+      expect(served.headers()['content-type']).toContain('image/png');
+
+      const body = Buffer.from(await served.body());
+
+      expect([body.length, body.subarray(0, 16).toString('hex')]).toStrictEqual([
+        ONE_PIXEL_PNG.length,
+        ONE_PIXEL_PNG.subarray(0, 16).toString('hex'),
+      ]);
+    }
+
+    // The download offers the Admin's own filename back, so the saved file is the one the server
+    // verified rather than a UUID.
+    expect((await page.request.get(requestedPath)).headers()['content-disposition']).toContain(
+      'receipt-bytes.png',
+    );
+
+    expect(browserErrors).toEqual([]);
+  });
+
+  test('after a removal the bytes are gone and the retained row refuses to serve them', async ({
+    page,
+  }) => {
+    const browserErrors = collectBrowserErrors(page);
+    const description = uniqueRunTag();
+
+    await openExpenses(page);
+    await recordExpense(page, { amount: '322.00', category: 'Water', description });
+    await openRecordByDescription(page, description);
+
+    const receiptPanel = page.getByRole('region', {
+      name: `Receipt for ${await expenseReference(page)}`,
+    });
+
+    await receiptPanel.getByLabel('Receipt file').setInputFiles({
+      name: 'gone-after-removal.png',
+      mimeType: 'image/png',
+      buffer: ONE_PIXEL_PNG,
+    });
+    await receiptPanel.getByRole('button', { name: 'Upload receipt' }).click();
+    await expect(receiptPanel.getByText(/gone-after-removal\.png \(HY-DOC-\d{6}\)/)).toBeVisible();
+
+    await receiptPanel.getByLabel('Reason for removing this receipt').fill('attached by mistake');
+    await receiptPanel.getByRole('button', { name: 'Remove receipt' }).click();
+    await expect(receiptPanel.getByText('This receipt was removed.')).toBeVisible();
+
+    // `REQ-DOC-007`: the metadata is retained but the content is no longer readable. The API
+    // answers `410 Gone`, not `404`, because the document still exists as history. Asserting the
+    // retained row is not enough; the served response must be proven to be gone.
+    // The stored UUID is read from the API's own projection rather than parsed out of the UI text,
+    // because `HY-DOC-000123` is the human reference and the content route is keyed by the UUID.
+    const documents = await page.request.get(
+      `/api/v1/transactions/${await expenseId(page)}/documents`,
+    );
+
+    expect(documents.status()).toBe(200);
+
+    const rows = (await documents.json()) as { data?: { id: string; status: string }[] };
+    const removed = rows.data?.find((row) => row.status === 'REMOVED');
+
+    expect(removed?.id).toBeTruthy();
+
+    const goneResponse = await page.request.get(
+      `/api/v1/documents/${removed?.id as string}/download`,
+    );
+
+    expect(goneResponse.status()).toBe(410);
+
+    // And the interface must not offer a control for content it knows is unreadable.
+    await expect(receiptPanel.getByRole('button', { name: 'Download receipt' })).toHaveCount(0);
+    await expect(receiptPanel.getByRole('button', { name: 'Preview receipt' })).toHaveCount(0);
+
+    expect(browserErrors).toEqual([]);
+  });
+
+  test('a removal with no reason is refused, so a receipt is never removed without an explanation', async ({
+    page,
+  }) => {
+    const browserErrors = collectBrowserErrors(page);
+    const description = uniqueRunTag();
+
+    await openExpenses(page);
+    await recordExpense(page, { amount: '312.00', category: 'Water', description });
+    await openRecordByDescription(page, description);
+
+    const receiptPanel = page.getByRole('region', {
+      name: `Receipt for ${await expenseReference(page)}`,
+    });
+
+    await receiptPanel.getByLabel('Receipt file').setInputFiles({
+      name: 'water-bill.png',
+      mimeType: 'image/png',
+      buffer: ONE_PIXEL_PNG,
+    });
+    await receiptPanel.getByRole('button', { name: 'Upload receipt' }).click();
+    await expect(receiptPanel.getByText(/water-bill\.png \(HY-DOC-\d{6}\)/)).toBeVisible();
+
+    // `REQ-DOC-006`. Removing with an empty reason must be refused and must leave the receipt in
+    // place, so the Admin cannot delete a receipt without saying why.
+    await receiptPanel.getByRole('button', { name: 'Remove receipt' }).click();
+    await expect(receiptPanel.getByText('Enter a reason for removing this receipt.')).toBeVisible();
+    await expect(receiptPanel.getByText(/water-bill\.png \(HY-DOC-\d{6}\)/)).toBeVisible();
+    await expect(recordedDetail(page, 'Receipt')).toHaveText('Attached');
 
     expect(browserErrors).toEqual([]);
   });

@@ -13,6 +13,7 @@ import {
 } from '@hyssop/contracts';
 import type { Request, Response } from 'express';
 import { StructuredLogger } from '../logging/structured-logger';
+import { describeMultipartError } from './multipart-error';
 import { ApiError } from './api-error';
 import { DomainError, type DomainErrorKind } from './domain.errors';
 import {
@@ -75,6 +76,27 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
       this.send(response, status, {
         error: { code, message, requestId, ...(fields === undefined ? {} : { fields }) },
+      });
+      return;
+    }
+
+    const multipart = describeMultipartError(exception);
+
+    if (multipart !== undefined) {
+      this.logger.logRequest(
+        'warn',
+        'request rejected',
+        { status: multipart.status, code: multipart.code, reason: 'multipart parse failure' },
+        requestId,
+      );
+
+      this.send(response, multipart.status, {
+        error: {
+          code: multipart.code,
+          message: multipart.message,
+          requestId,
+          fields: multipart.fields,
+        },
       });
       return;
     }

@@ -93,8 +93,11 @@ Remove only project-local test documents when needed. Never delete arbitrary use
 
 ## Completion checklist
 
-- [ ] Storage abstraction and local adapter implemented.
-- [ ] Upload, preview, download, and removal work.
-- [ ] Validation and authorization pass.
-- [ ] Missing-receipt state is visible.
-- [ ] Documentation, tests, and Git gate complete.
+- [x] Storage abstraction and local adapter implemented.
+- [x] Upload, preview, download, and removal work.
+- [x] Validation and authorization pass.
+- [x] Missing-receipt state is visible.
+- [x] Targeted tests, regression, database verification, migration and drift checks, build, E2E, and security/negative tests pass.
+- [x] Critical path verified in a browser against a real API and a real database, including byte-for-byte content delivery and the post-removal `410`.
+- [x] Documentation recorded in `docs/runtime/`.
+- [ ] Git gate complete: commit, push, and verified hash recorded in `PHASE-HISTORY.md`.

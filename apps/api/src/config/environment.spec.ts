@@ -31,6 +31,11 @@ describe('parseEnvironment', () => {
         loginRateLimitMaxAttempts: 5,
         loginRateLimitWindowMinutes: 15,
       },
+      storage: {
+        driver: 'local',
+        localStoragePath: './storage/uploads',
+        uploadMaxBytes: 10485760,
+      },
     });
   });
 

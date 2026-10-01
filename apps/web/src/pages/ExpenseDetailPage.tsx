@@ -18,6 +18,7 @@ import {
   SECONDARY_BUTTON_CLASS,
   controlClassName,
 } from '../components/ui';
+import { TransactionDocumentsPanel } from '../features/documents/TransactionDocumentsPanel';
 import {
   expenseCategoryLabel,
   isExpenseSummary,
@@ -727,27 +728,18 @@ function VoidForm({
 /**
  * The receipt state, stated rather than implied.
  *
- * `REQ-DOC-003` requires an expense with no receipt to clearly show **Receipt Missing**. A
- * disabled upload button would leave the Admin guessing whether the control is broken, the file
- * was too large, or the receipt genuinely does not exist, and Phase 07 owns the control that will
- * actually work. So this panel states the fact and says what is not available yet, and offers no
- * control that cannot succeed.
+ * `REQ-DOC-003` requires an expense with no receipt to clearly show **Receipt Missing**, and Phase
+ * 07 now owns a control that actually works, so this renders the real document panel. The panel
+ * states the missing state in words and reports every server decision — available, removed with a
+ * reason, or awaiting cleanup — instead of inferring any of them from the expense's `hasReceipt`
+ * flag or a document count.
  */
 function ExpenseReceiptState({ record }: { readonly record: ExpenseSummary }) {
   return (
-    <Panel title="Receipt">
-      {record.hasReceipt ? (
-        <p className="text-supporting text-text-primary">A document is attached to this expense.</p>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-supporting font-semibold text-text-primary">{RECEIPT_MISSING_LABEL}</p>
-          <p className="text-supporting text-text-secondary">
-            This expense has no receipt attached. Attaching one is not available yet, and the
-            expense is still recorded and counted normally.
-          </p>
-        </div>
-      )}
-    </Panel>
+    <TransactionDocumentsPanel
+      transactionId={record.id}
+      transactionReferenceId={record.referenceId}
+    />
   );
 }
 

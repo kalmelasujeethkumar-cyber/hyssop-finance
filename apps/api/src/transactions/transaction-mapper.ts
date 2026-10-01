@@ -67,9 +67,13 @@ export function toTransactionSummary(row: TransactionWithRelations): Transaction
  * the projection is the shared one plus the two guarantees `REQ-EXP-004` and `REQ-DOC-003`
  * make about an expense. The category is read from the same relation the ledger already
  * carries, and `hasReceipt` is *derived* from the attached document rows rather than stored,
- * so it cannot drift from reality: an expense with no document honestly reports
+ * so it cannot drift from reality: an expense with no available document honestly reports
  * `hasReceipt: false` and the browser says **Receipt Missing** instead of showing an empty
  * control that looks like a broken upload.
+ *
+ * `hasReceipt` counts only `AVAILABLE` documents while `documentCount` counts every record. A
+ * receipt that was removed under `REQ-DOC-006` keeps its row for the audit trail, but it is no
+ * longer a receipt the Admin can open, so reporting `true` would send them to a `410 Gone`.
  */
 export function toExpenseSummary(row: TransactionWithRelations): ExpenseSummary {
   if (row.transactionType !== 'EXPENSE' || row.category === null) {
@@ -83,7 +87,7 @@ export function toExpenseSummary(row: TransactionWithRelations): ExpenseSummary 
   return {
     ...toTransactionSummary(row),
     category: row.category,
-    hasReceipt: row._count.documents > 0,
+    hasReceipt: row.documents.length > 0,
   };
 }
 

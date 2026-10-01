@@ -140,15 +140,23 @@ export type TransactionWithRelations = Prisma.FinancialTransactionGetPayload<{
 /**
  * The single relation set used by every transaction read.
  *
- * Listing needs the member name, the category label, the period, and whether any document
- * is attached. Selecting them in one place means the list, the detail, the receipt, and the
- * audit view cannot disagree about what a transaction shows, which is the
- * `docs/02-ARCHITECTURE.md` requirement for one canonical representation.
+ * Listing needs the member name, the category label, the period, and the attachment state.
+ * Selecting them in one place means the list, the detail, the receipt, and the audit view cannot
+ * disagree about what a transaction shows, which is the `docs/02-ARCHITECTURE.md` requirement for
+ * one canonical representation.
+ *
+ * Two document figures are selected because they answer different questions and must not be
+ * conflated. `_count.documents` counts *every* record, including removed ones, because the audit
+ * history is `docs/05-DATABASE-SPEC.md`-required to keep removed documents. `documents` is
+ * filtered to `AVAILABLE` because `REQ-DOC-003` asks whether a receipt is currently attached, and
+ * a removed receipt is not one — reporting `true` after a removal would claim the Admin can open a
+ * file the API will answer with `410 Gone`.
  */
 const TRANSACTION_LIST_INCLUDE = {
   member: { select: { id: true, referenceId: true, name: true } },
   category: { select: { id: true, name: true, status: true } },
   contributionPeriod: { select: { id: true, year: true, month: true } },
+  documents: { where: { status: 'AVAILABLE' }, select: { id: true } },
   _count: { select: { documents: true } },
 } as const satisfies Prisma.FinancialTransactionInclude;
 

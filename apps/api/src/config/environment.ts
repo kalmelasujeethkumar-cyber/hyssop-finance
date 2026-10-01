@@ -38,6 +38,30 @@ export const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES = 15;
 
 /** Maximum session lifetime, so a mistyped value cannot create a permanent session. */
 export const MAX_SESSION_TTL_HOURS = 720;
+/**
+ * The only storage driver Phase 07 ships.
+ *
+ * A closed set rather than a free string: `docs/02-ARCHITECTURE.md` requires the storage
+ * boundary to be replaceable, and a replaceable boundary is only meaningful if an unknown driver
+ * name fails loudly at startup instead of silently falling back to local storage in an
+ * environment that believes it is talking to object storage.
+ */
+export const STORAGE_DRIVERS = ['local'] as const;
+export type StorageDriver = (typeof STORAGE_DRIVERS)[number];
+/** Matches the commented placeholder in `.env.example`. */
+export const DEFAULT_LOCAL_STORAGE_PATH = './storage/uploads';
+/** Matches the commented placeholder in `.env.example`. */
+export const DEFAULT_UPLOAD_MAX_BYTES = 10_485_760;
+/**
+ * The upload ceiling is bounded rather than free.
+ *
+ * The upper bound is a deliberate defence: `docs/07-SECURITY-RULES.md` requires a documented
+ * upload limit and a request that cannot exhaust the demo server. An administrator who raises the
+ * limit past this value is almost certainly misreading kilobytes for bytes, and a limit above it
+ * would put a buffer that size on a machine that may have none.
+ */
+export const MIN_UPLOAD_MAX_BYTES = 1024;
+export const MAX_UPLOAD_MAX_BYTES = 104_857_600;
 
 /**
  * Connection roles created by `npm run db:start` and `docker-compose.yml`.
@@ -83,6 +107,24 @@ export interface AppEnvironment {
   /** Schema-owner connection string used only by migration commands, when configured. */
   readonly directDatabaseUrl: string | null;
   readonly auth: AuthEnvironment;
+  /** Phase 07 document storage. `docs/02-ARCHITECTURE.md` "Storage boundary". */
+  readonly storage: StorageEnvironment;
+}
+
+/**
+ * Document storage configuration.
+ *
+ * `docs/02-ARCHITECTURE.md` requires "the storage path configuration explicit and replaceable for
+ * production", and `docs/12-DEPLOYMENT-PLAN.md` records that a local disk is not durable or
+ * shared across replicas. Naming the driver and the path as validated values is what makes that
+ * substitution a configuration change rather than a code change.
+ */
+export interface StorageEnvironment {
+  readonly driver: StorageDriver;
+  /** As configured, so it can be reported honestly without resolving it into an absolute path. */
+  readonly localStoragePath: string;
+  /** Per-file byte ceiling enforced by the multipart parser before anything is buffered. */
+  readonly uploadMaxBytes: number;
 }
 
 export type EnvironmentSource = Readonly<Record<string, string | undefined>>;
@@ -109,12 +151,22 @@ export function parseEnvironment(source: EnvironmentSource): AppEnvironment {
   const databaseUrl = parseDatabaseUrl(source['DATABASE_URL'], problems);
   const directDatabaseUrl = parseDirectDatabaseUrl(source['DIRECT_DATABASE_URL'], problems);
   const auth = parseAuthEnvironment(source, problems);
+  const storage = parseStorageEnvironment(source, problems);
 
   if (problems.length > 0) {
     throw new EnvironmentValidationError(problems);
   }
 
-  return { nodeEnv, port, corsAllowedOrigins, logLevel, databaseUrl, directDatabaseUrl, auth };
+  return {
+    nodeEnv,
+    port,
+    corsAllowedOrigins,
+    logLevel,
+    databaseUrl,
+    directDatabaseUrl,
+    auth,
+    storage,
+  };
 }
 
 export function resolveLogLevel(nodeEnv: NodeEnvironment): LogLevel {
@@ -333,6 +385,60 @@ export function parseAuthEnvironment(
     argon2,
     loginRateLimitMaxAttempts,
     loginRateLimitWindowMinutes,
+  };
+}
+
+/**
+ * Parses the Phase 07 document-storage settings.
+ *
+ * Each rule is enforced rather than defaulted silently:
+ *
+ * - An unknown `STORAGE_DRIVER` is a startup failure. Accepting it and continuing on local disk
+ *   would let a deployment believe it is writing to durable object storage while writing to an
+ *   ephemeral container filesystem, which is precisely the failure `docs/12-DEPLOYMENT-PLAN.md`
+ *   warns must not be hidden.
+ * - A `LOCAL_STORAGE_PATH` containing a `..` segment is rejected. The demo path is project-local
+ *   by contract, so a traversal out of the repository is a configuration mistake, not an intent.
+ * - `UPLOAD_MAX_BYTES` is bounded on both sides, so a zero-byte limit that would reject every
+ *   upload and a gigabyte limit that would exhaust memory are both caught at startup rather than
+ *   discovered by the Admin mid-upload.
+ */
+function parseStorageEnvironment(
+  source: EnvironmentSource,
+  problems: string[],
+): StorageEnvironment {
+  const driverValue = source['STORAGE_DRIVER']?.trim().toLowerCase();
+
+  // `STORAGE_DRIVER` is optional, so "absent" and "explicitly local" both mean the local adapter.
+  // The remaining case is a value outside the closed set, which is a configuration error rather
+  // than a request to guess: continuing on local disk would let a deployment believe it writes to
+  // durable object storage while writing to a container filesystem that disappears on redeploy.
+  const driver: StorageDriver =
+    driverValue === undefined || driverValue === '' ? 'local' : (driverValue as StorageDriver);
+
+  if (!STORAGE_DRIVERS.includes(driver)) {
+    problems.push(`STORAGE_DRIVER must be one of: ${STORAGE_DRIVERS.join(', ')}`);
+  }
+
+  const rawPath = source['LOCAL_STORAGE_PATH']?.trim();
+  const localStoragePath =
+    rawPath === undefined || rawPath === '' ? DEFAULT_LOCAL_STORAGE_PATH : rawPath;
+
+  if (localStoragePath.split(/[\\/]/).includes('..')) {
+    problems.push('LOCAL_STORAGE_PATH must stay inside the project and must not contain ".."');
+  }
+
+  return {
+    driver: STORAGE_DRIVERS.includes(driver) ? driver : 'local',
+    localStoragePath,
+    uploadMaxBytes: parseBoundedNumber(
+      source['UPLOAD_MAX_BYTES'],
+      'UPLOAD_MAX_BYTES',
+      DEFAULT_UPLOAD_MAX_BYTES,
+      MIN_UPLOAD_MAX_BYTES,
+      MAX_UPLOAD_MAX_BYTES,
+      problems,
+    ),
   };
 }
 
