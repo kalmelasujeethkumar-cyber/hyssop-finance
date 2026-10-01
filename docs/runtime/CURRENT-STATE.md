@@ -15,14 +15,15 @@
 
 ## Current stage
 
-- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE), PHASE 07 — DOCUMENTS (IMPLEMENTED AND VERIFIED, GIT GATE PENDING)**
-- Current phase: `PHASE-07-DOCUMENTS`
-- Status: **PHASE 07 QUALITY GATE PASSED ON 2026-10-01; GIT GATE NOT YET CLOSED**
-- Next gate: **`PHASE-07-DOCUMENTS` GIT GATE** (review the diff, commit only intended files, push, and verify the remote hash), then `PHASE-08-DASHBOARD`
+- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE), PHASE 07 — DOCUMENTS (COMPLETE)**
+- Current phase: `PHASE-08-DASHBOARD`
+- Status: **PHASE 07 QUALITY GATE PASSED ON 2026-10-01; GIT GATE CLOSED (commit `2e1d778` pushed and verified)**
+- Next gate: `PHASE-08-DASHBOARD`
 - Phase 06: **COMPLETE**; closed with commit `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479`
-- Phase 07: **IMPLEMENTED AND VERIFIED, UNCOMMITTED**; the storage adapter, document upload, metadata, content delivery, removal, and the receipt panel are implemented and covered by API, web, real-database, and browser tests. Nothing in Phase 07 is committed or pushed yet
-- Application implementation: **PHASE 01 THROUGH PHASE 07 IMPLEMENTED AND QUALITY-GATED** (foundation, persistence, authentication, members, income, expenses, documents)
-- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 through Phase 06 gates closed with recorded evidence; Phase 07 evidence recorded, Git gate pending
+- Phase 07: **COMPLETE**; closed with commit `2e1d778287da8d7c67c90cac2d25a63a80ba0e82`
+- Phase 08: **NOT STARTED**; the dashboard, its server-authoritative financial totals, and its charts do not exist yet
+- Application implementation: **PHASE 01 THROUGH PHASE 07 COMPLETE** (foundation, persistence, authentication, members, income, expenses, documents)
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 through Phase 07 gates closed with recorded evidence
 - Database migrations: **5 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`; Phase 06 and Phase 07 added none, because `expense_category`, the expense transaction columns, and `transaction_document` were all created and reviewed in Phase 02
 - External services: **NOT CONFIGURED**
 
@@ -48,13 +49,13 @@ Phase 07 is implemented and has passed its quality gate. It owns `REQ-DOC-001`�
 
 ## Next planned step
 
-Close the Phase 07 Git gate: inspect `git status`, the full diff, and recent history; confirm no secret, generated file, or Phase 08 change is staged; commit only the Phase 07 implementation and its runtime evidence with a meaningful message; push to `origin/main`; verify with `git fetch` that `HEAD` and `origin/main` return the same hash; and record that hash in `PHASE-HISTORY.md`.
+The Phase 07 Git gate is closed: 48 files were committed as `2e1d778287da8d7c67c90cac2d25a63a80ba0e82` and pushed to `origin/main`, and after a fresh `git fetch` the local and remote hashes match.
 
 The Phase 06 Git gate is closed: 38 files were committed as `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479` and pushed to `origin/main`, and the local and remote hashes match.
 
 The Phase 05 Git gate is closed: 45 files were committed as `c639fa89504ee5be09e17d8bb2206b89139d9ccf` and pushed to `origin/main`, and the local and remote hashes match.
 
-Only after the Phase 07 Git gate is closed, begin `PHASE-08-DASHBOARD` by rereading the phase contract, `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `06-API-SPEC.md`, and `04-DESIGN-TOKENS.md`. Phase 08 must compute income, expenses, and balance on the server from active valid transactions only, with no client-side float arithmetic, no duplicated formula, and no hardcoded or fake totals. Commit Phase 08 separately from Phase 07.
+Then begin `PHASE-08-DASHBOARD` by rereading the phase contract, `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `06-API-SPEC.md`, and `04-DESIGN-TOKENS.md`. Income, expenses, and balance must be computed on the server from active valid transactions only, through the canonical calculation layer in `docs/02-ARCHITECTURE.md`, in exact paise and transported as money strings. There must be no client-side floating-point arithmetic, no duplicated formula, and no hardcoded, faked, or sample total or chart. Any chart must be derived from the same server response that fills the cards and tables, and every filter, date range, and empty, loading, and error state must be honest. Do not treat Phase 08 as started until its own plan is recorded.
 
 ## Blockers
 

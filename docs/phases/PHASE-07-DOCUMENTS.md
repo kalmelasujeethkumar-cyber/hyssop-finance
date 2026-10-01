@@ -100,4 +100,4 @@ Remove only project-local test documents when needed. Never delete arbitrary use
 - [x] Targeted tests, regression, database verification, migration and drift checks, build, E2E, and security/negative tests pass.
 - [x] Critical path verified in a browser against a real API and a real database, including byte-for-byte content delivery and the post-removal `410`.
 - [x] Documentation recorded in `docs/runtime/`.
-- [ ] Git gate complete: commit, push, and verified hash recorded in `PHASE-HISTORY.md`.
+- [x] Git gate complete: 48 files committed as `2e1d778287da8d7c67c90cac2d25a63a80ba0e82`, pushed to `origin/main`, and the verified hash recorded in `PHASE-HISTORY.md`.
