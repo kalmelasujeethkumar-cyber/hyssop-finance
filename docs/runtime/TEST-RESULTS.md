@@ -93,7 +93,7 @@ Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, Power
 | Category lifecycle evidence | Pass | A category is renamed and deactivated rather than deleted, a historical expense keeps its label under a later-deactivated category, a new expense on it is refused, reactivation works, and there is no delete route |
 | Secret and staged-file review | Pass | A credential-pattern scan over all 36 changed and added files matched no Argon2 hash, JWT, private key, token prefix, literal password, or connection string. `.env` is ignored and untracked, only `.env.example` is tracked, and no build output, dependency, Playwright report, trace, or local database artifact is staged. `git diff --check` reported no whitespace errors |
 | Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit |
-| Git gate | Pending at the time this table was written | The verified commit hash and push result are recorded in `PHASE-HISTORY.md` by the evidence commit, which does not change the implementation verdict |
+| Git gate | Pass | 38 intended files committed and pushed to `origin/main` as `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479`; after a fresh `git fetch`, `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash |
 
 ## Phase 06 defects found and fixed
 

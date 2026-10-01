@@ -15,14 +15,14 @@
 
 ## Current stage
 
-- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (QUALITY GATE PASSED, GIT GATE PENDING)**
+- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE)**
 - Current phase: `PHASE-06-EXPENSES`
-- Status: **PHASE 06 QUALITY GATE PASSED ON 2026-10-01; GIT GATE PENDING**
-- Next gate: the Phase 06 Git gate, then `PHASE-07-DOCUMENTS`
+- Status: **PHASE 06 QUALITY GATE PASSED ON 2026-10-01; GIT GATE CLOSED (commit `6a2ad41` pushed and verified)**
+- Next gate: `PHASE-07-DOCUMENTS`
 - Phase 06: **IMPLEMENTED AND VERIFIED**; expense create, read, correction, void, category lifecycle, and the **Receipt Missing** state are implemented and covered by API, web, real-database, and browser tests
 - Phase 07: **NOT STARTED**; document upload, download, and the storage adapter remain out of scope for every phase completed so far
 - Application implementation: **PHASE 01, PHASE 02, PHASE 03, PHASE 04, AND PHASE 05 COMPLETE** (foundation, persistence, authentication, members, and income); Phase 06 is implemented and quality-gated
-- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01, Phase 02, Phase 03, Phase 04, and Phase 05 gates closed with recorded evidence; Phase 06 gate recorded, Git gate pending
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01, Phase 02, Phase 03, Phase 04, Phase 05, and Phase 06 gates closed with recorded evidence
 - Database migrations: **5 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`; Phase 06 added none, because `expense_category` and the expense columns were created and reviewed in Phase 02
 - External services: **NOT CONFIGURED**
 
@@ -46,7 +46,7 @@ Phase 06 is implemented and has passed its quality gate. It owns `REQ-EXP-001`�
 
 ## Next planned step
 
-Close the Phase 06 Git gate: inspect the status, the diff, and the recent history, review the staged file list and secret safety, commit only the intended Phase 06 files, push to `origin/main` after the gate passes, verify the push, and record the verified hash in `PHASE-HISTORY.md`.
+The Phase 06 Git gate is closed: 38 files were committed as `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479` and pushed to `origin/main`, and the local and remote hashes match.
 
 The Phase 05 Git gate is closed: 45 files were committed as `c639fa89504ee5be09e17d8bb2206b89139d9ccf` and pushed to `origin/main`, and the local and remote hashes match.
 
