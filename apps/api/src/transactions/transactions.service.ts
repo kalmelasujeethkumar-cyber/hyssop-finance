@@ -28,7 +28,12 @@ import {
   type TransactionWithRelations,
 } from '../database/transactions/transaction.repository';
 import type { CorrectTransactionDto } from './dto/transaction.dto';
-import { toAuditEventViews, toReceiptView, toTransactionSummary } from './transaction-mapper';
+import {
+  toAuditEventViews,
+  toReceiptView,
+  toTransactionSummary,
+  toTransactionView,
+} from './transaction-mapper';
 
 /**
  * The endpoint identities idempotency keys are scoped to.
@@ -131,8 +136,12 @@ export class TransactionsService {
     return listEnvelope(rows.map(toTransactionSummary), { page, pageSize, totalItems });
   }
 
+  /**
+   * One transaction, projected so an expense is never returned as a shape that hides its
+   * category or its receipt state. See `toTransactionView`.
+   */
   public async detail(id: string): Promise<TransactionSummary> {
-    return toTransactionSummary(await this.transactions.findWithRelations(id));
+    return toTransactionView(await this.transactions.findWithRelations(id));
   }
 
   /**
@@ -181,7 +190,7 @@ export class TransactionsService {
           { actorAdminId: actor.adminUserId, requestId: actor.requestId },
         );
 
-        return { status: 200, body: toTransactionSummary(updated) };
+        return { status: 200, body: toTransactionView(updated) };
       },
     });
 
@@ -218,7 +227,7 @@ export class TransactionsService {
           requestId: actor.requestId,
         });
 
-        return { status: 200, body: toTransactionSummary(voided) };
+        return { status: 200, body: toTransactionView(voided) };
       },
     });
 
@@ -276,6 +285,28 @@ export class TransactionsService {
 
     if (row.transactionType !== 'INCOME') {
       throw validationFailed('That transaction is not an income record.', { field: 'id' });
+    }
+
+    return row;
+  }
+
+  /**
+   * Reads a transaction and asserts it is an expense.
+   *
+   * The mirror of `requireIncomeRow`, and it exists for the same reason: an expense route must
+   * not be able to return an income record. Without it, `GET /expenses/categories` is safe but
+   * any future expense-scoped read addressed by a transaction id could be pointed at an
+   * income row, and the income member rules would then apply to a payment that was never a
+   * contribution.
+   *
+   * The answer is `400 VALIDATION_FAILED` rather than `404`, because the transaction exists
+   * and is readable; reporting it as missing would tell the Admin their record is gone.
+   */
+  public async requireExpenseRow(id: string): Promise<TransactionWithRelations> {
+    const row = await this.transactions.findWithRelations(id);
+
+    if (row.transactionType !== 'EXPENSE') {
+      throw validationFailed('That transaction is not an expense record.', { field: 'id' });
     }
 
     return row;
@@ -447,12 +478,16 @@ export class TransactionsService {
 /**
  * Builds the repository filter set from a validated request.
  *
+ * Exported so the expense list reuses exactly these rules instead of restating them: the two
+ * lists must reject the same impossible bounds for the same reason, and a second hand-written
+ * parser is how an expense list ends up accepting a range the income list refuses.
+ *
  * Range validation happens here rather than in the database: an inverted date range or an
  * amount window whose minimum exceeds its maximum matches nothing, and an empty result would
  * read to the Admin as "no transactions in that period" instead of "those bounds are
  * impossible". `REQ-FIN-022` requires invalid date ranges to be rejected safely.
  */
-function toQueryFilters(request: TransactionListRequest): TransactionQueryFilters {
+export function toQueryFilters(request: TransactionListRequest): TransactionQueryFilters {
   const from = request.from === undefined ? undefined : parseBusinessDateValue(request.from);
   const to = request.to === undefined ? undefined : parseBusinessDateValue(request.to);
 

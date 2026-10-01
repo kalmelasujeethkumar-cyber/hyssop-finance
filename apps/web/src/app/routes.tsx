@@ -2,6 +2,8 @@ import type { RouteObject } from 'react-router-dom';
 import { RequireSession } from './auth/RequireSession';
 import { RouteErrorPage } from './errors/RouteErrorPage';
 import { AppLayout } from './layout/AppLayout';
+import { ExpenseDetailPage } from '../pages/ExpenseDetailPage';
+import { ExpensesPage } from '../pages/ExpensesPage';
 import { FoundationPage } from '../pages/FoundationPage';
 import { IncomeDetailPage } from '../pages/IncomeDetailPage';
 import { IncomePage } from '../pages/IncomePage';
@@ -41,6 +43,8 @@ export function buildRoutes(): RouteObject[] {
         { path: 'members/:memberId', element: <MemberDetailPage /> },
         { path: 'income', element: <IncomePage /> },
         { path: 'income/:transactionId', element: <IncomeDetailPage /> },
+        { path: 'expenses', element: <ExpensesPage /> },
+        { path: 'expenses/:transactionId', element: <ExpenseDetailPage /> },
         { path: 'transactions/:transactionId/receipt', element: <TransactionReceiptPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],

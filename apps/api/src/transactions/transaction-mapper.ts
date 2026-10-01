@@ -3,6 +3,7 @@ import {
   CURRENCY,
   isAnonymousIncomeType,
   type AuditSnapshot,
+  type ExpenseSummary,
   type TransactionAuditEventView,
   type TransactionReceiptView,
   type TransactionSummary,
@@ -60,12 +61,60 @@ export function toTransactionSummary(row: TransactionWithRelations): Transaction
 }
 
 /**
+ * An expense, in the shared transaction shape with the category made non-null.
+ *
+ * `ExpenseSummary` is a narrowing of `TransactionSummary`, not a second transaction type, so
+ * the projection is the shared one plus the two guarantees `REQ-EXP-004` and `REQ-DOC-003`
+ * make about an expense. The category is read from the same relation the ledger already
+ * carries, and `hasReceipt` is *derived* from the attached document rows rather than stored,
+ * so it cannot drift from reality: an expense with no document honestly reports
+ * `hasReceipt: false` and the browser says **Receipt Missing** instead of showing an empty
+ * control that looks like a broken upload.
+ */
+export function toExpenseSummary(row: TransactionWithRelations): ExpenseSummary {
+  if (row.transactionType !== 'EXPENSE' || row.category === null) {
+    // The database `CHECK` constraint makes an expense without a category unrepresentable, and
+    // the service refuses an expense on an income route. The guard keeps the *type* honest if
+    // either check is ever bypassed, so the narrow contract cannot be satisfied with a
+    // fabricated value.
+    throw new Error('An expense can only be projected for an expense transaction with a category.');
+  }
+
+  return {
+    ...toTransactionSummary(row),
+    category: row.category,
+    hasReceipt: row._count.documents > 0,
+  };
+}
+
+/**
  * A transaction's audit trail.
  *
  * The actor is included because an unattributable change to a financial record is not
  * acceptable (`docs/07-SECURITY-RULES.md`). The actor's internal UUID is not, because a
  * history view needs a name and exposing an internal key adds nothing to the Admin.
  */
+/**
+ * Projects a transaction using the narrowest shape that is honest for it.
+ *
+ * The choice of shape belongs in one place, because every path that returns a single transaction
+ * has to make it: an expense carries two guarantees the shared shape cannot express — a
+ * non-null category (`REQ-EXP-004`) and a derived `hasReceipt` (`REQ-DOC-003`) — and the expense
+ * screen deliberately refuses to render without them rather than showing an empty control.
+ *
+ * Returning an expense as a plain `TransactionSummary` is not merely lossy, it is unusable: the
+ * browser would have to guess whether the missing keys mean "no receipt" or "an older API", and
+ * `REQ-DOC-003` requires it to say **Receipt Missing** instead. So an expense row is projected as
+ * `ExpenseSummary` and every other row as `TransactionSummary`, which is exactly the shared shape
+ * plus the guarantees an expense can actually make.
+ *
+ * `ExpenseSummary` extends `TransactionSummary`, so the declared return type stays honest for both
+ * branches and a caller that only needs the shared fields is unaffected.
+ */
+export function toTransactionView(row: TransactionWithRelations): TransactionSummary {
+  return row.transactionType === 'EXPENSE' ? toExpenseSummary(row) : toTransactionSummary(row);
+}
+
 export function toAuditEventViews(
   records: readonly AuditEventRecord[],
 ): readonly TransactionAuditEventView[] {

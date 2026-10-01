@@ -88,7 +88,18 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.spec.ts', '**/*.test.ts', '**/*.spec.tsx', '**/*.test.tsx', '**/*.e2e-spec.ts'],
+    files: [
+      '**/*.spec.ts',
+      '**/*.test.ts',
+      '**/*.spec.tsx',
+      '**/*.test.tsx',
+      '**/*.e2e-spec.ts',
+      // Shared test support, such as the in-memory transaction and category doubles. These are
+      // test code that lives outside a `*.spec.ts` file precisely so several suites can share
+      // one faithful stand-in instead of keeping private copies that drift apart, and they
+      // stand in for the same `Promise`-returning repository interfaces.
+      '**/test/support/**/*.ts',
+    ],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
       // A test double replaces a repository or service whose interface returns `Promise`, so

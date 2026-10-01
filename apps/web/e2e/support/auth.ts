@@ -29,6 +29,15 @@ const SESSION_PROBE_PATH = '/api/v1/auth/me';
 const NOT_FOUND_READ_PATHS = ['/api/v1/transactions/', '/api/v1/income/'] as const;
 
 /**
+ * The write paths that answer `409 CONFLICT` for a deliberate duplicate in a journey.
+ *
+ * `docs/06-API-SPEC.md` documents that answer for an expense category whose name differs only by
+ * case or spacing, and the journey that proves the rule *must* trigger it. A `409` on any other
+ * path earns no allowance, so a conflict the application failed to handle still fails the test.
+ */
+const CONFLICT_WRITE_PATHS = ['/api/v1/expenses/categories'] as const;
+
+/**
  * Collects browser errors so a silently broken page fails the test instead of passing.
  *
  * Chromium logs every failed network response as a console error but does not include the URL in
@@ -40,16 +49,24 @@ const NOT_FOUND_READ_PATHS = ['/api/v1/transactions/', '/api/v1/income/'] as con
  *
  * `allowOneNotFound` is the same mechanism for the other documented non-2xx answer: a journey that
  * deliberately opens a record which does not exist. It is opt-in and explicit at the one call site
- * that needs it, so no other test can absorb a `404` by accident. The allowance lives inside this
- * collector rather than in a separate listener because a console message carries no URL: the
- * response that earned the allowance and the message it has to absorb have to be counted by one
- * authority, in one ordered pair of listeners, or the message is pushed to `errors` before any
- * later listener could have claimed it.
+ * that needs it, so no other test can absorb a `404` by accident. `allowOneConflict` is the same
+ * opt-in for a journey that deliberately provokes a `409`, such as adding a category name that is
+ * already in use: the rejection is the documented answer, and the point of the journey is that the
+ * interface renders it, so Chromium's network-level console line for it is not a defect. The
+ * allowance lives inside this collector rather than in a separate listener because a console message
+ * carries no URL: the response that earned the allowance and the message it has to absorb have to be
+ * counted by one authority, in one ordered pair of listeners, or the message is pushed to `errors`
+ * before any later listener could have claimed it.
  */
-export function collectBrowserErrors(page: Page, allowOneNotFound = false): string[] {
+export function collectBrowserErrors(
+  page: Page,
+  allowOneNotFound = false,
+  allowOneConflict = false,
+): string[] {
   const errors: string[] = [];
   let unusedProbeAllowances = 0;
   let unusedNotFoundAllowances = allowOneNotFound ? 1 : 0;
+  let unusedConflictAllowances = allowOneConflict ? 1 : 0;
 
   page.on('response', (response) => {
     if (response.status() === 401 && response.url().includes(SESSION_PROBE_PATH)) {
@@ -63,6 +80,10 @@ export function collectBrowserErrors(page: Page, allowOneNotFound = false): stri
     // message it exists to absorb ever arrives, so the message would be recorded.
     if (response.status() === 404 && isNotFoundReadPath(response.url())) {
       unusedNotFoundAllowances += 1;
+    }
+
+    if (response.status() === 409 && isConflictWritePath(response.url())) {
+      unusedConflictAllowances += 1;
     }
   });
   page.on('console', (message) => {
@@ -80,6 +101,12 @@ export function collectBrowserErrors(page: Page, allowOneNotFound = false): stri
 
     if (unusedNotFoundAllowances > 0 && isNotFoundResourceMessage(text)) {
       unusedNotFoundAllowances -= 1;
+
+      return;
+    }
+
+    if (unusedConflictAllowances > 0 && isConflictResourceMessage(text)) {
+      unusedConflictAllowances -= 1;
 
       return;
     }
@@ -128,4 +155,15 @@ function isNotFoundReadPath(url: string): boolean {
 /** The generic Chromium message for a `404`; the URL is not included. */
 function isNotFoundResourceMessage(text: string): boolean {
   return /failed to load resource/i.test(text) && /\b404\b|not found/i.test(text);
+}
+
+function isConflictWritePath(url: string): boolean {
+  const { pathname } = new URL(url);
+
+  return CONFLICT_WRITE_PATHS.some((path) => pathname.startsWith(path));
+}
+
+/** The generic Chromium message for a `409`; the URL is not included. */
+function isConflictResourceMessage(text: string): boolean {
+  return /failed to load resource/i.test(text) && /\b409\b|conflict/i.test(text);
 }

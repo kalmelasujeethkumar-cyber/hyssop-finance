@@ -1,5 +1,6 @@
 export * from './api-envelope';
 export * from './auth';
+export * from './expenses';
 export * from './health';
 export * from './income';
 export * from './members';

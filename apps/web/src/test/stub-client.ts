@@ -5,6 +5,8 @@ import {
   type ContributionPeriodView,
   type CsrfTokenResult,
   type CurrentSessionResult,
+  type ExpenseCategoryView,
+  type ExpenseSummary,
   type HealthReport,
   type LoginResult,
   type LogoutResult,
@@ -353,6 +355,181 @@ export const DEFAULT_INCOME_TRANSACTIONS: readonly TransactionSummary[] = [
   INCOME_ANONYMOUS,
 ];
 
+/**
+ * The active categories, as `GET /api/v1/expenses/categories` answers.
+ *
+ * A **deactivated category is deliberately absent**, because the API documents this route as the
+ * active categories. A browser test that wanted to see an inactive one in the picker would be
+ * asserting the opposite of the specification. The retained label on a historical expense is
+ * proved instead by `EXPENSE_RETIRED_CATEGORY`, which the stub reports as `INACTIVE` on the
+ * transaction itself, exactly as the API does.
+ */
+export const ACTIVE_EXPENSE_CATEGORIES: readonly ExpenseCategoryView[] = [
+  {
+    id: '55555555-5555-4555-8555-555555555555',
+    name: 'Electricity',
+    status: 'ACTIVE',
+    isSystem: true,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  },
+  {
+    id: '88888888-8888-4888-8888-888888888888',
+    name: 'Repairs',
+    status: 'ACTIVE',
+    isSystem: true,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  },
+];
+
+export const RETIRED_CATEGORY_REF = {
+  id: '77777777-7777-4777-8777-777777777777',
+  name: 'Retired category',
+  status: 'INACTIVE' as const,
+};
+
+/** A category reference as the API returns it on a transaction. */
+function categoryRef(
+  id: string,
+  name: string,
+  status: 'ACTIVE' | 'INACTIVE' = 'ACTIVE',
+): NonNullable<TransactionSummary['category']> {
+  return { id, name, status };
+}
+
+/**
+ * An active expense with a receipt.
+ *
+ * `hasReceipt: true` with `documentCount: 1` are the same fact read two ways, which is what lets
+ * a test prove the browser renders the API's derived flag rather than deciding locally.
+ */
+export const EXPENSE_ONE: ExpenseSummary = {
+  id: 'fffffff1-0000-4000-8000-000000000001',
+  referenceId: 'HY-EXP-000001',
+  type: 'EXPENSE',
+  incomeType: null,
+  amount: '2450.75',
+  currency: 'INR',
+  paymentMethod: 'BANK_TRANSFER',
+  status: 'ACTIVE',
+  businessDate: '2026-09-12',
+  description: 'September electricity bill',
+  notes: 'Paid by transfer to the utility',
+  member: null,
+  category: categoryRef(ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '', 'Electricity'),
+  contributionPeriod: null,
+  voidReason: null,
+  voidedAt: null,
+  documentCount: 1,
+  hasReceipt: true,
+  revision: 1,
+  createdAt: '2026-09-12T07:15:00.000Z',
+  updatedAt: '2026-09-12T07:15:00.000Z',
+};
+
+/**
+ * An expense with no receipt.
+ *
+ * This is the `REQ-DOC-003` case: it exists, it counts toward totals, and the interface must say
+ * **Receipt Missing** rather than showing an empty cell or a disabled upload control. `hasReceipt:
+ * false` and `documentCount: 0` agree, so a screen that invented a receipt would be caught.
+ */
+export const EXPENSE_TWO: ExpenseSummary = {
+  id: 'fffffff1-0000-4000-8000-000000000002',
+  referenceId: 'HY-EXP-000002',
+  type: 'EXPENSE',
+  incomeType: null,
+  amount: '800.00',
+  currency: 'INR',
+  paymentMethod: 'CASH',
+  status: 'ACTIVE',
+  businessDate: '2026-09-18',
+  description: 'Choir sound system repair',
+  notes: null,
+  member: null,
+  category: categoryRef(ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '', 'Repairs'),
+  contributionPeriod: null,
+  voidReason: null,
+  voidedAt: null,
+  documentCount: 0,
+  hasReceipt: false,
+  revision: 1,
+  createdAt: '2026-09-18T09:40:00.000Z',
+  updatedAt: '2026-09-18T09:40:00.000Z',
+};
+
+/**
+ * An expense filed under a category that has since been deactivated.
+ *
+ * `docs/05-DATABASE-SPEC.md` preserves inactive categories on historical transactions. This is the
+ * fixture that proves the browser keeps showing the label and explains why the category is no
+ * longer offered, instead of blanking the column or refusing to render the row.
+ */
+export const EXPENSE_RETIRED_CATEGORY: ExpenseSummary = {
+  id: 'fffffff1-0000-4000-8000-000000000003',
+  referenceId: 'HY-EXP-000003',
+  type: 'EXPENSE',
+  incomeType: null,
+  amount: '320.40',
+  currency: 'INR',
+  paymentMethod: 'UPI',
+  status: 'ACTIVE',
+  businessDate: '2026-08-30',
+  description: 'Old maintenance charge',
+  notes: null,
+  member: null,
+  category: categoryRef(RETIRED_CATEGORY_REF.id, RETIRED_CATEGORY_REF.name, 'INACTIVE'),
+  contributionPeriod: null,
+  voidReason: null,
+  voidedAt: null,
+  documentCount: 0,
+  hasReceipt: false,
+  revision: 1,
+  createdAt: '2026-08-30T05:05:00.000Z',
+  updatedAt: '2026-08-30T05:05:00.000Z',
+};
+
+/** A voided expense, so a test can prove voiding keeps the row and excludes it from active views. */
+export const EXPENSE_VOIDED: ExpenseSummary = {
+  id: 'fffffff1-0000-4000-8000-000000000004',
+  referenceId: 'HY-EXP-000004',
+  type: 'EXPENSE',
+  incomeType: null,
+  amount: '150.00',
+  currency: 'INR',
+  paymentMethod: 'CASH',
+  status: 'VOIDED',
+  businessDate: '2026-09-20',
+  description: 'Recorded twice',
+  notes: null,
+  member: null,
+  category: categoryRef(ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '', 'Electricity'),
+  contributionPeriod: null,
+  voidReason: 'Recorded twice',
+  voidedAt: '2026-09-21T06:00:00.000Z',
+  documentCount: 0,
+  hasReceipt: false,
+  revision: 2,
+  createdAt: '2026-09-20T10:00:00.000Z',
+  updatedAt: '2026-09-21T06:00:00.000Z',
+};
+
+/**
+ * Income and expenses in one store.
+ *
+ * They share the ledger, so the stub holds both and the screen's own narrowing decides which is
+ * listed. A test that asked for `GET /expenses` and received an income row would catch a
+ * regression the fixtures-only approach could not.
+ */
+export const DEFAULT_TRANSACTIONS: readonly TransactionSummary[] = [
+  ...DEFAULT_INCOME_TRANSACTIONS,
+  EXPENSE_ONE,
+  EXPENSE_TWO,
+  EXPENSE_RETIRED_CATEGORY,
+  EXPENSE_VOIDED,
+];
+
 export const INCOME_ONE_AUDIT: readonly TransactionAuditEventView[] = [
   {
     id: 'ddddddd1-0000-4000-8000-000000000001',
@@ -362,7 +539,43 @@ export const INCOME_ONE_AUDIT: readonly TransactionAuditEventView[] = [
     reason: null,
     requestId: '2a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c40',
     before: null,
-    after: { amount_paise: 50000n.toString(), payment_method: 'CASH', status: 'ACTIVE' },
+    // The snapshot keys are the API's own camelCase ones, because
+    // `toAuditSnapshot` in `apps/api/src/database/transactions/transaction.repository.ts` writes
+    // `amountPaise`, `businessDate`, and `categoryId` that way. A snake_case fixture would make
+    // the screen's formatters unreachable and would let a raw-paise leak pass as correct.
+    after: {
+      amountPaise: '50000',
+      paymentMethod: 'CASH',
+      status: 'ACTIVE',
+      businessDate: '2026-03-08',
+    },
+  },
+];
+
+/**
+ * The audit trail of one expense, as `GET /transactions/:id/audit` answers it.
+ *
+ * The snapshot is the stored row, so the amount is the paise integer `245075` and the category is
+ * its id. A screen that printed those raw would show a financial value in paise and a database key
+ * in front of a pastor, so this fixture exists to make that detectable: the rendered trail must read
+ * `amount empty → ₹2,450.75` and `category empty → set`.
+ */
+export const EXPENSE_ONE_AUDIT: readonly TransactionAuditEventView[] = [
+  {
+    id: 'ddddddd2-0000-4000-8000-000000000001',
+    action: 'TRANSACTION_CREATED',
+    actorDisplayName: ADMIN_PROFILE.displayName,
+    occurredAt: '2026-09-12T07:15:00.000Z',
+    reason: null,
+    requestId: '2a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c41',
+    before: null,
+    after: {
+      amountPaise: '245075',
+      paymentMethod: 'BANK_TRANSFER',
+      status: 'ACTIVE',
+      businessDate: '2026-09-12',
+      categoryId: ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+    },
   },
 ];
 
@@ -475,6 +688,30 @@ export interface TransactionStubOptions {
   readonly voidFails?: Error;
 }
 
+/**
+ * Answers the stub may be scripted to return for the expense and category routes.
+ *
+ * Kept separate from `TransactionStubOptions` because the *shared* transaction routes
+ * (`GET /transactions/:id`, `PATCH /transactions/:id`, the void, and the audit trail) are
+ * configured once for both types, while these are the expense-specific reads and writes.
+ */
+export interface ExpenseStubOptions {
+  /** The categories `GET /expenses/categories` returns. Defaults to the active set. */
+  readonly categories?: readonly ExpenseCategoryView[];
+  /** Fails `GET /expenses/categories`. */
+  readonly categoriesFail?: Error;
+  /** Fails `GET /expenses`, for the list error state. */
+  readonly listFails?: Error;
+  /** Fails `POST /expenses`, for the create error state. */
+  readonly createFails?: Error;
+  /** Fails only the first `POST /expenses`, for the retry-under-one-key path. */
+  readonly firstCreateFails?: Error;
+  /** Fails `POST /expenses/categories`, for the add-category error state. */
+  readonly createCategoryFails?: Error;
+  /** Fails `PATCH /expenses/categories/:id`. */
+  readonly updateCategoryFails?: Error;
+}
+
 export interface StubApiClient extends ApiClient {
   readonly calls: RecordedCall[];
   /** The current member store, so a test can assert a create or edit actually applied. */
@@ -509,6 +746,7 @@ export function stubApiClient(
     readonly revokedOnLogout?: boolean;
     readonly members?: MemberStubOptions;
     readonly transactions?: TransactionStubOptions;
+    readonly expenses?: ExpenseStubOptions;
   } = {},
 ): StubApiClient {
   const calls: RecordedCall[] = [];
@@ -535,15 +773,24 @@ export function stubApiClient(
     memberOptions.transactionsByMemberId ?? { [MEMBER_ONE.id]: MEMBER_ONE_TRANSACTIONS };
 
   const transactionOptions = options.transactions ?? {};
+  const expenseOptions = options.expenses ?? {};
   // The transaction store is stateful for the same reason the member store is: recording income
   // must add a row, a correction must bump `revision` and change the amount, and a void must set
   // the status, because a stub that returned a fixture would let a screen pass with a dead
-  // write button.
+  // write button. Income and expenses live in the same ledger here, exactly as they do in the
+  // database.
   const transactionStore: TransactionSummary[] = [
-    ...(transactionOptions.transactions ?? DEFAULT_INCOME_TRANSACTIONS),
+    ...(transactionOptions.transactions ?? DEFAULT_TRANSACTIONS),
   ];
-  let nextIncomeNumber = transactionStore.length + 1;
+  let nextIncomeNumber = transactionStore.filter((row) => row.type === 'INCOME').length + 1;
+  let nextExpenseNumber = transactionStore.filter((row) => row.type === 'EXPENSE').length + 1;
   let hasFailedFirstCreate = false;
+  let hasFailedFirstExpenseCreate = false;
+  // The category store is stateful as well: adding a category really appends a row the picker can
+  // then select, so a test can prove the add-category path ends in a usable selection.
+  const categoryStore: ExpenseCategoryView[] = [
+    ...(expenseOptions.categories ?? ACTIVE_EXPENSE_CATEGORIES),
+  ];
   // The real API rejects a mutation whose `Idempotency-Key` it has already answered, so the
   // stub does too. That is what makes a double submit observable here instead of silently
   // recording the same contribution twice.
@@ -677,6 +924,15 @@ export function stubApiClient(
       if (path === '/health') {
         return settle<TData>(health);
       }
+      if (path === '/expenses/categories') {
+        // The API documents this route as the *active* categories. The stub filters rather than
+        // returning the store verbatim, so a screen that wrongly expected to see a deactivated
+        // category here would fail the way it would in production.
+        return settleOrReject<TData>(
+          categoryStore.filter((category) => category.status === 'ACTIVE'),
+          expenseOptions.categoriesFail,
+        );
+      }
 
       const transactionId = transactionIdOf(path);
 
@@ -763,6 +1019,26 @@ export function stubApiClient(
         }
 
         return Promise.resolve(paginateTransactions(path, transactionStore) as ApiListPage<TItem>);
+      }
+
+      if (path.startsWith('/expenses')) {
+        if (expenseOptions.listFails !== undefined) {
+          return Promise.reject(expenseOptions.listFails);
+        }
+
+        // The API narrows this route to expenses itself, so the stub does the same rather than
+        // trusting the caller's path. A screen that reached this list without the narrowing would
+        // see income rows, which is exactly the bug the route exists to prevent.
+        return Promise.resolve(
+          paginateTransactions(
+            `/transactions?${new URLSearchParams(
+              path.includes('?') ? path.slice(path.indexOf('?') + 1) : '',
+            )
+              .toString()
+              .replace(/^/, 'type=EXPENSE&')}`,
+            transactionStore,
+          ) as ApiListPage<TItem>,
+        );
       }
 
       if (!path.startsWith('/members')) {
@@ -899,6 +1175,137 @@ export function stubApiClient(
         });
       }
 
+      if (path === '/expenses') {
+        if (expenseOptions.createFails !== undefined) {
+          return Promise.reject(expenseOptions.createFails);
+        }
+
+        if (expenseOptions.firstCreateFails !== undefined && !hasFailedFirstExpenseCreate) {
+          hasFailedFirstExpenseCreate = true;
+
+          return Promise.reject(expenseOptions.firstCreateFails);
+        }
+
+        return idempotent<TData>(request?.idempotencyKey, () => {
+          const input = (body ?? {}) as {
+            categoryId?: string;
+            amount?: string;
+            paymentMethod?: TransactionSummary['paymentMethod'];
+            businessDate?: string;
+            description?: string;
+            notes?: string;
+          };
+          const category = categoryStore.find((row) => row.id === input.categoryId);
+
+          // The API refuses an expense with no category, because `REQ-EXP-004` requires exactly
+          // one. The stub does too, so a screen that omitted the category cannot pass here.
+          if (category === undefined) {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'An expense must reference an active category.',
+                '1b8c9d0e-2f3a-4b4c-d34d-5f6071829304',
+                [
+                  {
+                    field: 'categoryId',
+                    message: 'Only an active category can be used for a new expense.',
+                  },
+                ],
+              ),
+            );
+          }
+
+          const referenceId = `HY-EXP-${String(nextExpenseNumber).padStart(6, '0')}`;
+
+          nextExpenseNumber += 1;
+
+          const created: ExpenseSummary = {
+            id: `fffffff1-0000-4000-8000-${String(nextExpenseNumber).padStart(12, '0')}`,
+            referenceId,
+            type: 'EXPENSE',
+            incomeType: null,
+            amount: formatPaise(toPaise(input.amount ?? '0')),
+            currency: 'INR',
+            paymentMethod: input.paymentMethod ?? 'CASH',
+            status: 'ACTIVE',
+            businessDate: input.businessDate ?? '2026-09-28',
+            description: input.description ?? null,
+            notes: input.notes ?? null,
+            member: null,
+            // An expense belongs to the church, never to a member, so `member` is `null` by
+            // construction and the browser never sends one.
+            category: categoryRef(category.id, category.name, category.status),
+            contributionPeriod: null,
+            voidReason: null,
+            voidedAt: null,
+            documentCount: 0,
+            // Derived, not stored: nothing has been attached at creation time, so the honest
+            // value is `false` and the screen shows Receipt Missing.
+            hasReceipt: false,
+            revision: 1,
+            createdAt: '2026-09-28T08:15:00.000Z',
+            updatedAt: '2026-09-28T08:15:00.000Z',
+          };
+
+          transactionStore.unshift(created);
+
+          return Promise.resolve(created);
+        });
+      }
+
+      if (path === '/expenses/categories') {
+        if (expenseOptions.createCategoryFails !== undefined) {
+          return Promise.reject(expenseOptions.createCategoryFails);
+        }
+
+        return idempotent<TData>(request?.idempotencyKey, () => {
+          const input = (body ?? {}) as { name?: string; isSystem?: boolean };
+          const name = (input.name ?? '').trim();
+
+          if (name === '') {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'A category name is required.',
+                '2c9d0e1f-3a4b-4c5d-e45e-607182930415',
+                [{ field: 'name', message: 'A category name is required.' }],
+              ),
+            );
+          }
+
+          // Uniqueness is case-insensitive, so `Books`, `books`, and `Books ` are one category.
+          // The stub refuses the near-duplicate the same way the API does, which is what proves
+          // the browser surfaces the message against the name field.
+          if (categoryStore.some((row) => row.name.trim().toLowerCase() === name.toLowerCase())) {
+            return Promise.reject(
+              new ApiClientError(
+                409,
+                'CONFLICT',
+                'An expense category with that name already exists.',
+                '3d0e1f2a-4b5c-4d6e-f56f-71829304a526',
+                [{ field: 'name', message: 'That category name is already in use.' }],
+              ),
+            );
+          }
+
+          const created: ExpenseCategoryView = {
+            id: '99999999-9999-4999-8999-999999999999',
+            name,
+            status: 'ACTIVE',
+            // `REQ-EXP-001` fixes the initial set; anything the Admin adds is custom.
+            isSystem: input.isSystem ?? false,
+            createdAt: '2026-09-28T08:20:00.000Z',
+            updatedAt: '2026-09-28T08:20:00.000Z',
+          };
+
+          categoryStore.push(created);
+
+          return Promise.resolve(created);
+        });
+      }
+
       const voidMatch = /^\/transactions\/([^/]+)\/void$/.exec(path);
 
       if (voidMatch !== null) {
@@ -974,7 +1381,48 @@ export function stubApiClient(
             businessDate?: string;
             description?: string;
             notes?: string;
+            categoryId?: string | null;
           };
+
+          // `REQ-EXP-004`: an expense references exactly one category, so a correction may move
+          // it but may not clear it. The stub refuses `null` for the same reason the API does, so
+          // a browser that could strip a category would fail here.
+          if (input.categoryId === null || input.categoryId === '') {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'An expense must keep exactly one category.',
+                '4e1f2a3b-5c6d-4e7f-a67a-829304a5b637',
+                [{ field: 'categoryId', message: 'Choose a category.' }],
+              ),
+            );
+          }
+
+          // A move to a category that does not exist or cannot be used is refused, so the picker
+          // offering one would be a dead control.
+          const targetCategory =
+            input.categoryId === undefined
+              ? undefined
+              : categoryStore.find((row) => row.id === input.categoryId);
+
+          if (input.categoryId !== undefined && (targetCategory?.status ?? '') !== 'ACTIVE') {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'Only an active category can be used for a new expense.',
+                '5f2a3b4c-6d7e-4f8a-b78b-9304a5b6c748',
+                [
+                  {
+                    field: 'categoryId',
+                    message: 'Only an active category can be used for a new expense.',
+                  },
+                ],
+              ),
+            );
+          }
+
           const corrected: TransactionSummary = {
             ...existing,
             amount:
@@ -984,6 +1432,10 @@ export function stubApiClient(
             description:
               input.description === undefined ? existing.description : input.description || null,
             notes: input.notes === undefined ? existing.notes : input.notes || null,
+            category:
+              targetCategory === undefined
+                ? existing.category
+                : categoryRef(targetCategory.id, targetCategory.name, targetCategory.status),
             revision: existing.revision + 1,
             updatedAt: '2026-09-28T07:45:00.000Z',
           };
@@ -991,6 +1443,71 @@ export function stubApiClient(
           replaceTransaction(corrected);
 
           return Promise.resolve(corrected);
+        });
+      }
+
+      const categoryMatch = /^\/expenses\/categories\/([^/?]+)$/.exec(path);
+
+      if (categoryMatch !== null) {
+        if (expenseOptions.updateCategoryFails !== undefined) {
+          return Promise.reject(expenseOptions.updateCategoryFails);
+        }
+
+        return idempotent<TData>(request?.idempotencyKey, () => {
+          const categoryId = categoryMatch[1] ?? '';
+          const index = categoryStore.findIndex((row) => row.id === categoryId);
+
+          if (index === -1) {
+            return Promise.reject(notFound);
+          }
+
+          const existing = categoryStore[index];
+
+          if (existing === undefined) {
+            return Promise.reject(notFound);
+          }
+
+          const input = (body ?? {}) as {
+            name?: string;
+            status?: ExpenseCategoryView['status'];
+            isSystem?: boolean;
+          };
+
+          // A category is renamed or deactivated, never deleted, and a request that tries to
+          // change the system flag is refused: the initial set is fixed by `REQ-EXP-001`.
+          if (input.isSystem !== undefined) {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'The system flag cannot be changed.',
+                '6a3b4c5d-7e8f-4a9b-c89d-a4b5c6d7e859',
+                [{ field: 'isSystem', message: 'The system flag cannot be changed.' }],
+              ),
+            );
+          }
+
+          const updated: ExpenseCategoryView = {
+            ...existing,
+            name: input.name?.trim() ?? existing.name,
+            status: input.status ?? existing.status,
+            updatedAt: '2026-09-28T08:30:00.000Z',
+          };
+
+          categoryStore[index] = updated;
+
+          // A rename has to reach the transactions that already carry the old label, or history
+          // would keep showing a name the Admin has since corrected.
+          for (const [position, row] of transactionStore.entries()) {
+            if (row.category?.id === updated.id) {
+              transactionStore[position] = {
+                ...row,
+                category: categoryRef(updated.id, updated.name, updated.status),
+              };
+            }
+          }
+
+          return Promise.resolve(updated as TData);
         });
       }
 
@@ -1178,6 +1695,7 @@ function paginateTransactions(
   const direction = query.get('direction') === 'asc' ? 'asc' : 'desc';
   const type = query.get('type');
   const incomeType = query.get('incomeType');
+  const categoryId = query.get('categoryId');
   const status = query.get('status');
   const paymentMethod = query.get('paymentMethod');
   const from = query.get('from');
@@ -1190,6 +1708,9 @@ function paginateTransactions(
       return false;
     }
     if (incomeType !== null && incomeType !== '' && row.incomeType !== incomeType) {
+      return false;
+    }
+    if (categoryId !== null && categoryId !== '' && row.category?.id !== categoryId) {
       return false;
     }
     if (status !== null && status !== '' && row.status !== status) {
@@ -1215,7 +1736,8 @@ function paginateTransactions(
       search === '' ||
       row.referenceId.toLowerCase().includes(search) ||
       (row.description ?? '').toLowerCase().includes(search) ||
-      (row.member?.name ?? '').toLowerCase().includes(search)
+      (row.member?.name ?? '').toLowerCase().includes(search) ||
+      (row.category?.name ?? '').toLowerCase().includes(search)
     );
   });
 

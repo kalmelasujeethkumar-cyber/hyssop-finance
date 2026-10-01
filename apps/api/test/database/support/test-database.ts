@@ -6,8 +6,9 @@
  * while keeping setup explicit and fast.
  *
  * Every suite starts from an empty database: `reset` truncates all application tables
- * through the schema-owner connection, and all application traffic uses the
- * least-privilege runtime role, which proves the grants are sufficient.
+ * through the schema-owner connection, restores the configuration the repositories cannot work
+ * without, and all application traffic uses the least-privilege runtime role, which proves the
+ * grants are sufficient.
  */
 
 import { randomBytes } from 'node:crypto';
@@ -188,6 +189,12 @@ export async function createHarness(): Promise<TestHarness> {
    * suite that runs against the same database answered `App setting was not found.` and could
    * not record a member contribution. `skipDuplicates` keeps a reset idempotent and preserves a
    * value a test changed on purpose.
+   *
+   * `expense_category` is deliberately left empty: these suites exercise the repositories
+   * directly and assert on exactly the rows they created, so a reset that pre-filled the table
+   * would force every suite to reason about the product's starting set. The browser run, which
+   * does need that set, provisions it itself through
+   * `test/database/support/baseline-configuration.ts`.
    */
   const reset = async (): Promise<AdminUser> => {
     await migration.$executeRawUnsafe(

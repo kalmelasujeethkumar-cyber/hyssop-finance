@@ -24,6 +24,7 @@ import { CurrentRequestId, CurrentSession } from '../auth/auth.decorators';
 import type { AuthenticatedSession } from '../auth/session.service';
 import {
   CorrectTransactionDto,
+  SharedTransactionFilterQueryDto,
   TransactionIdParamDto,
   TransactionListQueryDto,
   VoidTransactionDto,
@@ -162,8 +163,22 @@ function actorOf(session: AuthenticatedSession, requestId: string | null): Trans
  */
 export function listRequestFromQuery(query: TransactionListQueryDto) {
   return {
+    ...listRequestFromSharedQuery(query),
     ...(query.type === undefined ? {} : { transactionType: query.type }),
     ...(query.incomeType === undefined ? {} : { incomeType: query.incomeType }),
+  };
+}
+
+/**
+ * Builds the service request from the shared filters alone, with no transaction type.
+ *
+ * This is the expense list's entry point. `ExpenseListQueryDto` extends the shared base
+ * without `type` or `incomeType`, so nothing here can set `transactionType`; the expense
+ * service then forces `EXPENSE` itself. Together that means the only route able to ask for
+ * income is the route that documents it.
+ */
+export function listRequestFromSharedQuery(query: SharedTransactionFilterQueryDto) {
+  return {
     ...(query.search === undefined ? {} : { search: query.search }),
     ...(query.page === undefined ? {} : { page: query.page }),
     ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }),

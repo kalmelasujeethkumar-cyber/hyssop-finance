@@ -500,8 +500,9 @@ describe('recording income', () => {
     expect(keys[0]).toBeTruthy();
     expect(keys[1]).toBe(keys[0]);
     // Exactly one record was added, because the API answered the retry rather than writing a
-    // second contribution. Four stubbed records plus one.
-    expect(client.transactions).toHaveLength(5);
+    // second contribution. Counted by type, so the assertion does not depend on how many expense
+    // fixtures the store also holds.
+    expect(client.transactions.filter((row) => row.type === 'INCOME')).toHaveLength(5);
   });
 
   it('uses a new key for a new submission, because that is a new intent', async () => {
@@ -528,7 +529,7 @@ describe('recording income', () => {
     const keys = callsTo(client, 'POST', '/income').map((call) => call.idempotencyKey);
 
     expect(keys[0]).not.toBe(keys[1]);
-    expect(client.transactions).toHaveLength(6);
+    expect(client.transactions.filter((row) => row.type === 'INCOME')).toHaveLength(6);
   });
 
   it('shows a server-side rejection against the field it belongs to', async () => {
@@ -647,15 +648,22 @@ describe('one income record', () => {
     expect(screen.getByText('Active — counted in totals')).toBeInTheDocument();
   });
 
-  it('shows the history the API returned, with the actor and the recorded values', async () => {
+  it('shows the history the API returned, formatted for a person rather than as stored values', async () => {
     renderIncome(stubApiClient(), `/income/${INCOME_ONE.id}`);
 
     expect(await screen.findByText('TRANSACTION_CREATED')).toBeInTheDocument();
     expect(screen.getByText(/by Demo Admin/)).toBeInTheDocument();
-    // The before/after snapshots are shown as the recorded values, not as a summary the
-    // browser invented: a creation honestly shows the previous value as empty.
-    expect(screen.getByLabelText('History').textContent).toContain('amount_paise empty → 50000');
-    expect(screen.getByLabelText('History').textContent).toContain('status empty → ACTIVE');
+
+    const history = screen.getByLabelText('History');
+
+    // The snapshot is the stored row, so the amount arrives as the paise integer 50000. The trail
+    // must show it as rupees and must not leak the internal key or the paise value, which is what
+    // `docs/03-UI-UX-RULES.md` forbids; a creation honestly shows the previous value as empty.
+    expect(history.textContent).toContain('amount empty → ₹500.00');
+    expect(history.textContent).toContain('business date empty → 8 Mar 2026');
+    expect(history.textContent).toContain('status empty → ACTIVE');
+    expect(history.textContent).not.toContain('amountPaise');
+    expect(history.textContent).not.toContain('50000');
   });
 
   it('reports a record it could not load, and offers a retry', async () => {

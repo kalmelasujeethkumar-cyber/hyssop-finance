@@ -195,13 +195,21 @@ export function createIdempotencyKey(): string {
   return `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-/** The editable fields of a correction, as the form holds them. */
+/**
+ * The editable fields of a correction, as the form holds them.
+ *
+ * `categoryId` is optional because the same form corrects both transaction types. An income row
+ * cannot have a category and the API forbids the field there, so an income screen leaves it
+ * `undefined` and the key is omitted from the request entirely. An expense screen sets it, which
+ * is the one association `REQ-EXP-004` allows to change.
+ */
 export interface CorrectionFormValues {
   readonly amount: string;
   readonly paymentMethod: PaymentMethod;
   readonly businessDate: string;
   readonly description: string;
   readonly notes: string;
+  readonly categoryId?: string;
 }
 
 export interface CorrectionFieldErrors {
@@ -210,9 +218,12 @@ export interface CorrectionFieldErrors {
   readonly businessDate?: string;
   readonly description?: string;
   readonly notes?: string;
+  readonly categoryId?: string;
 }
 
 const ZERO_AMOUNTS: readonly string[] = ['0', '0.0', '0.00'];
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Validates the correction fields in the browser.
@@ -220,14 +231,17 @@ const ZERO_AMOUNTS: readonly string[] = ['0', '0.0', '0.00'];
  * Mirrors the API's shape rules using the shared contract constants rather than a second copy
  * written here. A zero amount is rejected locally as well as by the API's `amount_paise > 0`
  * rule, with a message that says which rule failed rather than only "invalid".
+ *
+ * `categoryId` is checked only when the form supplies one, so income is unaffected. A supplied
+ * value must still be a UUID: a truncated or edited value would otherwise be sent and be
+ * rejected as a malformed id, which is a worse message than saying so next to the field.
  */
 export function validateCorrectionFields(values: CorrectionFormValues): CorrectionFieldErrors {
   const errors: {
     amount?: string;
     paymentMethod?: string;
     businessDate?: string;
-    description?: string;
-    notes?: string;
+    categoryId?: string;
   } = {};
   const amount = values.amount.trim();
 
@@ -247,6 +261,10 @@ export function validateCorrectionFields(values: CorrectionFormValues): Correcti
     errors.businessDate = BUSINESS_DATE_FORMAT_MESSAGE;
   }
 
+  if (values.categoryId !== undefined && !UUID_PATTERN.test(values.categoryId.trim())) {
+    errors.categoryId = 'Choose a category.';
+  }
+
   return errors;
 }
 
@@ -254,7 +272,8 @@ export function hasCorrectionErrors(errors: CorrectionFieldErrors): boolean {
   return (
     errors.amount !== undefined ||
     errors.paymentMethod !== undefined ||
-    errors.businessDate !== undefined
+    errors.businessDate !== undefined ||
+    errors.categoryId !== undefined
   );
 }
 
@@ -263,17 +282,27 @@ export function validateVoidReason(reason: string): string | undefined {
   return reason.trim() === '' ? 'Enter a reason for voiding this transaction.' : undefined;
 }
 
-/** Builds the correction body, omitting blank optional text. */
+/**
+ * Builds the correction body, omitting blank optional text.
+ *
+ * `categoryId` is included only when the form supplies a non-empty one, which is exactly the
+ * expense case. Income leaves it undefined, so nothing changes for the existing flow and the
+ * API never sees a category key it would have to reject. `null` is never sent: `REQ-EXP-004`
+ * requires an expense to reference exactly one category, so a correction can move the category
+ * but cannot strip it.
+ */
 export function correctionRequestBody(values: CorrectionFormValues): {
   amount?: string;
   paymentMethod: PaymentMethod;
   businessDate: string;
   description?: string;
   notes?: string;
+  categoryId?: string;
 } {
   const amount = values.amount.trim();
   const description = values.description.trim();
   const notes = values.notes.trim();
+  const categoryId = values.categoryId?.trim() ?? '';
 
   return {
     ...(amount === '' ? {} : { amount }),
@@ -281,6 +310,7 @@ export function correctionRequestBody(values: CorrectionFormValues): {
     businessDate: values.businessDate.trim(),
     ...(description === '' ? {} : { description }),
     ...(notes === '' ? {} : { notes }),
+    ...(categoryId === '' ? {} : { categoryId }),
   };
 }
 

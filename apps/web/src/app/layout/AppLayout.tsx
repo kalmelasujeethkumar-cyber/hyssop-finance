@@ -13,9 +13,9 @@ import { useSession } from '../../features/auth/SessionProvider';
  * **Only sections that exist are listed.** The rules name Dashboard, Members, Income,
  * Expenses, Documents, Reports, Audit History, and Settings as the eventual navigation, but
  * the same rules forbid presenting unimplemented behaviour as a completed feature, and no
- * dead control or `Coming Soon` placeholder is permitted. Members and Income are the sections
- * delivered so far; the rest appear in the phase that actually implements them, which is
- * why this navigation is shorter than the target rather than longer.
+ * dead control or `Coming Soon` placeholder is permitted. Members, Income, and Expenses are the
+ * sections delivered so far; the rest appear in the phase that actually implements them, which
+ * is why this navigation is shorter than the target rather than longer.
  */
 export function AppLayout() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -77,6 +77,9 @@ export function AppLayout() {
               <NavigationItem to="/income" onNavigate={() => setIsMenuOpen(false)}>
                 Income
               </NavigationItem>
+              <NavigationItem to="/expenses" onNavigate={() => setIsMenuOpen(false)}>
+                Expenses
+              </NavigationItem>
             </ul>
           </nav>
         </div>
@@ -88,8 +91,8 @@ export function AppLayout() {
 
       <footer className="border-t border-border-default bg-surface">
         <div className="mx-auto max-w-6xl px-6 py-4 text-supporting text-text-secondary">
-          Member, contribution, and income records are stored in the HYSSOP FINANCE database.
-          Expense, report, and document sections are not yet available.
+          Member, contribution, income, and expense records are stored in the HYSSOP FINANCE
+          database. Report, document, and settings sections are not yet available.
         </div>
       </footer>
     </div>

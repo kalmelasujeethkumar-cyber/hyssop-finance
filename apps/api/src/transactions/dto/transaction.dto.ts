@@ -90,14 +90,20 @@ export class TransactionIdParamDto {
 }
 
 /**
- * The shared transaction list query.
+ * The transaction list filters that mean the same thing on both sides of the ledger.
  *
- * Income adds nothing to it; expenses reuse it unchanged. Every key is optional and every
- * value is drawn from a closed set or a bounded shape, so the resulting `where` clause is
- * composed from known columns only. `reference` is validated against the documented format
- * rather than accepted as free text, so it can only ever be an exact match.
+ * Every key is optional and every value is drawn from a closed set or a bounded shape, so the
+ * resulting `where` clause is composed from known columns only. `reference` is validated
+ * against the documented format rather than accepted as free text, so it can only ever be an
+ * exact match.
+ *
+ * The type filters are *not* here. `type` and `incomeType` are income/ledger-side concepts
+ * that only `GET /api/v1/transactions` accepts, so they live on
+ * `TransactionListQueryDto` below. Keeping them out of the base class is what makes
+ * `ExpenseListQueryDto` structurally incapable of being widened into an income query, rather
+ * than relying on the service to ignore a filter it happens to understand.
  */
-export class TransactionListQueryDto {
+export class SharedTransactionFilterQueryDto {
   @IsOptional()
   @trimmed()
   @IsString()
@@ -132,22 +138,6 @@ export class TransactionListQueryDto {
   @IsOptional()
   @IsIn(PAYMENT_METHODS)
   public paymentMethod?: PaymentMethod;
-
-  /**
-   * Which side of the ledger to show.
-   *
-   * `docs/06-API-SPEC.md` describes this filter as "type". It is mapped to the internal
-   * `transactionType` rather than reused as the field name, because `type` is ambiguous in a
-   * query that also accepts `incomeType` and a document `type`, and the storage column is
-   * already unambiguous.
-   */
-  @IsOptional()
-  @IsIn(TRANSACTION_TYPES)
-  public type?: TransactionType;
-
-  @IsOptional()
-  @IsIn(INCOME_TYPES)
-  public incomeType?: IncomeType;
 
   @IsOptional()
   @trimmed()
@@ -199,6 +189,25 @@ export class TransactionListQueryDto {
     message: 'A transaction reference looks like HY-INC-000001 or HY-EXP-000001.',
   })
   public reference?: string;
+}
+
+/**
+ * `GET /api/v1/transactions` — the shared filters plus the two type selectors.
+ *
+ * This is the only query that may ask for both sides of the ledger, because it is the only
+ * route that serves both. `docs/06-API-SPEC.md` describes the side selector as `type`, which
+ * is mapped to the internal `transactionType` rather than reused as the field name, because
+ * `type` is ambiguous in a query that also accepts `incomeType` and a document `type`, and
+ * the storage column is already unambiguous.
+ */
+export class TransactionListQueryDto extends SharedTransactionFilterQueryDto {
+  @IsOptional()
+  @IsIn(TRANSACTION_TYPES)
+  public type?: TransactionType;
+
+  @IsOptional()
+  @IsIn(INCOME_TYPES)
+  public incomeType?: IncomeType;
 }
 
 /**

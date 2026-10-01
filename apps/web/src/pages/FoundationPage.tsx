@@ -15,8 +15,9 @@ export function FoundationPage() {
       <div className="space-y-2">
         <h1 className="text-page-title font-bold text-text-primary">Foundation</h1>
         <p className="max-w-2xl text-supporting text-text-secondary">
-          The workspace, toolchain, and shared HTTP contract are in place, and members can now be
-          recorded, searched, edited, and given a monthly contribution expectation.
+          The workspace, toolchain, and shared HTTP contract are in place. Members, income, and
+          expenses can now be recorded, searched, corrected, and voided, with every amount
+          calculated by the API from the transactions that actually exist.
         </p>
       </div>
 
@@ -37,6 +38,14 @@ export function FoundationPage() {
             Member records with a permanent member ID, an audited edit, and a monthly contribution
             expectation derived from real transactions.
           </li>
+          <li>
+            Income recording with member contributions, offerings, donations, and anonymous
+            donations, plus a generated receipt and the full audit history.
+          </li>
+          <li>
+            Expense recording against a required category, with custom categories, an honest
+            <em> Receipt Missing</em> state, and the same correction, void, and audit behaviour.
+          </li>
           <li>Unit, integration, and browser checks for everything listed here.</li>
         </ul>
         <p className="mt-4 text-supporting text-text-secondary">
@@ -45,6 +54,20 @@ export function FoundationPage() {
             className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
           >
             Go to members
+          </Link>
+          {' · '}
+          <Link
+            to="/income"
+            className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
+          >
+            Go to income
+          </Link>
+          {' · '}
+          <Link
+            to="/expenses"
+            className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
+          >
+            Go to expenses
           </Link>
         </p>
       </section>
@@ -57,11 +80,11 @@ export function FoundationPage() {
           What is not in this build yet
         </h2>
         <p className="mt-2 text-supporting text-text-secondary">
-          Income, expenses, receipts and documents, reports, and church-wide totals are not
-          implemented. No figure anywhere in this application is a stored total or a placeholder:
-          every amount shown is calculated by the API from the transactions that actually exist.
-          Recording a contribution is the next phase, so a member-month can currently be given an
-          expected amount but not yet a payment.
+          Attaching receipts and other documents, church-wide reports, and the settings screens are
+          not implemented. No figure anywhere in this application is a stored total or a
+          placeholder: every amount shown is calculated by the API from the transactions that
+          actually exist. Because documents cannot be attached yet, every expense currently shows{' '}
+          <em>Receipt Missing</em>, which is the true state rather than a broken control.
         </p>
       </section>
     </div>

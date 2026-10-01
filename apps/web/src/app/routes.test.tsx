@@ -42,11 +42,15 @@ describe('foundation shell routing', () => {
     await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
     // The screen has to say what does not exist, so the Pastor is not left believing a
-    // missing screen is a broken one.
+    // missing screen is a broken one. Documents, reports, and settings are what remains, and
+    // the statement about receipts is the honest one: documents cannot be attached yet, so
+    // every expense truthfully reads Receipt Missing.
     expect(
       screen.getByRole('heading', { level: 2, name: 'What is not in this build yet' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Income, expenses, receipts and documents, reports/)).toBeVisible();
+    expect(
+      screen.getByText(/Attaching receipts and other documents, church-wide reports/),
+    ).toBeVisible();
     // No dashboard figures, because none are calculated for this screen.
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
@@ -56,19 +60,20 @@ describe('foundation shell routing', () => {
 
     await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
-    // A link to a screen that does not exist would be a dead control. Members and Income are
-    // the product sections built so far, so they are the only product links offered. Expenses
-    // arrives in Phase 06 and is still absent here, which is what keeps this assertion honest.
+    // A link to a screen that does not exist would be a dead control. Members, Income, and
+    // Expenses are the product sections built so far, so they are the only product links
+    // offered. Documents, reports, and settings arrive in later phases and are still absent
+    // here, which is what keeps this assertion honest.
     const navigation = screen.getByRole('navigation', { name: 'Primary' });
 
     expect(
       within(navigation)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Foundation', 'Members', 'Income']);
-    expect(within(navigation).queryByRole('link', { name: /Expenses/ })).not.toBeInTheDocument();
+    ).toEqual(['Foundation', 'Members', 'Income', 'Expenses']);
     expect(within(navigation).queryByRole('link', { name: /Documents/ })).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('link', { name: /Reports/ })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument();
   });
 
   it('shows a not-found screen for an unknown address and returns home from it', async () => {
