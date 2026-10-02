@@ -9,6 +9,8 @@
 
 ## Current status
 
+**The Phase 09 reports quality gate passed on 2026-10-02: every mandatory command passed and `npm run test:e2e` reported `57 passed`, including the 10 new report and search journeys and all 47 pre-existing journeys. The Phase 09 Git gate is recorded in `PHASE-HISTORY.md`. Phase 08 remains closed with commit `525493c63a99f43430558307401bf41ed4bca477`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
+
 **The Phase 07 documents quality gate passed on 2026-10-01: every mandatory command passed, `npm run verify` exited `0`, and `npm run test:e2e` reported `38 passed`, including the four new document journeys and all 34 pre-existing journeys. The Phase 07 Git gate is recorded in `PHASE-HISTORY.md`. Phase 06 remains closed with commit `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
 
 **The Phase 06 expense quality gate passed on 2026-10-01: every mandatory command passed and `npm run test:e2e` reported `35 passed`, including all 10 Phase 06 expense journeys and all 25 pre-existing journeys. The Phase 06 Git gate is recorded in `PHASE-HISTORY.md`. Phase 05 remains closed with commit `c639fa89504ee5be09e17d8bb2206b89139d9ccf`, Phase 04 with `b1477379dee465c1129bb7a32e22a4c713e4d4ea`, and Phase 03 with `ab7847037120b3deeb519d053c11d4d09afc3746`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
@@ -100,6 +102,50 @@ Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, Power
 | The contribution-period panel has no year selector, so a period configured for a future year is invisible (`ISSUE-023`) | Carried from Phase 04 and unchanged by Phase 08. The dashboard's own contribution-status visualization covers configured buckets for the selected period, and no locked requirement owns a year selector |
 | The project's Vite build reports a chunk larger than 500 kB after `✓ built in 309ms` | Pre-existing and non-blocking: the bundle is served by `vite preview` for acceptance, the figure is a size advisory rather than an error, and it is not a Phase 08 regression |
 | The project-local PostgreSQL cluster inside the OneDrive-synchronised workspace would not stay up under the documented start path (`ISSUE-040`) | Environmental and unchanged in kind from the Phase 07 recurrence. The cluster was started from a detached helper inside the authorized workspace, which changed no project file, relocated no data, and needed no requirement change. The recurrence is recorded here and in `ISSUES.md` rather than silently absorbed |
+
+## Phase 09 reports gate
+
+Phase 09 owns `REQ-REPORT-001`–`REQ-REPORT-004`, `REQ-SEARCH-001`, `REQ-SEARCH-002`, `REQ-EXPORT-001`, and `REQ-EXPORT-002`, with the acceptance identifiers `TEST-REPORT-001`, `TEST-SEARCH-001`, `TEST-EXPORT-001`, `TEST-FIN-001`, and `TEST-E2E-001`. All evidence below is from the final run on 2026-10-02, which re-executed the whole applicable gate against the delivered Phase 09 tree rather than accepting an earlier interrupted run's claim.
+
+Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, project-local PostgreSQL `16` on loopback port `55432`, `hyssop_finance_dev` and `hyssop_finance_test`). The `ISSUE-040`/`ISSUE-045` cluster condition did **not** recur for this phase: the project-local cluster was already accepting connections on `127.0.0.1:55432` when the gate began, so no detached helper was needed and no project file was touched to bring it up. The Playwright run provisions its own Admin with a random password generated in memory, applies migrations to the `_test` database, and never reads or prints a real credential. `hyssop_finance_test` is not reset between runs, so the report journeys assert against the figures the API returned in the same request rather than against any seeded number.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run db:validate` | Pass | `The schema at prisma\schema.prisma is valid` |
+| `npm run db:status` | Pass | `5 migrations found in prisma/migrations` and `Database schema is up to date!`; Phase 09 added no migration, because every report is a read projection over the `financial_transaction`, `member`, `contribution_period`, `expense_category`, `transaction_document`, and `audit_event` rows created and reviewed in Phase 02, and the audit read projection reuses the existing append-only `audit_event` table |
+| `npm run db:drift` | Pass | `No difference detected` for both `migration history vs prisma/schema.prisma` and `hyssop_finance_dev vs prisma/schema.prisma`, then `Dropped the disposable shadow database hyssop_finance_shadow.` |
+| `npm run lint` | Pass | `eslint .` reported no problems |
+| `npm run format:check` | Pass | `All matched files use Prettier code style!` |
+| `npm run typecheck` | Pass | Contracts build, `apps/api` and `apps/web` `tsc --noEmit`, clean |
+| `npm run typecheck:scripts` | Pass | `tsc -p tsconfig.scripts.json` clean |
+| `npm run test:api` | Pass | 34 suites, 671 tests, including the 92 tests across `reports-http.e2e-spec.ts`, `src/reports/reports.service.spec.ts`, and `src/reports/csv.spec.ts`, and the unchanged Phase 02–08 regression suites |
+| `npm run test:web` | Pass | 18 files, 470 tests, including the 71 tests across `features/reports/reports.test.tsx`, `reports-api.test.ts`, and `search.test.tsx` |
+| `npm run test:db` | Pass | 11 suites, 230 tests against real PostgreSQL, including the new 35-test `reports-projection.db-spec.ts` and the unchanged Phase 02–08 financial and invariant suites |
+| `npm run build` | Pass | Contracts declaration build, `nest build`, and `vite build` (`✓ built in 330ms`; the 558.53 kB chunk advisory is a pre-existing size advisory, not an error, and grew only because the reports and search features joined the bundle) |
+| `npm run test:e2e` | Pass | 57 Playwright tests (`57 passed (1.1m)`) against the rebuilt bundle served by `vite preview`, with a real API process and a real PostgreSQL database; this is the 10 new report and search journeys plus all 47 pre-existing journeys, and therefore the combined Phase 03–09 regression in one run |
+| Route-fidelity evidence | Pass | The API exposes exactly the eleven report routes, the one `:reportId/export.csv` route, and the one `/search` route that `docs/06-API-SPEC.md` defines. No route was invented and no documented route is missing |
+| Server-authoritative figure evidence | Pass | The browser journeys read the same response the server returned for the selected period and assert the rendered figures against it, so a hard-coded total or a client recomputation cannot pass. A code review of `features/reports` and both report pages found no floating-point money arithmetic at all: the only `Number()` conversions are the integer `page`/`pageSize` URL parameters and a kilobyte label for a file size, and every money value stays an exact decimal string from PostgreSQL to the DOM |
+| Period-boundary evidence | Pass | The period presets are exercised through the real period control, the selection is read back from the URL so a shared link reproduces the same request pair, and the audit window is observed sending whole Asia/Kolkata day instants (`DEC-098`) while the whole-history option sends no window at all |
+| Voided-visibility evidence | Pass | One journey opens every documented report and asserts each states its own voided visibility, and a second asserts a history report keeps voided rows while an arithmetic report excludes them, so a screen cannot claim a rule its projection does not implement (`DEC-097`) |
+| CSV evidence | Pass | The export journey clicks the real control, captures the request, and asserts the downloaded file carries the server-decided filename and the header row the API produced, so a client-built CSV cannot pass. `csv.spec.ts` and the contract suite assert every cell is escaped, a leading spreadsheet formula character is neutralized, and an unknown report id is refused rather than used to build a filename |
+| Print evidence | Pass | The printed page is asserted to state its own scope and carry no controls, and the shared print classes live in `theme.css` rather than in inline styles, so the print stylesheet is reviewable in one place |
+| Search evidence | Pass | Search requests only after a term is submitted, reports the API's own total, and a term that matches nothing is shown as an explicit empty state rather than a blank page |
+| Dead-control audit | Pass | The journey that opens every report also asserts each leaves no dead control, and the web tests assert that a failed search and a failed export are both reported to the Admin and can be dismissed or retried, rather than failing silently as the Phase 07 download control did (`ISSUE-042`) |
+
+## Phase 09 findings
+
+No defect was found and fixed in Phase 09. Every applicable gate command passed on the first execution in this session against the delivered tree, so no `ISSUE-046` or later entry exists. That is recorded as an observation rather than presented as an absence of risk: the audit above re-read the new code for the three shortcuts `docs/phases/PHASE-09-REPORTS.md` prohibits — hard-coded report rows, a client-only filter, and a browser-side authoritative calculation — and found none.
+
+The three technical decisions Phase 09 introduced are recorded as `DEC-096` (one row cap shared by the screen and the export), `DEC-097` (one voided-visibility constant), and `DEC-098` (audit dates widened to whole Asia/Kolkata days at the transport boundary). None of them conflicts with a locked requirement, so none required a change to `01-REQUIREMENTS.md` or any other specification.
+
+## Phase 09 non-blocking advisories
+
+| Advisory | Assessment |
+|---|---|
+| The NestJS internal legacy-route advisory about `/api/*` (`ISSUE-012`) | Framework-owned and unchanged by Phase 09. It is emitted during API start-up and does not affect any report or search route |
+| The contribution-period panel has no year selector (`ISSUE-023`) | Carried from Phase 04 and unchanged by Phase 09. The Member Contribution report accepts any year through the API and the period control, so the report is not subject to the panel's limitation |
+| The Vite build now reports a 558.53 kB chunk after `built in 330ms` | A size advisory rather than an error, pre-existing in kind from the 523.04 kB figure recorded for Phase 08. Recorded so it is not mistaken for a failed build |
+| The `ISSUE-040` OneDrive cluster condition did not recur for Phase 09 | The cluster was already up on the documented port when the gate began, so the documented start path needed no workaround and no detached helper was used |
 
 ## Phase 07 documents gate
 

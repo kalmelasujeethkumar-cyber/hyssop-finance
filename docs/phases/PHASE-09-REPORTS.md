@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires the canonical calculation layer and earlier financial phases.
+- Status: `COMPLETE`; the quality gate passed on 2026-10-02 and the Git gate is recorded in `docs/runtime/PHASE-HISTORY.md`.
 - Preconditions: Phases 01–08 complete; audit read projection is defined before report acceptance.
 - Handoff rule: all report totals and CSV values are projections of the canonical ledger, not parallel calculations.
 
@@ -87,10 +87,20 @@ Pass the complete applicable quality gate; inspect diff and secrets; commit; pus
 
 Correct a report through a focused service change and regression tests. Do not patch a displayed number to match another bug.
 
+## Implementation record
+
+This section records where the delivered behavior is defined. It deliberately does not restate the contract: the owning files are cited so there is one authority per behavior, and each of them is generated from or validated against PostgreSQL.
+
+- Report definitions — the eleven closed report ids, their titles, the voided-visibility rule per report (`REPORT_EXCLUDES_VOIDED`), and the exact CSV column order per report (`REPORT_CSV_COLUMNS`) are declared once in `packages/contracts/src/reports.ts`. The screen states the voided-visibility sentence from that constant, so a report cannot claim a rule the contract does not give it (`DEC-097`).
+- Report and search projections — `apps/api/src/reports/reports.service.ts` and `apps/api/src/database/*`. Every figure comes from the same canonical calculation layer the dashboard uses, so a report cannot disagree with the dashboard, and money crosses the wire as exact decimal strings (`DEC-096`).
+- CSV — `apps/api/src/reports/csv.ts` escapes every cell, neutralizes a leading spreadsheet formula character, and `apps/api/src/reports/report-csv.ts` renders the contract's column list for each report from the same projection the JSON route returns.
+- Print — `apps/web/src/styles/theme.css` owns `.print-hidden`, `.print-only`, and `.print-block`; the page prints its own scope, period, and generation timestamp and carries no control.
+- Deliberate local-link limitation — the document columns are named `Document Link (local application only)`, and the receipt panel states that a local link is valid only while this local application is accessible (`REQ-EXPORT-002`). No report claims a hosted document URL.
+
 ## Completion checklist
 
-- [ ] All required reports exist and work.
-- [ ] All period filters work.
-- [ ] CSV and print behavior verified.
-- [ ] Values reconcile with the ledger.
-- [ ] Documentation, tests, and Git gate complete.
+- [x] All required reports exist and work.
+- [x] All period filters work.
+- [x] CSV and print behavior verified.
+- [x] Values reconcile with the ledger.
+- [x] Documentation, tests, and Git gate complete.
