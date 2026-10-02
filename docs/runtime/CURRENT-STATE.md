@@ -51,7 +51,7 @@ Phase 08 is implemented and has passed its quality gate. It owns `REQ-DASH-001`â
 
 ## Next planned step
 
-The Phase 08 Git gate is closed: 37 files were committed as `525493c63a99f43430558307401bf41ed4bca477` and pushed to `origin/main`, and after a fresh `git fetch` the local and remote hashes match.
+The Phase 08 Git gate is closed: 37 implementation files were committed as `525493c63a99f43430558307401bf41ed4bca477`, the evidence-only commit recording the gate is `fa4f2cdd249f7194a207ac44defe9979b4bd48d1`, both were pushed to `origin/main`, and after a fresh `git fetch` the local and remote hashes both return the evidence commit.
 
 Then begin `PHASE-09-REPORTS` by rereading the phase contract, `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, and `06-API-SPEC.md`. Reports must reuse the same canonical calculation layer and the same period semantics the dashboard established, must not introduce a second formula or a client-side recomputation, and must stay honest about an empty or partially configured period.
 
