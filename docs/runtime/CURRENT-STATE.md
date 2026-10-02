@@ -17,7 +17,7 @@
 
 - Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE), PHASE 07 — DOCUMENTS (COMPLETE), PHASE 08 — DASHBOARD (COMPLETE), PHASE 09 — REPORTS (COMPLETE)**
 - Current phase: `PHASE-09-REPORTS`
-- Status: **PHASE 09 GIT GATE CLOSED (commit recorded in `docs/runtime/PHASE-HISTORY.md`)**
+- Status: **PHASE 09 GIT GATE CLOSED (implementation commit `4160804` and evidence commit `e1afed8` pushed and verified on 2026-10-02)**
 - Next gate: `PHASE-10-AUDIT-SETTINGS`
 - Phase 06: **COMPLETE**; closed with commit `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479`
 - Phase 07: **COMPLETE**; closed with commit `2e1d778287da8d7c67c90cac2d25a63a80ba0e82`
@@ -56,7 +56,7 @@ Phase 09 is implemented and has passed its quality gate. It owns `REQ-REPORT-001
 
 Begin `PHASE-10-AUDIT-SETTINGS` by rereading its phase contract, `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, and `06-API-SPEC.md`. Phase 10 owns the dedicated Audit History interface and the settings screens, consumes the minimal audit read projection Phase 09 delivered rather than reimplementing it, and must keep audit events append-only: the interface reads the audit trail and never offers a way to edit or remove one.
 
-The Phase 09 Git gate is closed: 35 implementation files were committed as `416080493a86fb827c597013518d7026b78c0198` and pushed to `origin/main`; after a fresh `git fetch`, `git rev-parse HEAD` and `git rev-parse origin/main` match. The evidence-only commit recording the gate does not change the implementation verdict.
+The Phase 09 Git gate is closed: 35 implementation files were committed as `416080493a86fb827c597013518d7026b78c0198` and the evidence-only commit is `e1afed8af69994ca4eb7953ef12ea985fa2716cc`; both were pushed to `origin/main`, and after a fresh `git fetch` `git rev-parse HEAD` and `git rev-parse origin/main` both return the evidence commit.
 
 The Phase 08 Git gate is closed: 37 implementation files were committed as `525493c63a99f43430558307401bf41ed4bca477`, the evidence-only commit recording the gate is `fa4f2cdd249f7194a207ac44defe9979b4bd48d1`, both were pushed to `origin/main`, and after a fresh `git fetch` the local and remote hashes both return the evidence commit.
 
