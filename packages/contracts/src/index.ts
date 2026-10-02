@@ -7,4 +7,5 @@ export * from './health';
 export * from './income';
 export * from './members';
 export * from './phone';
+export * from './reports';
 export * from './transactions';

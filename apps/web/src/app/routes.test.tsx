@@ -51,11 +51,12 @@ describe('application shell routing', () => {
     await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
     // The screen has to say what does not exist, so the Pastor is not left believing a
-    // missing screen is a broken one. Church-wide reports and settings are what remains.
+    // missing screen is a broken one. Settings are what remains once Reports and Search
+    // shipped in Phase 09.
     expect(
       screen.getByRole('heading', { level: 2, name: 'What is not in this build yet' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Church-wide printable reports with CSV export/)).toBeVisible();
+    expect(screen.getByText(/Settings screens are not implemented/)).toBeVisible();
     // No financial table, because none is calculated for this screen.
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
@@ -66,17 +67,16 @@ describe('application shell routing', () => {
     await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
     // A link to a screen that does not exist would be a dead control. Dashboard, Members,
-    // Income, Expenses, and the status screen are the sections built so far, so they are the
-    // only links offered. Reports and settings arrive in later phases and are still absent
-    // here, which is what keeps this assertion honest.
+    // Income, Expenses, Reports, Search, and the status screen are the sections built so
+    // far, so they are the only links offered. Settings arrives in a later phase and is
+    // still absent here, which is what keeps this assertion honest.
     const navigation = screen.getByRole('navigation', { name: 'Primary' });
 
     expect(
       within(navigation)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Dashboard', 'Members', 'Income', 'Expenses', 'Status']);
-    expect(within(navigation).queryByRole('link', { name: /Reports/ })).not.toBeInTheDocument();
+    ).toEqual(['Dashboard', 'Members', 'Income', 'Expenses', 'Reports', 'Search', 'Status']);
     expect(within(navigation).queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument();
   });
 
@@ -147,6 +147,7 @@ describe('connectivity status', () => {
         base.getList<TItem>(path, options),
       upload: <TData,>(path: string, form: FormData, options?: ApiRequestOptions) =>
         base.upload<TData>(path, form, options),
+      getText: (path: string, options?: ApiRequestOptions) => base.getText(path, options),
     };
 
     renderRoute({ path: '/foundation', client });

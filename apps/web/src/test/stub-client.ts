@@ -2,27 +2,39 @@ import {
   HEALTH_SERVICE_NAME,
   PERIOD_MOVEMENT_LABEL,
   AVAILABLE_BALANCE_LABEL,
+  DOCUMENT_UPLOAD_FIELD,
+  isReportId,
   type AdminProfile,
+  type AuditReport,
+  type BreakdownReport,
   type ContributionPeriodSummary,
   type ContributionPeriodView,
   type CsrfTokenResult,
   type CurrentSessionResult,
-  DOCUMENT_UPLOAD_FIELD,
+  type DashboardPeriodView,
   type DashboardView,
+  type CompleteTransactionReport,
   type DocumentMimeType,
+  type DocumentReport,
   type DocumentSummary,
   type ExpenseCategoryView,
   type ExpenseSummary,
+  type FinancialSummaryReport,
+  type GlobalSearchResponse,
   type HealthReport,
   type LoginResult,
   type LogoutResult,
+  type MemberContributionReport,
   type MemberDetail,
   type MemberSortDirection,
   type MemberSortField,
   type MemberSummary,
   type MemberTransactionView,
+  type PaymentMethodReport,
+  type ReportId,
   type SessionContext,
   type TransactionAuditEventView,
+  type TransactionListReport,
   type TransactionReceiptView,
   type TransactionSortField,
   type TransactionSummary,
@@ -32,6 +44,7 @@ import {
   ApiTransportError,
   type ApiClient,
   type ApiListPage,
+  type ApiTextDownload,
 } from '../lib/api-client';
 
 export const HEALTH_REPORT: HealthReport = {
@@ -626,6 +639,484 @@ export const incomeValidationFailed = new ApiClientError(
   ],
 );
 
+/** The period every period-bounded report fixture resolves to. */
+export const REPORT_PERIOD: DashboardPeriodView = {
+  preset: 'thisMonth',
+  label: 'This Month',
+  from: '2026-09-01',
+  to: '2026-09-30',
+  timezone: 'Asia/Kolkata',
+};
+
+/**
+ * The Financial Summary report.
+ *
+ * Reuses the dashboard's deliberately awkward figures for the same reason: `movement.net` and
+ * `balances.total` differ, and the UPI balance is negative with paise, so a report screen that
+ * conflated the two or dropped a negative would fail here.
+ */
+export const FINANCIAL_SUMMARY_REPORT: FinancialSummaryReport = {
+  reportId: 'financial-summary',
+  period: REPORT_PERIOD,
+  movement: {
+    label: PERIOD_MOVEMENT_LABEL,
+    income: '16500.00',
+    expenses: '4200.00',
+    net: '12300.00',
+  },
+  availableBalanceForPeriod: '12300.00',
+  balances: {
+    label: AVAILABLE_BALANCE_LABEL,
+    asOf: '2026-09-30',
+    cash: '4500.00',
+    upi: '-750.00',
+    bank: '97000.00',
+    total: '100750.00',
+    cumulativeIncome: '126500.00',
+    cumulativeExpenses: '25750.00',
+  },
+  trend: [
+    {
+      month: '2026-08',
+      year: 2026,
+      monthNumber: 8,
+      income: '14000.00',
+      expenses: '3800.00',
+      movement: '10200.00',
+    },
+    {
+      month: '2026-09',
+      year: 2026,
+      monthNumber: 9,
+      income: '16500.00',
+      expenses: '4200.00',
+      movement: '12300.00',
+    },
+  ],
+  currency: 'INR',
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * The Income breakdown report.
+ *
+ * `customLabel` is `false` on every row because an income type is a closed list rather than
+ * Admin-entered text, and the Admin-authored case is the expense category below. A breakdown screen
+ * that treated every label as trusted markup would be caught by the expense fixture.
+ */
+export const INCOME_BREAKDOWN_REPORT: BreakdownReport = {
+  reportId: 'income',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  total: '16500.00',
+  rows: [
+    {
+      key: 'MEMBER_CONTRIBUTION',
+      label: 'Member contribution',
+      amount: '10000.00',
+      transactionCount: 4,
+      sharePercent: '60.61',
+      customLabel: false,
+    },
+    {
+      key: 'OFFERING',
+      label: 'Offering',
+      amount: '5000.00',
+      transactionCount: 4,
+      sharePercent: '30.30',
+      customLabel: false,
+    },
+    {
+      key: 'DONATION',
+      label: 'Donation',
+      amount: '1500.00',
+      transactionCount: 4,
+      sharePercent: '9.09',
+      customLabel: false,
+    },
+  ],
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/** The Expense breakdown report, whose category labels are Admin-entered free text. */
+export const EXPENSE_BREAKDOWN_REPORT: BreakdownReport = {
+  reportId: 'expenses',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  total: '4200.00',
+  rows: [
+    {
+      key: 'category-electricity',
+      label: 'Electricity',
+      amount: '2500.00',
+      transactionCount: 2,
+      sharePercent: '59.52',
+      customLabel: true,
+    },
+    {
+      key: 'category-maintenance',
+      label: 'Maintenance',
+      amount: '1700.00',
+      transactionCount: 2,
+      sharePercent: '40.48',
+      customLabel: true,
+    },
+  ],
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/** The Expense Category report, which reads the same rows under its own report id. */
+export const EXPENSE_CATEGORY_REPORT: BreakdownReport = {
+  ...EXPENSE_BREAKDOWN_REPORT,
+  reportId: 'expense-categories',
+};
+
+/**
+ * The Member Contribution report.
+ *
+ * Carries one row in each of the three derived states, so a screen that showed only "paid" members
+ * would be provably wrong rather than merely untested.
+ */
+export const MEMBER_CONTRIBUTION_REPORT: MemberContributionReport = {
+  reportId: 'member-contributions',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  rows: [
+    {
+      memberId: MEMBER_ONE.id,
+      memberReferenceId: MEMBER_ONE.referenceId,
+      memberName: MEMBER_ONE.name,
+      month: '2026-09',
+      year: 2026,
+      monthNumber: 9,
+      expected: '500.00',
+      received: '500.00',
+      remaining: '0.00',
+      status: 'PAID',
+    },
+    {
+      memberId: MEMBER_TWO.id,
+      memberReferenceId: MEMBER_TWO.referenceId,
+      memberName: MEMBER_TWO.name,
+      month: '2026-09',
+      year: 2026,
+      monthNumber: 9,
+      expected: '500.00',
+      received: '200.00',
+      remaining: '300.00',
+      status: 'PARTIALLY PAID',
+    },
+    {
+      memberId: MEMBER_THREE.id,
+      memberReferenceId: MEMBER_THREE.referenceId,
+      memberName: MEMBER_THREE.name,
+      month: '2026-09',
+      year: 2026,
+      monthNumber: 9,
+      expected: '500.00',
+      received: '0.00',
+      remaining: '500.00',
+      status: 'NOT PAID',
+    },
+  ],
+  totals: {
+    memberMonths: 3,
+    paid: 1,
+    partiallyPaid: 1,
+    notPaid: 1,
+    expected: '1500.00',
+    received: '700.00',
+    remaining: '800.00',
+  },
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * The Offering report.
+ *
+ * `transactionCount` is deliberately larger than `rows.length` and `rowsTruncated` is `true`, so a
+ * screen that quietly presented a bounded list beside a period total without saying so — the
+ * exact failure `REQ-EXPORT-001` names — is caught.
+ */
+export const OFFERINGS_REPORT: TransactionListReport = {
+  reportId: 'offerings',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  total: '5000.00',
+  transactionCount: 6,
+  rows: [
+    {
+      id: INCOME_TWO.id,
+      referenceId: INCOME_TWO.referenceId,
+      amount: INCOME_TWO.amount,
+      currency: 'INR',
+      paymentMethod: INCOME_TWO.paymentMethod,
+      businessDate: INCOME_TWO.businessDate,
+      description: INCOME_TWO.description,
+      memberName: null,
+      memberReferenceId: null,
+      categoryName: null,
+      incomeType: 'OFFERING',
+      documentCount: 0,
+      hasAvailableDocument: false,
+    },
+  ],
+  rowsTruncated: true,
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * The Donation report.
+ *
+ * `total` includes the anonymous donation, because `REQ-INCOME-006`'s anonymous donation is a
+ * donation and its omission would understate the total. The row carries no member and no
+ * description, so a screen that printed the identity of an anonymous giver would be caught.
+ */
+export const DONATIONS_REPORT: TransactionListReport = {
+  reportId: 'donations',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  total: '1500.00',
+  transactionCount: 2,
+  rows: [
+    {
+      id: INCOME_ANONYMOUS.id,
+      referenceId: INCOME_ANONYMOUS.referenceId,
+      amount: INCOME_ANONYMOUS.amount,
+      currency: 'INR',
+      paymentMethod: INCOME_ANONYMOUS.paymentMethod,
+      businessDate: INCOME_ANONYMOUS.businessDate,
+      description: null,
+      memberName: null,
+      memberReferenceId: null,
+      categoryName: null,
+      incomeType: 'ANONYMOUS_DONATION',
+      documentCount: 0,
+      hasAvailableDocument: false,
+    },
+  ],
+  rowsTruncated: false,
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * The Payment Method report.
+ *
+ * `movement` and `balance` disagree for UPI — a negative movement against a balance that still
+ * includes earlier months — so a screen that merged the two columns would be caught here.
+ */
+export const PAYMENT_METHOD_REPORT: PaymentMethodReport = {
+  reportId: 'payment-methods',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  movementLabel: PERIOD_MOVEMENT_LABEL,
+  balanceLabel: AVAILABLE_BALANCE_LABEL,
+  rows: [
+    {
+      paymentMethod: 'CASH',
+      label: 'Cash',
+      income: '4500.00',
+      expenses: '2000.00',
+      movement: '2500.00',
+      balance: '4500.00',
+    },
+    {
+      paymentMethod: 'UPI',
+      label: 'UPI',
+      income: '7000.00',
+      expenses: '2200.00',
+      movement: '4800.00',
+      balance: '-750.00',
+    },
+    {
+      paymentMethod: 'BANK_TRANSFER',
+      label: 'Bank transfer',
+      income: '5000.00',
+      expenses: '0.00',
+      movement: '5000.00',
+      balance: '97000.00',
+    },
+  ],
+  totalMovement: '12300.00',
+  totalBalance: '100750.00',
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * The Receipt / Document report.
+ *
+ * Carries all three documented states, including a `VOIDED` document on a voided transaction and a
+ * `REMOVED` one whose bytes are gone. The removed row's `storagePath` is `null` and
+ * `locallyReachable` is `false`, so a screen offering an "Open" control for it would be caught.
+ */
+export const DOCUMENT_REPORT: DocumentReport = {
+  reportId: 'documents',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  rows: [
+    {
+      documentId: 'abababab-0000-4000-8000-000000000001',
+      referenceId: 'HY-DOC-000001',
+      state: 'AVAILABLE',
+      originalFilename: 'september-offering.jpg',
+      byteSize: 48_112,
+      mimeType: 'image/jpeg',
+      uploadedAt: '2026-09-13T08:15:00.000Z',
+      transactionId: EXPENSE_ONE.id,
+      transactionReferenceId: EXPENSE_ONE.referenceId,
+      transactionType: 'EXPENSE',
+      amount: EXPENSE_ONE.amount,
+      businessDate: EXPENSE_ONE.businessDate,
+      memberName: null,
+      link: {
+        documentId: 'abababab-0000-4000-8000-000000000001',
+        referenceId: 'HY-DOC-000001',
+        originalFilename: 'september-offering.jpg',
+        storagePath: 'documents/abababab-0000-4000-8000-000000000001.jpg',
+        locallyReachable: true,
+        accessNote: 'Opens only while this local application is running.',
+      },
+    },
+    {
+      documentId: 'abababab-0000-4000-8000-000000000002',
+      referenceId: 'HY-DOC-000002',
+      state: 'REMOVED',
+      originalFilename: 'old-bill.pdf',
+      byteSize: 12_004,
+      mimeType: 'application/pdf',
+      uploadedAt: '2026-09-14T09:00:00.000Z',
+      transactionId: EXPENSE_TWO.id,
+      transactionReferenceId: EXPENSE_TWO.referenceId,
+      transactionType: 'EXPENSE',
+      amount: EXPENSE_TWO.amount,
+      businessDate: EXPENSE_TWO.businessDate,
+      memberName: null,
+      link: {
+        documentId: 'abababab-0000-4000-8000-000000000002',
+        referenceId: 'HY-DOC-000002',
+        originalFilename: 'old-bill.pdf',
+        storagePath: null,
+        locallyReachable: false,
+        accessNote: 'Opens only while this local application is running.',
+      },
+    },
+  ],
+  counts: { AVAILABLE: 1, REMOVED: 1, VOIDED: 0 },
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * The Audit report.
+ *
+ * `range.from` is `null` rather than an empty string, because an open-ended history read is a real,
+ * different query from "the empty instant" and a filter control has to be able to tell them apart.
+ */
+export const AUDIT_REPORT: AuditReport = {
+  reportId: 'audit',
+  range: { from: null, to: null },
+  action: null,
+  rows: [
+    {
+      id: 'cdcdcdcd-0000-4000-8000-000000000001',
+      action: 'TRANSACTION_CREATED',
+      entityType: 'financial_transaction',
+      entityReference: EXPENSE_ONE.referenceId,
+      actorDisplayName: ADMIN_PROFILE.displayName,
+      occurredAt: '2026-09-12T07:15:00.000Z',
+      reason: null,
+      requestId: '2a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c41',
+      before: null,
+      after: { amountPaise: '245075', paymentMethod: 'BANK_TRANSFER', status: 'ACTIVE' },
+    },
+    {
+      id: 'cdcdcdcd-0000-4000-8000-000000000002',
+      action: 'TRANSACTION_VOIDED',
+      entityType: 'financial_transaction',
+      entityReference: INCOME_VOIDED.referenceId,
+      actorDisplayName: ADMIN_PROFILE.displayName,
+      occurredAt: '2026-05-12T05:00:00.000Z',
+      reason: 'Recorded against the wrong member',
+      requestId: '2a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c42',
+      before: { status: 'ACTIVE' },
+      after: { status: 'VOIDED' },
+    },
+  ],
+  pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * The Complete Transaction report.
+ *
+ * `status` is `null`, so this answers "every transaction in the period", and the rows include the
+ * voided one: this report is history, and a screen that hid it would be wrong rather than tidy.
+ */
+export const TRANSACTION_REPORT: CompleteTransactionReport = {
+  reportId: 'transactions',
+  period: REPORT_PERIOD,
+  currency: 'INR',
+  type: null,
+  status: null,
+  total: '20700.00',
+  transactionCount: 4,
+  rows: [INCOME_TWO, EXPENSE_ONE, EXPENSE_TWO, INCOME_VOIDED],
+  pagination: { page: 1, pageSize: 20, totalItems: 4, totalPages: 1 },
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/** The report fixture the stub serves for one report id. */
+export const DEFAULT_REPORTS: Readonly<Record<ReportId, unknown>> = {
+  'financial-summary': FINANCIAL_SUMMARY_REPORT,
+  income: INCOME_BREAKDOWN_REPORT,
+  expenses: EXPENSE_BREAKDOWN_REPORT,
+  'expense-categories': EXPENSE_CATEGORY_REPORT,
+  'member-contributions': MEMBER_CONTRIBUTION_REPORT,
+  offerings: OFFERINGS_REPORT,
+  donations: DONATIONS_REPORT,
+  'payment-methods': PAYMENT_METHOD_REPORT,
+  documents: DOCUMENT_REPORT,
+  audit: AUDIT_REPORT,
+  transactions: TRANSACTION_REPORT,
+};
+
+/**
+ * A search result mixing both kinds.
+ *
+ * The transaction result is voided on purpose, so a screen that filtered voided rows out of a
+ * search — rather than labelling them — would be caught. `pagination.totalItems` is the combined
+ * count the API decided; the screen must show it rather than counting the rows it was handed.
+ */
+export const SEARCH_RESPONSE: GlobalSearchResponse = {
+  query: 'HY',
+  type: 'all',
+  results: [
+    {
+      kind: 'member',
+      id: MEMBER_ONE.id,
+      referenceId: MEMBER_ONE.referenceId,
+      name: MEMBER_ONE.name,
+      phone: MEMBER_ONE.phone,
+    },
+    {
+      kind: 'transaction',
+      transaction: INCOME_VOIDED,
+    },
+  ],
+  pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
+};
+
+/**
+ * The CSV body the stub serves.
+ *
+ * Shaped like the real Income export: a header row and one data row, with the exact decimal string
+ * unrounded. A test that reads the downloaded blob can therefore assert the *bytes the browser
+ * saved*, which is the only thing that proves `REQ-EXPORT-001`'s exactness survived the trip.
+ */
+export const DEFAULT_REPORT_CSV = [
+  'Income Type,Amount (INR),Transactions,Share',
+  'Offering,1250.50,1,100.00',
+].join('\r\n');
+
 /**
  * A dashboard response with deliberately awkward-but-legal numbers.
  *
@@ -992,8 +1483,48 @@ export interface DashboardStubOptions {
   readonly dashboardGate?: Promise<unknown>;
 }
 
+/**
+ * Answers the stub may be scripted to return for the report and search routes.
+ *
+ * `reports` is keyed by report id rather than by path, so a test states *which report* is being
+ * faked and the stub still serves whatever period query the browser actually sent. That is what
+ * lets a test assert the query separately instead of hiding it behind a fixture.
+ */
+export interface ReportStubOptions {
+  /** The projections keyed by report id. Anything absent falls back to the built-in fixture. */
+  readonly reports?: Readonly<Partial<Record<ReportId, unknown>>>;
+  /** Fails every `GET /reports/...`, for the error state. */
+  readonly reportFails?: Error;
+  /**
+   * Holds every `GET /reports/...` open until the supplied promise settles.
+   *
+   * The stub resolves in a microtask, which is faster than a polling assertion, so a test for the
+   * report's loading state has no stable moment in which to observe it. A gate makes the wait
+   * observable, for the same reason `dashboardGate` exists.
+   */
+  readonly reportGate?: Promise<unknown>;
+  /** The CSV body `GET /reports/:reportId/export.csv` returns. */
+  readonly csv?: string;
+  /** The filename declared for the CSV, or `undefined` to declare none. */
+  readonly csvFilename?: string;
+  /** Fails the CSV export, for the export error state. */
+  readonly csvFails?: Error;
+  /** The result `GET /search` returns. */
+  readonly searchResults?: GlobalSearchResponse;
+  /** Fails `GET /search`. */
+  readonly searchFails?: Error;
+}
+
 export interface StubApiClient extends ApiClient {
   readonly calls: RecordedCall[];
+  /**
+   * The text downloads the client was asked for, in order.
+   *
+   * Recorded separately from {@link calls} because `calls` only records the request: an export test
+   * has to assert the *bytes the server returned* to prove `REQ-EXPORT-001`'s exact money strings
+   * survived the whole round trip rather than being reformatted in the browser.
+   */
+  readonly textCalls: readonly ApiTextDownload[];
   /** The current member store, so a test can assert a create or edit actually applied. */
   readonly members: readonly MemberSummary[];
   /** The current transaction store, so a test can assert an income, correction, or void applied. */
@@ -1031,9 +1562,11 @@ export function stubApiClient(
     readonly expenses?: ExpenseStubOptions;
     readonly documents?: DocumentStubOptions;
     readonly dashboard?: DashboardStubOptions;
+    readonly reports?: ReportStubOptions;
   } = {},
 ): StubApiClient {
   const calls: RecordedCall[] = [];
+  const textCalls: ApiTextDownload[] = [];
   const session = options.session ?? SESSION_RESULT;
   const health = options.health ?? HEALTH_REPORT;
   const csrf = options.csrf ?? CSRF_TOKEN_RESULT;
@@ -1073,6 +1606,7 @@ export function stubApiClient(
   // request is actually sent, and only the first request may fail.
   let hasFailedFirstDashboard = false;
   const dashboardOptions = options.dashboard ?? {};
+  const reportOptions = options.reports ?? {};
   let hasFailedFirstExpenseCreate = false;
   // The category store is stateful as well: adding a category really appends a row the picker can
   // then select, so a test can prove the add-category path ends in a usable selection.
@@ -1139,6 +1673,21 @@ export function stubApiClient(
     const match = /^\/members\/([^/?]+)(?:\/|\?|$)/.exec(path);
 
     return match?.[1];
+  }
+
+  /**
+   * Normalizes `/reports/<id>` or `/reports/<id>/export.csv` to the report id.
+   *
+   * Returns `undefined` for any other path, so an unrelated request still falls through to the
+   * branches that own it. The id is checked against the shared closed list rather than accepted as
+   * any path text, which is what lets a browser test prove the application only asks for reports
+   * that exist.
+   */
+  function reportIdOf(path: string): ReportId | undefined {
+    const match = /^\/reports\/([^/?]+)/.exec(path);
+    const candidate = match?.[1];
+
+    return candidate !== undefined && isReportId(candidate) ? candidate : undefined;
   }
 
   function requireMember(id: string): MemberSummary {
@@ -1228,6 +1777,7 @@ export function stubApiClient(
 
   return {
     calls,
+    textCalls,
     members: store,
     transactions: transactionStore,
 
@@ -1283,6 +1833,28 @@ export function stubApiClient(
         return settleOrReject<TData>(
           dashboardOptions.dashboard ?? DASHBOARD_VIEW,
           dashboardOptions.dashboardFails,
+        );
+      }
+
+      // Reports and search are answered before the transaction routes so the literal
+      // `/reports/...` and `/search` segments cannot fall through to the `transactions`-prefixed
+      // branch below.
+      const reportId = reportIdOf(path);
+
+      if (reportId !== undefined) {
+        const projection = reportOptions.reports?.[reportId] ?? DEFAULT_REPORTS[reportId];
+
+        if (reportOptions.reportGate !== undefined) {
+          return reportOptions.reportGate.then(() => projection as TData);
+        }
+
+        return settleOrReject<TData>(projection, reportOptions.reportFails);
+      }
+
+      if (pathWithoutQuery(path) === '/search') {
+        return settleOrReject<TData>(
+          reportOptions.searchResults ?? SEARCH_RESPONSE,
+          reportOptions.searchFails,
         );
       }
 
@@ -2054,6 +2626,33 @@ export function stubApiClient(
 
     documentsFor(transactionId: string): readonly DocumentSummary[] {
       return documentStore.get(transactionId) ?? [];
+    },
+
+    getText(path: string, request?: ApiRequestOptionsShape): Promise<ApiTextDownload> {
+      record('GET', path, undefined, request);
+
+      const reportId = reportIdOf(path);
+
+      // A text read is only ever the CSV export, so a path that is not one is a bug in the screen
+      // rather than a route the API happens to serve as text.
+      if (reportId === undefined || !path.includes('/export.csv')) {
+        return unknown(path);
+      }
+
+      if (reportOptions.csvFails !== undefined) {
+        return Promise.reject(reportOptions.csvFails);
+      }
+
+      const download: ApiTextDownload = {
+        text: reportOptions.csv ?? DEFAULT_REPORT_CSV,
+        filename: reportOptions.csvFilename,
+      };
+
+      textCalls.push(download);
+
+      // The filename is `undefined` by default so a test that must prove the browser's own
+      // fallback is used has to say so, rather than the stub quietly supplying a name.
+      return Promise.resolve(download);
     },
   };
 

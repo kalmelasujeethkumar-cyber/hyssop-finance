@@ -64,6 +64,17 @@
     top: 1rem;
     z-index: 50;
   }
+
+  /*
+   * Hidden on screen as well as in print.
+   *
+   * The printed report header carries the application name, report title, period, and generated
+   * timestamp. On screen the same facts are already in the page title, the panel heading, and the
+   * on-screen period line, so showing them twice would be duplication rather than emphasis.
+   */
+  .print-only {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -73,5 +84,40 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/**
+ * Print rules for the report screens.
+ *
+ * `REQ-EXPORT-001` asks for a printed report, so printing is a real deliverable rather than a
+ * browser accident — and a printout carrying the navigation, the filter controls, and a "Reset"
+ * button would be a document about the application rather than about the church's money.
+ *
+ * `.print-hidden` is applied to the shell chrome and to every control rather than relying on the
+ * print media type to hide the whole screen: the report table itself must stay, so something has to
+ * choose what to keep. Hiding only what is chrome means a screen that forgets the class prints its
+ * controls rather than silently losing its figures.
+ *
+ * `.print-only` reveals the printed header — application name, report title, resolved period, and
+ * generated timestamp — which exists solely on paper. The period is shown only when the API sent
+ * one, because the Audit report has an instant window rather than a period and printing a period
+ * it does not have would be a fabricated caption.
+ */
+@media print {
+  .print-hidden {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  .print-block {
+    break-inside: avoid;
   }
 }

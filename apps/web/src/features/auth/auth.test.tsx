@@ -214,6 +214,7 @@ describe('session lifecycle', () => {
         base.getList<TItem>(path, options),
       upload: <TData,>(path: string, form: FormData, options?: ApiRequestOptions) =>
         base.upload<TData>(path, form, options),
+      getText: (path: string, options?: ApiRequestOptions) => base.getText(path, options),
     };
 
     renderRoute({ client });
@@ -248,6 +249,7 @@ describe('session lifecycle', () => {
         base.getList<TItem>(path, options),
       upload: <TData,>(path: string, form: FormData, options?: ApiRequestOptions) =>
         base.upload<TData>(path, form, options),
+      getText: (path: string, options?: ApiRequestOptions) => base.getText(path, options),
     };
 
     renderRoute({ client });

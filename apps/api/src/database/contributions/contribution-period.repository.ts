@@ -115,6 +115,23 @@ export interface ContributionPeriodAmountRow {
 }
 
 /**
+ * One member-month for the Phase 09 report, with the member identity the dashboard aggregate omits.
+ *
+ * `status` is left off deliberately: it is derived by {@link deriveContributionStatus}, the single
+ * authority for `REQ-CONTRIB-002`, so the service applies that same function rather than this
+ * repository deciding it a second time.
+ */
+export interface MemberContributionReportRow {
+  readonly memberId: string;
+  readonly memberReferenceId: string;
+  readonly memberName: string;
+  readonly year: number;
+  readonly month: number;
+  readonly expectedPaise: bigint;
+  readonly receivedPaise: bigint;
+}
+
+/**
  * The most member-months one aggregate read may consider.
  *
  * A dashboard period spans at most `DASHBOARD_CUSTOM_RANGE_MONTH_LIMIT` months, so the row count
@@ -512,6 +529,59 @@ export class ContributionPeriodRepository {
       WHERE (period."year" * 100 + period."month") >= ${fromKey}
         AND (period."year" * 100 + period."month") <= ${toKey}
       ORDER BY period."year" ASC, period."month" ASC, period."id" ASC
+      LIMIT ${CONTRIBUTION_BUCKET_MAX_ROWS + 1}
+    `;
+  }
+
+  /**
+   * Every member-month in a month range, with the member identity attached.
+   *
+   * `aggregateAmountsByMonthRange` deliberately returns `year`, `month`, and amounts without a
+   * member, because the dashboard folds the rows into per-month bucket counts and needs no
+   * identity. The Phase 09 Member Contribution report is per member, so it needs the same derived
+   * amounts *with* the member they belong to. Reusing the existing query would have meant
+   * widening a shape the dashboard's own tests assert, so this is a second read that shares the
+   * same derived-received `LEFT JOIN` rather than a second rule for deriving it.
+   *
+   * `received` is summed from active `MEMBER_CONTRIBUTION` transactions only, for the same reason
+   * everywhere else: a voided payment must immediately lower what the member is shown as having
+   * given, so the derived status cannot disagree with the ledger.
+   *
+   * `LIMIT` is one greater than {@link CONTRIBUTION_BUCKET_MAX_ROWS} so the caller can detect an
+   * over-large read and refuse it instead of reporting a truncated report as a complete one.
+   */
+  public async reportRowsByMonthRange(
+    fromKey: number,
+    toKey: number,
+  ): Promise<readonly MemberContributionReportRow[]> {
+    if (fromKey > toKey) {
+      return [];
+    }
+
+    return this.prisma.$queryRaw<readonly MemberContributionReportRow[]>`
+      WITH received AS (
+        SELECT "contribution_period_id" AS "period_id",
+               COALESCE(SUM("amount_paise"), 0)::bigint AS "received_paise"
+        FROM "financial_transaction"
+        WHERE "status" = 'ACTIVE'
+          AND "income_type" = 'MEMBER_CONTRIBUTION'
+          AND "contribution_period_id" IS NOT NULL
+        GROUP BY "contribution_period_id"
+      )
+      SELECT
+        period."member_id" AS "memberId",
+        member."reference_id" AS "memberReferenceId",
+        member."name" AS "memberName",
+        period."year"::int AS "year",
+        period."month"::int AS "month",
+        period."expected_paise" AS "expectedPaise",
+        COALESCE(received."received_paise", 0)::bigint AS "receivedPaise"
+      FROM "contribution_period" AS period
+      JOIN "member" AS member ON member."id" = period."member_id"
+      LEFT JOIN received ON received."period_id" = period."id"
+      WHERE (period."year" * 100 + period."month") >= ${fromKey}
+        AND (period."year" * 100 + period."month") <= ${toKey}
+      ORDER BY period."year" ASC, period."month" ASC, member."name" ASC, period."id" ASC
       LIMIT ${CONTRIBUTION_BUCKET_MAX_ROWS + 1}
     `;
   }

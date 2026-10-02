@@ -14,11 +14,17 @@ import { useSession } from '../../features/auth/SessionProvider';
  * Expenses, Documents, Reports, Audit History, and Settings as the eventual navigation, but
  * the same rules forbid presenting unimplemented behaviour as a completed feature, and no
  * dead control or `Coming Soon` placeholder is permitted. The Dashboard, Members, Income, and
- * Expenses sections are delivered so far, along with the build-status screen; the rest appear in
- * the phase that actually implements them, which is why this navigation is shorter than the
- * target rather than longer. Receipts are attached from an expense or income record rather than
- * having their own section, because a standalone document list would have nothing to show that
- * the transaction it belongs to does not already show.
+ * Expenses sections are delivered so far, along with Reports and Search and the build-status
+ * screen; the rest appear in the phase that actually implements them, which is why this
+ * navigation is shorter than the target rather than longer. Receipts are attached from an
+ * expense or income record rather than having their own section, because a standalone
+ * document list would have nothing to show that the transaction it belongs to does not
+ * already show.
+ *
+ * The Receipt / Document and Audit reports are reached *inside* Reports, as report choices
+ * rather than separate navigation items, because `docs/01-REQUIREMENTS.md` `REQ-REPORT-001`
+ * defines them as reports. Listing them beside Dashboard as their own sections would give one
+ * feature two addresses and let the two drift.
  */
 export function AppLayout() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -32,7 +38,7 @@ export function AppLayout() {
         Skip to main content
       </a>
 
-      <header className="border-b border-border-default bg-surface">
+      <header className="print-hidden border-b border-border-default bg-surface">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -83,6 +89,12 @@ export function AppLayout() {
               <NavigationItem to="/expenses" onNavigate={() => setIsMenuOpen(false)}>
                 Expenses
               </NavigationItem>
+              <NavigationItem to="/reports" onNavigate={() => setIsMenuOpen(false)}>
+                Reports
+              </NavigationItem>
+              <NavigationItem to="/search" onNavigate={() => setIsMenuOpen(false)}>
+                Search
+              </NavigationItem>
               <NavigationItem to="/foundation" onNavigate={() => setIsMenuOpen(false)}>
                 Status
               </NavigationItem>
@@ -95,10 +107,10 @@ export function AppLayout() {
         <Outlet />
       </main>
 
-      <footer className="border-t border-border-default bg-surface">
+      <footer className="print-hidden border-t border-border-default bg-surface">
         <div className="mx-auto max-w-6xl px-6 py-4 text-supporting text-text-secondary">
-          Member, contribution, income, expense, and receipt records are stored in the HYSSOP
-          FINANCE database. Church-wide reports and settings are not yet available.
+          Member, contribution, income, expense, receipt, and report records are stored in the
+          HYSSOP FINANCE database. Settings are not yet available.
         </div>
       </footer>
     </div>

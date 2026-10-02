@@ -41,6 +41,35 @@ export interface AuditEventRecord {
 }
 
 /**
+ * The Admin-wide history projection, which additionally carries the entity it acted on.
+ *
+ * {@link AuditEventRecord} is kept as the per-entity shape because the transaction history route
+ * already depends on it. An Admin-wide report has to say *what* was acted on, so it needs the
+ * entity type and reference too; widening the existing record would have changed a contract other
+ * callers were built against, so the wider row is a separate type.
+ */
+export interface AuditHistoryRecord extends AuditEventRecord {
+  readonly entityType: string;
+  readonly entityReference: string | null;
+}
+
+/**
+ * The filters the Admin-wide history read may apply.
+ *
+ * `action` is typed as the generated `AuditAction` enum rather than `string`, so a value that the
+ * database cannot hold is a compile error instead of a runtime empty result. The transport DTO
+ * validates it against the shared `AUDIT_REPORT_ACTIONS` list first.
+ */
+export interface AuditHistoryFilter {
+  /** Inclusive `occurred_at` lower bound. */
+  readonly from?: Date;
+  /** Inclusive `occurred_at` upper bound. */
+  readonly to?: Date;
+  /** Exact `action` match, for example `TRANSACTION_VOIDED`. */
+  readonly action?: AuditAction;
+}
+
+/**
  * Append-only audit persistence.
  *
  * Authority: `docs/05-DATABASE-SPEC.md` (`audit_event` is append-only; the runtime role
@@ -137,6 +166,100 @@ export class AuditEventRepository {
       after: row.after,
     }));
   }
+
+  /**
+   * The whole audit history, newest first, for the Audit report.
+   *
+   * Distinct from {@link listForEntity}, which is one record's trail: this is the Admin-wide
+   * history across every entity type, which is what `REQ-REPORT-001`'s Audit report is. It is a
+   * `SELECT`-only path like `listForEntity`, so the append-only guarantees are unchanged — the
+   * runtime role still has no `UPDATE` or `DELETE` grant and the trigger still rejects mutation.
+   *
+   * `occurred_at` is a `TIMESTAMPTZ`, unlike `business_date`, so the bounds are passed as
+   * instants rather than as `::date` strings: an audit event genuinely happened at an instant, and
+   * truncating it to a calendar day would hide events from the morning of the first day.
+   *
+   * Ordering is `occurred_at DESC` then `id DESC` so the order is total and a page boundary
+   * cannot repeat or skip an event.
+   */
+  public async listHistory(
+    filter: AuditHistoryFilter,
+    page: { readonly limit: number; readonly offset: number },
+  ): Promise<readonly AuditHistoryRecord[]> {
+    return this.prisma.auditEvent
+      .findMany({
+        where: toHistoryWhere(filter),
+        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+        take: page.limit,
+        skip: page.offset,
+        select: HISTORY_SELECT,
+      })
+      .then(historyRows);
+  }
+
+  /** The number of events matching the same history filter, across all pages. */
+  public async countHistory(filter: AuditHistoryFilter): Promise<number> {
+    return this.prisma.auditEvent.count({ where: toHistoryWhere(filter) });
+  }
+}
+
+/** The projection both history reads share, so they cannot disagree about attribution. */
+const HISTORY_SELECT = {
+  id: true,
+  action: true,
+  entityType: true,
+  entityReference: true,
+  reason: true,
+  requestId: true,
+  before: true,
+  after: true,
+  occurredAt: true,
+  actorAdmin: { select: { displayName: true } },
+} as const;
+
+function toHistoryWhere(filter: AuditHistoryFilter): Prisma.AuditEventWhereInput {
+  const where: Prisma.AuditEventWhereInput = {};
+
+  if (filter.action !== undefined) {
+    where.action = filter.action;
+  }
+
+  if (filter.from !== undefined || filter.to !== undefined) {
+    where.occurredAt = {
+      ...(filter.from === undefined ? {} : { gte: filter.from }),
+      ...(filter.to === undefined ? {} : { lte: filter.to }),
+    };
+  }
+
+  return where;
+}
+
+function historyRows(
+  rows: readonly {
+    readonly id: string;
+    readonly action: string;
+    readonly entityType: string;
+    readonly entityReference: string | null;
+    readonly actorAdmin: { readonly displayName: string } | null;
+    readonly occurredAt: Date;
+    readonly reason: string | null;
+    readonly requestId: string | null;
+    readonly before: Prisma.JsonValue;
+    readonly after: Prisma.JsonValue;
+  }[],
+): readonly AuditHistoryRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    action: row.action,
+    entityType: row.entityType,
+    entityReference: row.entityReference,
+    actorDisplayName: row.actorAdmin?.displayName ?? null,
+    occurredAt: row.occurredAt,
+    reason: row.reason,
+    requestId: row.requestId,
+    before: row.before,
+    after: row.after,
+  }));
 }
 
 /**

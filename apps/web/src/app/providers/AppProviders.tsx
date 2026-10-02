@@ -42,6 +42,11 @@ export function AppProviders({
       // upload path needs the same expiry watch rather than leaving it to fail silently.
       upload: <TData,>(path: string, form: FormData, options?: ApiRequestOptions) =>
         watchForSessionExpiry(client.upload<TData>(path, form, options), onSessionExpired),
+      // A CSV export is a protected read of a non-JSON body, so an expired session must reset the
+      // identity here too. Without it, the export would fail with a `401` the report screen could
+      // only report as "the export failed" while the Admin sat in a shell that looks signed in.
+      getText: (path: string, options?: ApiRequestOptions) =>
+        watchForSessionExpiry(client.getText(path, options), onSessionExpired),
     }),
     [client, onSessionExpired],
   );

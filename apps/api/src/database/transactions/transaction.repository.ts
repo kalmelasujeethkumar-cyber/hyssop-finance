@@ -6,6 +6,7 @@ import type {
   Prisma,
   TransactionType,
 } from '@prisma/client';
+import { INCOME_TYPES, TRANSACTION_TYPES } from '@hyssop/contracts';
 import {
   conflict,
   notFound,
@@ -409,6 +410,159 @@ export class TransactionRepository {
   /** The total number of rows matching the same filter, across all pages. */
   public async countMatching(filters: TransactionQueryFilters): Promise<number> {
     return this.prisma.financialTransaction.count({ where: toPrismaWhere(filters) });
+  }
+
+  /**
+   * The exact paise total of every row matching the same filter, across all pages.
+   *
+   * Added for the Phase 09 reports, which show a period total *beside* a page of rows. Summing
+   * the returned page would report the total of one page as though it were the total of the
+   * report, which is a wrong number rather than a missing one — the exact failure the canonical
+   * calculation layer exists to prevent.
+   *
+   * It reuses {@link toPrismaWhere}, so a report total can never be computed over a different
+   * filter set than the rows beside it.
+   */
+  public async sumMatching(filters: TransactionQueryFilters): Promise<bigint> {
+    const row = await this.prisma.financialTransaction.aggregate({
+      where: toPrismaWhere(filters),
+      _sum: { amountPaise: true },
+    });
+
+    return row._sum.amountPaise ?? 0n;
+  }
+
+  /**
+   * The Admin-wide global search over transactions.
+   *
+   * `REQ-SEARCH-001` requires search to cover "transaction reference, category, transaction type",
+   * which is a *wider* field set than {@link TransactionQueryFilters.search}: that filter covers
+   * reference, description, member, and category, and exists to drive the income and expense
+   * *list* screens where a type match would be noise. Widening it would have changed what those
+   * screens return, so this is a separate, purpose-built read.
+   *
+   * The added match on `transaction_type` and `income_type` is an equality against the closed
+   * enum, not a `LIKE` pattern, and only applies when the term is exactly one of those values.
+   * `notes` is still excluded for the same `REQ-INCOME-005` reason as everywhere else: an
+   * anonymous donation's private note must not become an attributable search hit.
+   *
+   * Ordering is `business_date DESC, created_at DESC, id DESC`, the same total order the dashboard
+   * recent list uses, so a page boundary cannot repeat or drop a row.
+   */
+  public async searchGlobally(
+    term: string,
+    page: { readonly limit: number; readonly offset: number },
+  ): Promise<readonly TransactionWithRelations[]> {
+    const trimmed = term.trim();
+
+    const typed =
+      (TRANSACTION_TYPES as readonly string[]).includes(trimmed) ||
+      (INCOME_TYPES as readonly string[]).includes(trimmed);
+
+    return this.prisma.financialTransaction.findMany({
+      where: {
+        OR: [
+          { referenceId: { contains: trimmed, mode: 'insensitive' } },
+          { description: { contains: trimmed, mode: 'insensitive' } },
+          { member: { is: { name: { contains: trimmed, mode: 'insensitive' } } } },
+          { member: { is: { referenceId: { contains: trimmed, mode: 'insensitive' } } } },
+          { category: { is: { name: { contains: trimmed, mode: 'insensitive' } } } },
+          ...(typed ? [{ transactionType: trimmed as TransactionType }] : []),
+          ...(typed ? [{ incomeType: trimmed as IncomeType }] : []),
+        ],
+      },
+      include: TRANSACTION_LIST_INCLUDE,
+      orderBy: [{ businessDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      take: page.limit,
+      skip: page.offset,
+    });
+  }
+
+  /** The number of transactions the global search matches, for the pager. */
+  public async countSearchGlobally(term: string): Promise<number> {
+    const trimmed = term.trim();
+
+    const typed =
+      (TRANSACTION_TYPES as readonly string[]).includes(trimmed) ||
+      (INCOME_TYPES as readonly string[]).includes(trimmed);
+
+    return this.prisma.financialTransaction.count({
+      where: {
+        OR: [
+          { referenceId: { contains: trimmed, mode: 'insensitive' } },
+          { description: { contains: trimmed, mode: 'insensitive' } },
+          { member: { is: { name: { contains: trimmed, mode: 'insensitive' } } } },
+          { member: { is: { referenceId: { contains: trimmed, mode: 'insensitive' } } } },
+          { category: { is: { name: { contains: trimmed, mode: 'insensitive' } } } },
+          ...(typed ? [{ transactionType: trimmed as TransactionType }] : []),
+          ...(typed ? [{ incomeType: trimmed as IncomeType }] : []),
+        ],
+      },
+    });
+  }
+
+  /**
+   * Active income rows for a set of income types within a period, for the Offering and Donation
+   * reports.
+   *
+   * Donation legitimately spans two `income_type` values — `DONATION` and `ANONYMOUS_DONATION`
+   * — because `REQ-INCOME-006`'s anonymous donation *is* a donation and excluding it would
+   * understate the donation total. The existing `TransactionQueryFilters.incomeType` accepts
+   * exactly one value, and widening it to a list would have changed what the income list route
+   * returns, so this is a purpose-built read for the two reports.
+   *
+   * Ordering is the same total order the recent list uses, so the report pages deterministically.
+   */
+  public async listReportIncome(
+    incomeTypes: readonly IncomeType[],
+    period: { readonly from: Date; readonly to: Date },
+    page: { readonly limit: number; readonly offset: number },
+  ): Promise<readonly TransactionWithRelations[]> {
+    return this.prisma.financialTransaction.findMany({
+      where: {
+        transactionType: 'INCOME',
+        status: 'ACTIVE',
+        incomeType: { in: [...incomeTypes] },
+        businessDate: { gte: period.from, lte: period.to },
+      },
+      include: TRANSACTION_LIST_INCLUDE,
+      orderBy: [{ businessDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      take: page.limit,
+      skip: page.offset,
+    });
+  }
+
+  /** The number of income rows matching the same income types and period. */
+  public async countReportIncome(
+    incomeTypes: readonly IncomeType[],
+    period: { readonly from: Date; readonly to: Date },
+  ): Promise<number> {
+    return this.prisma.financialTransaction.count({
+      where: {
+        transactionType: 'INCOME',
+        status: 'ACTIVE',
+        incomeType: { in: [...incomeTypes] },
+        businessDate: { gte: period.from, lte: period.to },
+      },
+    });
+  }
+
+  /** The exact paise total of the same income rows, so a report total is not a page sum. */
+  public async sumReportIncome(
+    incomeTypes: readonly IncomeType[],
+    period: { readonly from: Date; readonly to: Date },
+  ): Promise<bigint> {
+    const row = await this.prisma.financialTransaction.aggregate({
+      where: {
+        transactionType: 'INCOME',
+        status: 'ACTIVE',
+        incomeType: { in: [...incomeTypes] },
+        businessDate: { gte: period.from, lte: period.to },
+      },
+      _sum: { amountPaise: true },
+    });
+
+    return row._sum.amountPaise ?? 0n;
   }
 
   public async findByReferenceId(referenceId: string): Promise<FinancialTransaction> {

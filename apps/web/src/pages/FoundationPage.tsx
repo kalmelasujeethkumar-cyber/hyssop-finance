@@ -58,6 +58,15 @@ export function FoundationPage() {
             A period-aware dashboard whose totals, method balances, contribution status, monthly
             trend, and recent transactions all come from the API.
           </li>
+          <li>
+            Eleven church-wide reports calculated by the same server-side layer as the dashboard,
+            with period or audit-window filters, print-friendly output, and CSV export served as a
+            real download.
+          </li>
+          <li>
+            One global search across members and every income and expense record, including voided
+            ones, with the count the API actually matched.
+          </li>
           <li>Unit, integration, and browser checks for everything listed here.</li>
         </ul>
         <p className="mt-4 text-supporting text-text-secondary">
@@ -88,6 +97,20 @@ export function FoundationPage() {
           >
             Go to expenses
           </Link>
+          {' · '}
+          <Link
+            to="/reports"
+            className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
+          >
+            Go to reports
+          </Link>
+          {' · '}
+          <Link
+            to="/search"
+            className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
+          >
+            Go to search
+          </Link>
         </p>
       </section>
 
@@ -99,11 +122,11 @@ export function FoundationPage() {
           What is not in this build yet
         </h2>
         <p className="mt-2 text-supporting text-text-secondary">
-          Church-wide printable reports with CSV export, a standalone audit-history browser, and
-          settings screens are not implemented. No figure anywhere in this application is a stored
-          total or a placeholder: every amount shown is calculated by the API from the transactions
-          that actually exist, and an expense with no receipt attached says so rather than implying
-          one exists.
+          Settings screens are not implemented, and the application has one Admin role rather than
+          per-user accounts. No figure anywhere in this application is a stored total or a
+          placeholder: every amount shown is calculated by the API from the transactions that
+          actually exist, and an expense with no receipt attached says so rather than implying one
+          exists.
         </p>
       </section>
     </div>

@@ -44,6 +44,63 @@ export interface NamedCategoryBreakdownRow extends CategoryBreakdownRow {
   readonly categoryName: string | null;
 }
 
+/** One income type's active total plus the number of transactions behind it. */
+export interface IncomeTypeReportRow extends IncomeTypeBreakdownRow {
+  readonly transactionCount: number;
+}
+
+/** One expense category's active total plus the number of transactions behind it. */
+export interface ExpenseCategoryReportRow extends NamedCategoryBreakdownRow {
+  readonly transactionCount: number;
+}
+
+/**
+ * One payment method's income and expense movement inside a period.
+ *
+ * Separate from {@link MethodBreakdownRow}, which is an *ending balance through* a date and
+ * therefore includes every earlier month. `REQ-FIN-009` makes this a period movement and
+ * `REQ-FIN-014` requires the two to be separately labelled, so they are two row types rather
+ * than one row with two interpretations.
+ */
+export interface MethodMovementRow {
+  readonly paymentMethod: PaymentMethod;
+  readonly incomePaise: bigint;
+  readonly expensePaise: bigint;
+  /** Signed income minus expense within the period. */
+  readonly movementPaise: bigint;
+}
+
+/** The document states a Receipt / Document report distinguishes. */
+export type ReportDocumentState = 'AVAILABLE' | 'REMOVED' | 'VOIDED';
+
+/**
+ * One document with the transaction it belongs to.
+ *
+ * `state` is a *report* state, not the stored `transaction_document.status`: a document whose
+ * transaction was voided is reported as `VOIDED` even when its own status is `AVAILABLE`, because
+ * the document is part of a voided financial record. `docs/06-API-SPEC.md` requires the report to
+ * distinguish `AVAILABLE`, `REMOVED`, and authorized historical `VOIDED` records, and a column
+ * copied straight from `status` could not express the third one.
+ */
+export interface DocumentReportRow {
+  readonly documentId: string;
+  readonly documentReferenceId: string;
+  readonly state: ReportDocumentState;
+  readonly originalFilename: string;
+  readonly byteSize: number;
+  readonly detectedMimeType: string;
+  readonly uploadedAt: Date;
+  readonly transactionId: string;
+  readonly transactionReferenceId: string;
+  readonly transactionType: string;
+  readonly transactionStatus: 'ACTIVE' | 'VOIDED';
+  readonly amountPaise: bigint;
+  readonly businessDate: Date;
+  readonly memberName: string | null;
+  /** The project-local storage key, or `null` once the bytes have been deleted. */
+  readonly storageKey: string | null;
+}
+
 /** One recent active transaction, already joined to the labels the dashboard shows. */
 export interface RecentTransactionRow {
   readonly id: string;
@@ -318,6 +375,126 @@ export class ReconciliationService {
         transaction."created_at" DESC,
         transaction."id" DESC
       LIMIT ${limit}
+    `;
+  }
+
+  /**
+   * Active income totals and transaction counts per income type within a range.
+   *
+   * Phase 09's Income report needs the count beside the amount, and `incomeByType` deliberately
+   * returns only the amount so the dashboard's existing contract is untouched. This is a second
+   * query rather than a widened one for the same reason `expenseByCategoryWithNames` is: the
+   * dashboard's shape is already relied on by its own tests and screens.
+   *
+   * The count is `COUNT(*)` over the same active rows as the sum, so the two can never describe
+   * different populations.
+   */
+  public async incomeReport(from: Date, to: Date): Promise<readonly IncomeTypeReportRow[]> {
+    return this.prisma.$queryRaw<readonly IncomeTypeReportRow[]>`
+      SELECT
+        "income_type" AS "incomeType",
+        COALESCE(SUM("amount_paise"), 0)::bigint AS "amountPaise",
+        COUNT(*)::int AS "transactionCount"
+      FROM "financial_transaction"
+      WHERE "status" = 'ACTIVE' AND "transaction_type" = 'INCOME'
+        AND "business_date" >= ${sqlDate(from)} AND "business_date" <= ${sqlDate(to)}
+      GROUP BY "income_type"
+      ORDER BY "income_type" ASC
+    `;
+  }
+
+  /**
+   * Active expense totals, transaction counts, and names per category within a range.
+   *
+   * The `LEFT JOIN` keeps a missing category from silently dropping its expenses out of the
+   * report total, which would make the rows fail to sum to the stated total.
+   */
+  public async expenseReport(from: Date, to: Date): Promise<readonly ExpenseCategoryReportRow[]> {
+    return this.prisma.$queryRaw<readonly ExpenseCategoryReportRow[]>`
+      SELECT
+        transaction."category_id" AS "categoryId",
+        category."name" AS "categoryName",
+        COALESCE(SUM(transaction."amount_paise"), 0)::bigint AS "amountPaise",
+        COUNT(*)::int AS "transactionCount"
+      FROM "financial_transaction" AS transaction
+      LEFT JOIN "expense_category" AS category ON category."id" = transaction."category_id"
+      WHERE transaction."status" = 'ACTIVE' AND transaction."transaction_type" = 'EXPENSE'
+        AND transaction."business_date" >= ${sqlDate(from)} AND transaction."business_date" <= ${sqlDate(to)}
+      GROUP BY transaction."category_id", category."name"
+      ORDER BY SUM(transaction."amount_paise") DESC, transaction."category_id" ASC
+    `;
+  }
+
+  /**
+   * Active income, expense, and signed movement per payment method inside a period.
+   *
+   * This is the *movement* half of the Payment Method report. The *ending balance* half is
+   * {@link methodBalancesThrough}, which reaches back to the first transaction; the two are kept
+   * apart because `REQ-FIN-009` and `REQ-FIN-014` require a screen to show them as different
+   * quantities, and one query silently meaning "the other one" is how that requirement is
+   * usually broken.
+   *
+   * A movement may legitimately be negative when expenses in the period exceeded income.
+   */
+  public async methodMovement(from: Date, to: Date): Promise<readonly MethodMovementRow[]> {
+    return this.prisma.$queryRaw<readonly MethodMovementRow[]>`
+      SELECT
+        "payment_method" AS "paymentMethod",
+        COALESCE(SUM("amount_paise") FILTER (WHERE "transaction_type" = 'INCOME'), 0)::bigint AS "incomePaise",
+        COALESCE(SUM("amount_paise") FILTER (WHERE "transaction_type" = 'EXPENSE'), 0)::bigint AS "expensePaise",
+        COALESCE(SUM(CASE WHEN "transaction_type" = 'INCOME' THEN "amount_paise" ELSE -"amount_paise" END), 0)::bigint AS "movementPaise"
+      FROM "financial_transaction"
+      WHERE "status" = 'ACTIVE'
+        AND "business_date" >= ${sqlDate(from)} AND "business_date" <= ${sqlDate(to)}
+      GROUP BY "payment_method"
+      ORDER BY "payment_method" ASC
+    `;
+  }
+
+  /**
+   * Documents attached to transactions dated within a range, with the report state derived.
+   *
+   * Unlike every other query in this class, this one does **not** filter `status = 'ACTIVE'` on
+   * the transaction. `docs/06-API-SPEC.md` requires the Receipt / Document report to distinguish
+   * authorized historical `VOIDED` records, so a document on a voided transaction must be
+   * *returned* and *labelled* `VOIDED` — filtering it out would make that requirement
+   * unobservable. The derived state is computed here so the report cannot present a voided
+   * transaction's receipt as currently attached.
+   *
+   * `storage_key` is nulled once `storage_deleted_at` is set, so the report never hands out a
+   * path to bytes that are gone; `REQ-EXPORT-002` requires a local link to be identified as valid
+   * only while the local application can actually serve it.
+   */
+  public async documentsReport(from: Date, to: Date): Promise<readonly DocumentReportRow[]> {
+    return this.prisma.$queryRaw<readonly DocumentReportRow[]>`
+      SELECT
+        document."id" AS "documentId",
+        document."reference_id" AS "documentReferenceId",
+        CASE
+          WHEN transaction."status" = 'VOIDED' THEN 'VOIDED'
+          WHEN document."status" = 'REMOVED' THEN 'REMOVED'
+          ELSE 'AVAILABLE'
+        END AS "state",
+        document."original_filename" AS "originalFilename",
+        document."byte_size" AS "byteSize",
+        document."detected_mime_type" AS "detectedMimeType",
+        document."uploaded_at" AS "uploadedAt",
+        transaction."id" AS "transactionId",
+        transaction."reference_id" AS "transactionReferenceId",
+        transaction."transaction_type" AS "transactionType",
+        transaction."status" AS "transactionStatus",
+        transaction."amount_paise" AS "amountPaise",
+        transaction."business_date" AS "businessDate",
+        member."name" AS "memberName",
+        CASE
+          WHEN document."storage_deleted_at" IS NULL THEN document."storage_key"
+          ELSE NULL
+        END AS "storageKey"
+      FROM "transaction_document" AS document
+      JOIN "financial_transaction" AS transaction ON transaction."id" = document."transaction_id"
+      LEFT JOIN "member" AS member ON member."id" = transaction."member_id"
+      WHERE transaction."business_date" >= ${sqlDate(from)} AND transaction."business_date" <= ${sqlDate(to)}
+      ORDER BY transaction."business_date" DESC, document."uploaded_at" DESC, document."id" DESC
     `;
   }
 }

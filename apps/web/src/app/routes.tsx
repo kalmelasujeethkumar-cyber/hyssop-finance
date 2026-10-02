@@ -12,6 +12,8 @@ import { LoginPage } from '../pages/LoginPage';
 import { MemberDetailPage } from '../pages/MemberDetailPage';
 import { MembersPage } from '../pages/MembersPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { ReportsPage } from '../pages/ReportsPage';
+import { SearchPage } from '../pages/SearchPage';
 import { TransactionReceiptPage } from '../pages/TransactionReceiptPage';
 
 /**
@@ -53,6 +55,8 @@ export function buildRoutes(): RouteObject[] {
         { path: 'expenses', element: <ExpensesPage /> },
         { path: 'expenses/:transactionId', element: <ExpenseDetailPage /> },
         { path: 'transactions/:transactionId/receipt', element: <TransactionReceiptPage /> },
+        { path: 'reports', element: <ReportsPage /> },
+        { path: 'search', element: <SearchPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],
     },

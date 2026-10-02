@@ -15,6 +15,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { HealthModule } from './health/health.module';
 import { IncomeModule } from './income/income.module';
 import { MembersModule } from './members/members.module';
+import { ReportsModule } from './reports/reports.module';
 import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
@@ -36,6 +37,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     IncomeModule,
     ExpensesModule,
     DocumentsModule,
+    ReportsModule,
   ],
   providers: [
     {

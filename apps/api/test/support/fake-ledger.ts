@@ -43,6 +43,24 @@ export const TEST_ACTOR_DISPLAY_NAME = 'Admin';
 
 export type Snapshot = Readonly<Record<string, string | number | boolean | null>>;
 
+export interface FakeDocumentRow {
+  id: string;
+  referenceId: string;
+  /**
+   * The state the Receipt / Document report distinguishes.
+   *
+   * `AVAILABLE` bytes can still be served, `REMOVED` keeps its metadata after a reason-required
+   * removal, and `VOIDED` is the document of a voided transaction.
+   */
+  state: 'AVAILABLE' | 'REMOVED' | 'VOIDED';
+  originalFilename: string;
+  byteSize: number;
+  detectedMimeType: string;
+  uploadedAt: Date;
+  /** `null` once the stored bytes are gone, which is what makes a local link unreachable. */
+  storageKey: string | null;
+}
+
 export interface FakeTransactionRow {
   id: string;
   referenceId: string;
@@ -65,11 +83,29 @@ export interface FakeTransactionRow {
   createdAt: Date;
   updatedAt: Date;
   documentCount: number;
+  /**
+   * Individual document rows, for the Receipt / Document report.
+   *
+   * Optional and empty by default so the transaction fixtures stay terse. A suite that needs to
+   * observe `AVAILABLE` / `REMOVED` / `VOIDED` states or an unreachable local link supplies real
+   * rows here rather than having the double invent them, because a fabricated row would let a test
+   * pass against data the database could never produce.
+   */
+  documents?: readonly FakeDocumentRow[];
 }
 
 export interface FakeAuditEvent {
   id: string;
   entityId: string;
+  /**
+   * The entity kind the Admin-wide history read groups and displays by.
+   *
+   * Every event the ledger currently records is a transaction event, which is the honest value here;
+   * a suite that needs another kind declares it rather than having the double guess.
+   */
+  entityType?: string;
+  /** The Admin-facing reference of the entity, or `null` when the event recorded none. */
+  entityReference?: string | null;
   action: string;
   actorDisplayName: string | null;
   occurredAt: Date;
@@ -83,6 +119,11 @@ export interface FakeMember {
   id: string;
   referenceId: string;
   name: string;
+  /**
+   * Optional because most fixtures do not care about the phone, but it is a searched field on the
+   * real member, so a search fixture that must prove phone matching supplies it.
+   */
+  phone?: string | null;
 }
 
 export interface FakePeriod {
@@ -152,6 +193,8 @@ export class FakeLedger {
     this.events.push({
       id: `audit-${String(this.events.length + 1).padStart(4, '0')}`,
       entityId: row.id,
+      entityType: 'financial_transaction',
+      entityReference: row.referenceId,
       action,
       actorDisplayName:
         context.actorAdminId === TEST_ACTOR_ADMIN_ID ? TEST_ACTOR_DISPLAY_NAME : null,
@@ -214,18 +257,21 @@ export class FakeTransactions {
           : { id: category.id, name: category.name, status: category.status },
       contributionPeriod:
         period === undefined ? null : { id: period.id, year: period.year, month: period.month },
-      _count: { documents: row.documentCount },
+      _count: { documents: row.documents?.length ?? row.documentCount },
       // Phase 07: the repository now selects the *available* documents alongside the total count,
       // so `hasReceipt` can distinguish "has a viewable receipt" from "was attached and later
       // removed" while `documentCount` still reports the full history.
       //
-      // This fake ledger models no removals, so every counted document is an available one. That
-      // is what makes `documentCount: 1` mean `hasReceipt: true` here, exactly as it does in the
-      // database for a seeded expense. A removal is exercised where it is modelled — by the
-      // document tests — rather than being faked into the shared transaction fixtures.
-      documents: Array.from({ length: row.documentCount }, (_unused, index) => ({
-        id: `${row.id}-document-${index + 1}`,
-      })),
+      // When a fixture supplied real document rows they are returned as they are, which is what lets
+      // the Receipt / Document report observe `AVAILABLE` / `REMOVED` / `VOIDED` against data the
+      // test actually declared. Otherwise this fake ledger models no removals, so every counted
+      // document is an available one. That is what makes `documentCount: 1` mean
+      // `hasReceipt: true` here, exactly as it does in the database for a seeded expense.
+      documents:
+        row.documents ??
+        Array.from({ length: row.documentCount }, (_unused, index) => ({
+          id: `${row.id}-document-${index + 1}`,
+        })),
     };
   }
 
@@ -270,6 +316,116 @@ export class FakeTransactions {
 
   public async countMatching(filters: TransactionQueryFilters): Promise<number> {
     return this.matching(filters).length;
+  }
+
+  /**
+   * The exact `SUM(amount_paise)` behind a filter, used by the Complete Transaction report's total.
+   *
+   * Derived from the same rows `countMatching` counts, so the report's total and its row count can
+   * never be computed from different sets — which is exactly the disagreement
+   * `docs/01-REQUIREMENTS.md` treats as a wrong figure rather than a rounding difference.
+   */
+  public async sumMatching(filters: TransactionQueryFilters): Promise<bigint> {
+    return this.matching(filters).reduce((sum, row) => sum + row.amountPaise, 0n);
+  }
+
+  /**
+   * The Offering / Donation report's row page: active income of the named types in the period.
+   *
+   * `VOIDED` rows are excluded, matching `REPORT_EXCLUDES_VOIDED` for those reports. The repository
+   * also caps this read; the double does not, because a bounded read is proved in the database suite
+   * where the real `LIMIT` runs, not here.
+   */
+  public async listReportIncome(
+    incomeTypes: readonly string[],
+    period: { readonly from: Date; readonly to: Date },
+    page: { readonly limit: number; readonly offset: number },
+  ) {
+    return this.reportIncomeRows(incomeTypes, period)
+      .slice()
+      .sort((left, right) => right.businessDate.getTime() - left.businessDate.getTime())
+      .slice(page.offset, page.offset + page.limit)
+      .map((row) => this.withRelations(row));
+  }
+
+  public async countReportIncome(
+    incomeTypes: readonly string[],
+    period: { readonly from: Date; readonly to: Date },
+  ): Promise<number> {
+    return this.reportIncomeRows(incomeTypes, period).length;
+  }
+
+  public async sumReportIncome(
+    incomeTypes: readonly string[],
+    period: { readonly from: Date; readonly to: Date },
+  ): Promise<bigint> {
+    return this.reportIncomeRows(incomeTypes, period).reduce(
+      (sum, row) => sum + row.amountPaise,
+      0n,
+    );
+  }
+
+  /** The shared row set behind the three `*ReportIncome` reads. */
+  private reportIncomeRows(
+    incomeTypes: readonly string[],
+    period: { readonly from: Date; readonly to: Date },
+  ): readonly FakeTransactionRow[] {
+    return this.ledger.rows.filter(
+      (row) =>
+        row.transactionType === 'INCOME' &&
+        row.status === 'ACTIVE' &&
+        row.incomeType !== null &&
+        incomeTypes.includes(row.incomeType) &&
+        row.businessDate.getTime() >= period.from.getTime() &&
+        row.businessDate.getTime() <= period.to.getTime(),
+    );
+  }
+
+  /**
+   * Global search over transactions, matching the same fields the repository matches.
+   *
+   * The set is reference, description, member name, and category name — never `notes`, which is why
+   * a term found only in the notes is absent here too.
+   */
+  public async searchGlobally(
+    term: string,
+    page: { readonly limit: number; readonly offset: number },
+  ) {
+    return this.globalSearchRows(term)
+      .slice()
+      .sort((left, right) => right.businessDate.getTime() - left.businessDate.getTime())
+      .slice(page.offset, page.offset + page.limit)
+      .map((row) => this.withRelations(row));
+  }
+
+  public async countSearchGlobally(term: string): Promise<number> {
+    return this.globalSearchRows(term).length;
+  }
+
+  /** The shared row set behind the two global-search reads. */
+  private globalSearchRows(term: string): readonly FakeTransactionRow[] {
+    const needle = term.trim().toLowerCase();
+
+    if (needle.length === 0) {
+      return [];
+    }
+
+    return this.ledger.rows.filter((row) => {
+      const memberName = row.memberId === null ? null : this.memberNameFor(row.memberId);
+      const categoryName = row.categoryId === null ? null : this.categoryNameFor(row.categoryId);
+
+      return [row.referenceId, row.description, memberName, categoryName].some(
+        (field) => field !== null && field.toLowerCase().includes(needle),
+      );
+    });
+  }
+
+  private memberNameFor(memberId: string): string | null {
+    return this.members.find((member) => member.id === memberId)?.name ?? null;
+  }
+
+  private categoryNameFor(categoryId: string): string | null {
+    return this.categories.find((category) => category.id === categoryId)?.name ?? null;
   }
 
   public async createWithinTransaction(
@@ -505,6 +661,69 @@ export class FakeAudit {
   public async countForEntity(entityType: string, entityId: string): Promise<number> {
     return (await this.listForEntity(entityType, entityId)).length;
   }
+
+  /**
+   * The Admin-wide audit history read behind the Audit report.
+   *
+   * Reports the same events the per-entity read does, over every entity type, and applies the same
+   * inclusive `occurred_at` window and exact `action` match the repository does. It invents nothing:
+   * an action the ledger never recorded is absent, which is what keeps a filter assertion honest.
+   */
+  public async listHistory(
+    filter: {
+      readonly from?: Date;
+      readonly to?: Date;
+      readonly action?: string;
+    },
+    page: { readonly limit: number; readonly offset: number },
+  ): Promise<
+    readonly (FakeAuditEvent & {
+      readonly entityType: string;
+      readonly entityReference: string | null;
+    })[]
+  > {
+    return this.historyRows(filter)
+      .sort((left, right) => {
+        const byOccurred = right.occurredAt.getTime() - left.occurredAt.getTime();
+
+        return byOccurred !== 0 ? byOccurred : right.id.localeCompare(left.id);
+      })
+      .slice(page.offset, page.offset + page.limit)
+      .map((event) => ({
+        ...event,
+        // Every event this ledger records is a transaction event; the default keeps the projection
+        // total for an event a suite declared without an explicit kind.
+        entityType: event.entityType ?? 'financial_transaction',
+        entityReference: event.entityReference ?? null,
+      }));
+  }
+
+  public async countHistory(filter: {
+    readonly from?: Date;
+    readonly to?: Date;
+    readonly action?: string;
+  }): Promise<number> {
+    return this.historyRows(filter).length;
+  }
+
+  /** The shared filtered set behind the two Admin-wide history reads. */
+  private historyRows(filter: {
+    readonly from?: Date;
+    readonly to?: Date;
+    readonly action?: string;
+  }) {
+    return this.ledger.events.filter((event) => {
+      if (filter.from !== undefined && event.occurredAt.getTime() < filter.from.getTime()) {
+        return false;
+      }
+
+      if (filter.to !== undefined && event.occurredAt.getTime() > filter.to.getTime()) {
+        return false;
+      }
+
+      return filter.action === undefined || event.action === filter.action;
+    });
+  }
 }
 
 export class FakeMembers {
@@ -526,6 +745,70 @@ export class FakeMembers {
     }
 
     return found;
+  }
+
+  /**
+   * The member search read, matching the repository's own fields.
+   *
+   * Name and reference are matched case-insensitively and the phone digits are matched as
+   * substrings, mirroring `memberSearchWhere`. It never widens to another field: a term found only
+   * in a transaction description must not return the member who owns it, because that is a
+   * different, documented search.
+   */
+  public async search(filters: {
+    readonly search?: string;
+    readonly limit?: number;
+    readonly offset?: number;
+    readonly sort?: string;
+    readonly direction?: string;
+  }): Promise<readonly FakeMember[]> {
+    const matches = this.matchingMembers(filters.search);
+    const descending = filters.direction === 'desc';
+    const byName = (left: FakeMember, right: FakeMember): number =>
+      left.name.localeCompare(right.name);
+
+    const sorted = matches.slice().sort((left, right) => {
+      const primary =
+        filters.sort === 'referenceId'
+          ? left.referenceId.localeCompare(right.referenceId)
+          : filters.sort === 'createdAt'
+            ? this.createdAtFor(left.id).getTime() - this.createdAtFor(right.id).getTime()
+            : byName(left, right);
+
+      // `referenceId` is unique, so every sort is completed by it and two pages of a large list can
+      // never repeat or skip a member because two names happened to be equal.
+      const ordered = descending ? -primary : primary;
+
+      return ordered !== 0 ? ordered : left.referenceId.localeCompare(right.referenceId);
+    });
+
+    const offset = filters.offset ?? 0;
+    const limit = filters.limit ?? sorted.length;
+
+    return sorted.slice(offset, offset + limit);
+  }
+
+  /** The count behind the same filter, so a pager total is real rather than the page length. */
+  public async countMatching(search?: string): Promise<number> {
+    return this.matchingMembers(search).length;
+  }
+
+  /** The shared filtered set behind the two member search reads. */
+  private matchingMembers(search: string | undefined): readonly FakeMember[] {
+    const term = search?.trim() ?? '';
+
+    if (term === '') {
+      return this.members;
+    }
+
+    const needle = term.toLowerCase();
+
+    return this.members.filter(
+      (member) =>
+        member.name.toLowerCase().includes(needle) ||
+        member.referenceId.toLowerCase().includes(needle) ||
+        (member.phone ?? '').includes(term),
+    );
   }
 
   /**
@@ -598,13 +881,17 @@ export class FakePeriods {
 
   /**
    * @param periods  the stored member-months.
-   * @param ledger   the shared ledger, needed only by `aggregateAmountsByMonthRange` to total
-   *   active contributions. Optional so the income, expense, and document suites keep their
-   *   one-argument construction; those never call the dashboard aggregate.
+   * @param ledger   the shared ledger, needed only by the month-range aggregates to total active
+   *   contributions. Optional so the income, expense, and document suites keep their one-argument
+   *   construction; those never call an aggregate.
+   * @param members  the stored members. Optional for the same reason, but required by
+   *   `reportRowsByMonthRange`, which must attribute each month to a member and refuses to invent an
+   *   identity it was not given.
    */
   public constructor(
     private readonly periods: FakePeriod[],
     private readonly ledger?: FakeLedger,
+    private readonly members?: readonly FakeMember[],
   ) {}
 
   public async findOrCreateWithinTransaction(
@@ -715,6 +1002,91 @@ export class FakePeriods {
         receivedPaise: receivedByPeriodId.get(period.id) ?? 0n,
       }));
   }
+
+  /**
+   * The Member Contribution report's per-member-month rows.
+   *
+   * Reuses the same active-only contribution filter as {@link aggregateAmountsByMonthRange}, so the
+   * report and the dashboard cannot classify the same member-month differently — the status itself
+   * is derived by the real `deriveContributionStatus`, not restated here.
+   *
+   * Unlike the aggregate, each row carries the member's identity, because a contribution report the
+   * Admin cannot attribute to a member would be useless. The member list is therefore required here
+   * rather than defaulted, and the double throws instead of inventing a reference or a name for a
+   * member it was not given.
+   */
+  public async reportRowsByMonthRange(
+    fromKey: number,
+    toKey: number,
+  ): Promise<
+    readonly {
+      readonly memberId: string;
+      readonly memberReferenceId: string;
+      readonly memberName: string;
+      readonly year: number;
+      readonly month: number;
+      readonly expectedPaise: bigint;
+      readonly receivedPaise: bigint;
+    }[]
+  > {
+    if (this.members === undefined) {
+      throw new Error(
+        'FakePeriods.reportRowsByMonthRange requires the member list; construct FakePeriods with it.',
+      );
+    }
+
+    if (fromKey > toKey) {
+      return [];
+    }
+
+    const receivedByPeriodId = new Map<string, bigint>();
+
+    for (const row of this.ledger?.rows ?? []) {
+      // The same active-only member-contribution filter the aggregate above applies.
+      if (
+        row.status !== 'ACTIVE' ||
+        row.incomeType !== 'MEMBER_CONTRIBUTION' ||
+        row.contributionPeriodId === null
+      ) {
+        continue;
+      }
+
+      receivedByPeriodId.set(
+        row.contributionPeriodId,
+        (receivedByPeriodId.get(row.contributionPeriodId) ?? 0n) + row.amountPaise,
+      );
+    }
+
+    return this.periods
+      .filter((period) => {
+        const key = period.year * 100 + period.month;
+
+        return key >= fromKey && key <= toKey;
+      })
+      .sort(
+        (left, right) =>
+          left.year - right.year || left.month - right.month || left.id.localeCompare(right.id),
+      )
+      .map((period) => {
+        const member = this.members?.find((candidate) => candidate.id === period.memberId);
+
+        if (member === undefined) {
+          // Refusing to guess is the point: an invented name or reference would let an attribution
+          // assertion pass against a member the fixture never declared.
+          throw new Error(`FakePeriods has no member for period ${period.id}`);
+        }
+
+        return {
+          memberId: member.id,
+          memberReferenceId: member.referenceId,
+          memberName: member.name,
+          year: period.year,
+          month: period.month,
+          expectedPaise: period.expectedPaise,
+          receivedPaise: receivedByPeriodId.get(period.id) ?? 0n,
+        };
+      });
+  }
 }
 
 export class FakeSettings {
@@ -752,7 +1124,15 @@ export class FakeCategories {
     readonly actorAdminId: string;
   }[] = [];
 
-  public constructor(private readonly categories: FakeCategory[]) {}
+  /**
+   * @param categories  the seed categories. Copied rather than retained, so a caller may pass a
+   *   shared `readonly` fixture array that other suites also use.
+   */
+  public constructor(categories: readonly FakeCategory[]) {
+    this.categories = [...categories];
+  }
+
+  private readonly categories: FakeCategory[];
 
   public async findAll(): Promise<readonly FakeCategory[]> {
     return [...this.categories].sort((left, right) => left.name.localeCompare(right.name));

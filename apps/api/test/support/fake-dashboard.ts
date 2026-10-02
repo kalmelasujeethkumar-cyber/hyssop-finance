@@ -1,11 +1,16 @@
 import type {
   CategoryBreakdownRow,
+  DocumentReportRow,
+  ExpenseCategoryReportRow,
   IncomeTypeBreakdownRow,
+  IncomeTypeReportRow,
   MethodBreakdownRow,
+  MethodMovementRow,
   MonthlyTrendRow,
   NamedCategoryBreakdownRow,
   PeriodTotals,
   RecentTransactionRow,
+  ReportDocumentState,
 } from '../../src/database/reconciliation/reconciliation.service';
 import type { FakeMember, FakeTransactionRow } from './fake-ledger';
 
@@ -258,6 +263,161 @@ export class FakeReconciliation {
         month: key % 100,
         ...found,
       }));
+  }
+
+  /**
+   * The Income report: active income per income type, with the transaction count behind each total.
+   *
+   * The count is a real `bigint`-free `number` here and a `COUNT(*)` in the database, but it is part
+   * of the *report contract*, so the double supplies it: a total without its count would let a
+   * transport bug drop the column without any assertion noticing.
+   */
+  public async incomeReport(from: Date, to: Date): Promise<readonly IncomeTypeReportRow[]> {
+    const totals = new Map<string, { amountPaise: bigint; transactionCount: number }>();
+
+    for (const row of this.active()) {
+      if (row.transactionType !== 'INCOME' || !inRange(row.businessDate, from, to)) {
+        continue;
+      }
+
+      const key = row.incomeType ?? 'UNSPECIFIED';
+      const found = totals.get(key) ?? { amountPaise: 0n, transactionCount: 0 };
+
+      found.amountPaise += row.amountPaise;
+      found.transactionCount += 1;
+      totals.set(key, found);
+    }
+
+    return [...totals.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([incomeType, found]) => ({
+        incomeType,
+        amountPaise: found.amountPaise,
+        transactionCount: found.transactionCount,
+      }));
+  }
+
+  /** The Expense report: active expenses per category, with the transaction count behind each total. */
+  public async expenseReport(from: Date, to: Date): Promise<readonly ExpenseCategoryReportRow[]> {
+    const totals = new Map<
+      string,
+      { categoryName: string | null; amountPaise: bigint; transactionCount: number }
+    >();
+
+    for (const row of this.active()) {
+      if (row.transactionType !== 'EXPENSE' || !inRange(row.businessDate, from, to)) {
+        continue;
+      }
+
+      const key = row.categoryId ?? 'uncategorised';
+      const found = totals.get(key) ?? {
+        categoryName: row.categoryId === null ? null : this.lookups.categoryNameFor(row.categoryId),
+        amountPaise: 0n,
+        transactionCount: 0,
+      };
+
+      found.amountPaise += row.amountPaise;
+      found.transactionCount += 1;
+      totals.set(key, found);
+    }
+
+    return [...totals.entries()]
+      .sort(([leftKey, leftFound], [rightKey, rightFound]) => {
+        if (leftFound.amountPaise !== rightFound.amountPaise) {
+          return leftFound.amountPaise > rightFound.amountPaise ? -1 : 1;
+        }
+
+        return leftKey.localeCompare(rightKey);
+      })
+      .map(([categoryId, found]) => ({
+        categoryId,
+        categoryName: found.categoryName,
+        amountPaise: found.amountPaise,
+        transactionCount: found.transactionCount,
+      }));
+  }
+
+  /**
+   * The Payment Method report's *period movement*, as distinct from its ending balance.
+   *
+   * `methodBalancesThrough` is cumulative through a date; this one is bounded by the period. Keeping
+   * them as separate methods on the double is what lets a test prove the report labels and sources
+   * them differently (`REQ-FIN-014`).
+   */
+  public async methodMovement(from: Date, to: Date): Promise<readonly MethodMovementRow[]> {
+    const totals = new Map<string, { incomePaise: bigint; expensePaise: bigint }>();
+
+    for (const row of this.active()) {
+      if (!inRange(row.businessDate, from, to)) {
+        continue;
+      }
+
+      const found = totals.get(row.paymentMethod) ?? { incomePaise: 0n, expensePaise: 0n };
+
+      if (row.transactionType === 'INCOME') {
+        found.incomePaise += row.amountPaise;
+      } else {
+        found.expensePaise += row.amountPaise;
+      }
+
+      totals.set(row.paymentMethod, found);
+    }
+
+    return [...totals.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([paymentMethod, found]) => ({
+        paymentMethod: paymentMethod as PaymentMethod,
+        ...found,
+        movementPaise: found.incomePaise - found.expensePaise,
+      }));
+  }
+
+  /**
+   * The Receipt / Document report.
+   *
+   * Built from the document rows a fixture explicitly supplied. A transaction with `documentCount`
+   * but no supplied rows contributes nothing here, because inventing a document would let this
+   * report's state logic be asserted against data the database cannot produce. The `VOIDED` state
+   * is derived from the owning transaction rather than trusted from the fixture, so a suite cannot
+   * declare a document `VOIDED` on an active transaction.
+   */
+  public async documentsReport(from: Date, to: Date): Promise<readonly DocumentReportRow[]> {
+    const rows: DocumentReportRow[] = [];
+
+    for (const row of this.rows) {
+      if (!inRange(row.businessDate, from, to)) {
+        continue;
+      }
+
+      for (const document of row.documents ?? []) {
+        const state: ReportDocumentState =
+          row.status === 'VOIDED'
+            ? 'VOIDED'
+            : document.state === 'REMOVED'
+              ? 'REMOVED'
+              : 'AVAILABLE';
+
+        rows.push({
+          documentId: document.id,
+          documentReferenceId: document.referenceId,
+          state,
+          originalFilename: document.originalFilename,
+          byteSize: document.byteSize,
+          detectedMimeType: document.detectedMimeType,
+          uploadedAt: document.uploadedAt,
+          transactionId: row.id,
+          transactionReferenceId: row.referenceId,
+          transactionType: row.transactionType,
+          transactionStatus: row.status,
+          amountPaise: row.amountPaise,
+          businessDate: row.businessDate,
+          memberName: row.memberId === null ? null : this.lookups.memberNameFor(row.memberId),
+          storageKey: document.storageKey,
+        });
+      }
+    }
+
+    return rows.sort((left, right) => left.documentId.localeCompare(right.documentId));
   }
 
   public async recentTransactions(limit: number): Promise<readonly RecentTransactionRow[]> {
