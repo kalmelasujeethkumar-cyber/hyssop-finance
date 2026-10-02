@@ -1,11 +1,14 @@
 import {
   HEALTH_SERVICE_NAME,
+  PERIOD_MOVEMENT_LABEL,
+  AVAILABLE_BALANCE_LABEL,
   type AdminProfile,
   type ContributionPeriodSummary,
   type ContributionPeriodView,
   type CsrfTokenResult,
   type CurrentSessionResult,
   DOCUMENT_UPLOAD_FIELD,
+  type DashboardView,
   type DocumentMimeType,
   type DocumentSummary,
   type ExpenseCategoryView,
@@ -623,6 +626,233 @@ export const incomeValidationFailed = new ApiClientError(
   ],
 );
 
+/**
+ * A dashboard response with deliberately awkward-but-legal numbers.
+ *
+ * Every value here is chosen to make a specific mistake detectable rather than merely present:
+ *
+ * - `movement.income` minus `movement.expenses` equals `movement.net`, and `balances.total`
+ *   deliberately does **not** equal it, because `REQ-FIN-014` requires the period movement and the
+ *   ending balance to be distinguishable. A screen that printed one number for both is caught here
+ *   rather than in review.
+ * - `balances.upi` is negative. `REQ-FIN-012` requires a negative method balance to stay visible,
+ *   so a screen that clamped it to zero or replaced it with a dash fails against this fixture.
+ * - The UPI balance is not a whole number of rupees, so Indian grouping and the paise digits are
+ *   both exercised: `₹1,00,750.00` must not round to `₹1,00,750`.
+ * - `contributionStatus` carries a `notConfigured` count that is non-zero, so a screen cannot pass
+ *   by omitting the `REQ-CONTRIB-006` bucket.
+ * - A breakdown slice is `customLabel: true`, because an expense category is Admin-entered text and
+ *   the browser must render it as text rather than markup.
+ */
+export const DASHBOARD_VIEW: DashboardView = {
+  period: {
+    preset: 'thisMonth',
+    label: 'This Month',
+    from: '2026-09-01',
+    to: '2026-09-30',
+    timezone: 'Asia/Kolkata',
+  },
+  movement: {
+    label: PERIOD_MOVEMENT_LABEL,
+    income: '16500.00',
+    expenses: '4200.00',
+    net: '12300.00',
+  },
+  availableBalanceForPeriod: '12300.00',
+  balances: {
+    label: AVAILABLE_BALANCE_LABEL,
+    asOf: '2026-09-30',
+    cash: '4500.00',
+    upi: '-750.00',
+    bank: '97000.00',
+    total: '100750.00',
+    cumulativeIncome: '126500.00',
+    cumulativeExpenses: '25750.00',
+  },
+  memberCount: 12,
+  comparison: {
+    income: '16500.00',
+    expenses: '4200.00',
+    movement: '12300.00',
+  },
+  incomeBreakdown: {
+    total: '16500.00',
+    slices: [
+      {
+        key: 'MEMBER_CONTRIBUTION',
+        label: 'Member contribution',
+        amount: '10000.00',
+        sharePercent: '60.61',
+        customLabel: false,
+      },
+      {
+        key: 'OFFERING',
+        label: 'Offering',
+        amount: '5000.00',
+        sharePercent: '30.30',
+        customLabel: false,
+      },
+      {
+        key: 'DONATION',
+        label: 'Donation',
+        amount: '1500.00',
+        sharePercent: '9.09',
+        customLabel: false,
+      },
+    ],
+  },
+  expenseBreakdown: {
+    total: '4200.00',
+    slices: [
+      {
+        key: 'category-electricity',
+        label: 'Electricity',
+        amount: '2500.00',
+        sharePercent: '59.52',
+        customLabel: true,
+      },
+      {
+        key: 'category-maintenance',
+        label: 'Maintenance',
+        amount: '1700.00',
+        sharePercent: '40.48',
+        customLabel: true,
+      },
+    ],
+  },
+  contributionStatus: {
+    months: [
+      {
+        month: '2026-09',
+        year: 2026,
+        monthNumber: 9,
+        counts: {
+          paid: 7,
+          partiallyPaid: 2,
+          notPaid: 1,
+          notConfigured: 2,
+          configured: 10,
+          membersByMonthEnd: 12,
+        },
+      },
+    ],
+    totals: {
+      paid: 7,
+      partiallyPaid: 2,
+      notPaid: 1,
+      notConfigured: 2,
+      configured: 10,
+      membersByMonthEnd: 12,
+    },
+  },
+  trend: [
+    {
+      month: '2026-08',
+      year: 2026,
+      monthNumber: 8,
+      income: '14000.00',
+      expenses: '3800.00',
+      movement: '10200.00',
+    },
+    {
+      month: '2026-09',
+      year: 2026,
+      monthNumber: 9,
+      income: '16500.00',
+      expenses: '4200.00',
+      movement: '12300.00',
+    },
+  ],
+  recentTransactions: [
+    {
+      id: INCOME_TWO.id,
+      referenceId: INCOME_TWO.referenceId,
+      type: 'INCOME',
+      amount: INCOME_TWO.amount,
+      paymentMethod: INCOME_TWO.paymentMethod,
+      businessDate: INCOME_TWO.businessDate,
+      description: INCOME_TWO.description,
+      incomeType: INCOME_TWO.incomeType,
+      categoryName: null,
+      memberName: null,
+      hasReceipt: false,
+      active: true,
+    },
+    {
+      id: EXPENSE_ONE.id,
+      referenceId: EXPENSE_ONE.referenceId,
+      type: 'EXPENSE',
+      amount: EXPENSE_ONE.amount,
+      paymentMethod: EXPENSE_ONE.paymentMethod,
+      businessDate: EXPENSE_ONE.businessDate,
+      description: EXPENSE_ONE.description,
+      incomeType: null,
+      categoryName: EXPENSE_ONE.category.name,
+      memberName: null,
+      hasReceipt: true,
+      active: true,
+    },
+  ],
+  recentTransactionCount: 2,
+  currency: 'INR',
+  generatedAt: '2026-09-30T10:30:00.000Z',
+};
+
+/**
+ * A dashboard for a church that has recorded nothing.
+ *
+ * `docs/03-UI-UX-RULES.md` requires an empty result to be distinguishable from a broken one, and a
+ * zero-filled dashboard must still be legible: an empty chart, an explicit `Not configured`
+ * denominator, and a recent list that says nothing has been recorded yet.
+ */
+export const EMPTY_DASHBOARD_VIEW: DashboardView = {
+  ...DASHBOARD_VIEW,
+  movement: { label: PERIOD_MOVEMENT_LABEL, income: '0.00', expenses: '0.00', net: '0.00' },
+  availableBalanceForPeriod: '0.00',
+  balances: {
+    label: AVAILABLE_BALANCE_LABEL,
+    asOf: '2026-09-30',
+    cash: '0.00',
+    upi: '0.00',
+    bank: '0.00',
+    total: '0.00',
+    cumulativeIncome: '0.00',
+    cumulativeExpenses: '0.00',
+  },
+  memberCount: 0,
+  comparison: { income: '0.00', expenses: '0.00', movement: '0.00' },
+  incomeBreakdown: { total: '0.00', slices: [] },
+  expenseBreakdown: { total: '0.00', slices: [] },
+  contributionStatus: {
+    months: [
+      {
+        month: '2026-09',
+        year: 2026,
+        monthNumber: 9,
+        counts: {
+          paid: 0,
+          partiallyPaid: 0,
+          notPaid: 0,
+          notConfigured: 0,
+          configured: 0,
+          membersByMonthEnd: 0,
+        },
+      },
+    ],
+    totals: {
+      paid: 0,
+      partiallyPaid: 0,
+      notPaid: 0,
+      notConfigured: 0,
+      configured: 0,
+      membersByMonthEnd: 0,
+    },
+  },
+  trend: [],
+  recentTransactions: [],
+  recentTransactionCount: 0,
+};
+
 export type StubMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 export interface RecordedCall {
@@ -740,6 +970,28 @@ export interface DocumentStubOptions {
   readonly removeFails?: Error;
 }
 
+export interface DashboardStubOptions {
+  /** The projection `GET /dashboard` returns. Defaults to {@link DASHBOARD_VIEW}. */
+  readonly dashboard?: DashboardView;
+  /** Fails `GET /dashboard`, for the loading-failed state. */
+  readonly dashboardFails?: Error;
+  /**
+   * Fails only the first `GET /dashboard`, for the retry control.
+   *
+   * The retry button is only real if a second request is actually sent, and this is what makes a
+   * test able to observe it.
+   */
+  readonly firstDashboardFails?: Error;
+  /**
+   * Holds `GET /dashboard` open until the supplied promise settles.
+   *
+   * The stub resolves in a microtask, which is faster than a polling assertion, so a test for the
+   * loading state has no stable moment in which to observe it. A gate makes the wait observable:
+   * the loading state is still on screen until the test releases the response.
+   */
+  readonly dashboardGate?: Promise<unknown>;
+}
+
 export interface StubApiClient extends ApiClient {
   readonly calls: RecordedCall[];
   /** The current member store, so a test can assert a create or edit actually applied. */
@@ -778,6 +1030,7 @@ export function stubApiClient(
     readonly transactions?: TransactionStubOptions;
     readonly expenses?: ExpenseStubOptions;
     readonly documents?: DocumentStubOptions;
+    readonly dashboard?: DashboardStubOptions;
   } = {},
 ): StubApiClient {
   const calls: RecordedCall[] = [];
@@ -816,6 +1069,10 @@ export function stubApiClient(
   let nextIncomeNumber = transactionStore.filter((row) => row.type === 'INCOME').length + 1;
   let nextExpenseNumber = transactionStore.filter((row) => row.type === 'EXPENSE').length + 1;
   let hasFailedFirstCreate = false;
+  // Tracked for the same reason as the income store: a retry control is only real if a second
+  // request is actually sent, and only the first request may fail.
+  let hasFailedFirstDashboard = false;
+  const dashboardOptions = options.dashboard ?? {};
   let hasFailedFirstExpenseCreate = false;
   // The category store is stateful as well: adding a category really appends a row the picker can
   // then select, so a test can prove the add-category path ends in a usable selection.
@@ -906,6 +1163,20 @@ export function stubApiClient(
     return match?.[1];
   }
 
+  /**
+   * The path with its query string removed.
+   *
+   * A query string is part of the *request*, not the *route*: the dashboard answers the same
+   * projection for every period and varies its body by the search params. Matching on the raw path
+   * would have needed a separate branch per period and would have silently 404'd any period the
+   * stub author did not anticipate.
+   */
+  function pathWithoutQuery(path: string): string {
+    const separator = path.indexOf('?');
+
+    return separator === -1 ? path : path.slice(0, separator);
+  }
+
   function requireTransaction(id: string): TransactionSummary {
     const transaction = transactionStore.find((row) => row.id === id);
 
@@ -991,6 +1262,27 @@ export function stubApiClient(
         return settleOrReject<TData>(
           categoryStore.filter((category) => category.status === 'ACTIVE'),
           expenseOptions.categoriesFail,
+        );
+      }
+      if (pathWithoutQuery(path) === '/dashboard') {
+        // The period is recorded by `record('GET', path, ...)` above and asserted separately, so
+        // this branch answers whatever the query asked for. That keeps the test able to prove the
+        // browser *sent* the right period, which is the part the browser actually owns.
+        if (dashboardOptions.firstDashboardFails !== undefined && !hasFailedFirstDashboard) {
+          hasFailedFirstDashboard = true;
+
+          return Promise.reject(dashboardOptions.firstDashboardFails);
+        }
+
+        if (dashboardOptions.dashboardGate !== undefined) {
+          const gate = dashboardOptions.dashboardGate;
+
+          return gate.then(() => (dashboardOptions.dashboard ?? DASHBOARD_VIEW) as TData);
+        }
+
+        return settleOrReject<TData>(
+          dashboardOptions.dashboard ?? DASHBOARD_VIEW,
+          dashboardOptions.dashboardFails,
         );
       }
 

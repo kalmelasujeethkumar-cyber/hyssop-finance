@@ -98,6 +98,33 @@ async function upsertContributionPeriod(
  * Nothing is cached in a permanent amount column, so a voided or corrected
  * transaction is reflected immediately.
  */
+/**
+ * One member-month's amounts, already summed from the ledger.
+ *
+ * Returned per period rather than pre-bucketed per month so that the *status* is decided by
+ * {@link deriveContributionStatus}, the single authority for `REQ-CONTRIB-002`. Counting the
+ * buckets in SQL with `FILTER (WHERE ...)` predicates would be faster, but it would be a second
+ * implementation of that rule, and a rule that exists twice eventually answers two different
+ * questions.
+ */
+export interface ContributionPeriodAmountRow {
+  readonly year: number;
+  readonly month: number;
+  readonly expectedPaise: bigint;
+  readonly receivedPaise: bigint;
+}
+
+/**
+ * The most member-months one aggregate read may consider.
+ *
+ * A dashboard period spans at most `DASHBOARD_CUSTOM_RANGE_MONTH_LIMIT` months, so the row count
+ * is bounded by that many months times the member count. The explicit cap means a church with a
+ * very large membership gets a documented refusal instead of an unbounded read that exhausts
+ * the connection pool, which is the failure mode `docs/07-SECURITY-RULES.md` treats as a
+ * denial-of-service risk rather than as a slow query.
+ */
+export const CONTRIBUTION_BUCKET_MAX_ROWS = 20_000;
+
 @Injectable()
 export class ContributionPeriodRepository {
   public constructor(
@@ -438,5 +465,54 @@ export class ContributionPeriodRepository {
         status: deriveContributionStatus(period.expectedPaise, receivedPaise),
       };
     });
+  }
+
+  /**
+   * Every member-month's expected and received amounts within a month range, in one query.
+   *
+   * Authority: `docs/02-ARCHITECTURE.md` — received amounts are derived from active
+   * `MEMBER_CONTRIBUTION` transactions, so a voided payment immediately lowers what the member
+   * is shown as having given. The `WHERE` clause restricts the derived `MEMBER_CONTRIBUTION`
+   * sum to `status = 'ACTIVE'` for the same reason `summarizeMany` does.
+   *
+   * The month range is passed as a single `year * 100 + month` key rather than four integers
+   * because that makes the comparison a plain numeric range, so an index on `(year, month)` is
+   * still usable by the planner and the range cannot be built from four unrelated parameters
+   * that could contradict one another.
+   *
+   * `LIMIT` is one more than {@link CONTRIBUTION_BUCKET_MAX_ROWS} so the caller can detect an
+   * over-large read instead of silently counting a truncated set — the same deliberate
+   * overflow-detection idiom used by `listFiltered`.
+   */
+  public async aggregateAmountsByMonthRange(
+    fromKey: number,
+    toKey: number,
+  ): Promise<readonly ContributionPeriodAmountRow[]> {
+    if (fromKey > toKey) {
+      return [];
+    }
+
+    return this.prisma.$queryRaw<readonly ContributionPeriodAmountRow[]>`
+      WITH received AS (
+        SELECT "contribution_period_id" AS "period_id",
+               COALESCE(SUM("amount_paise"), 0)::bigint AS "received_paise"
+        FROM "financial_transaction"
+        WHERE "status" = 'ACTIVE'
+          AND "income_type" = 'MEMBER_CONTRIBUTION'
+          AND "contribution_period_id" IS NOT NULL
+        GROUP BY "contribution_period_id"
+      )
+      SELECT
+        period."year"::int AS "year",
+        period."month"::int AS "month",
+        period."expected_paise" AS "expectedPaise",
+        COALESCE(received."received_paise", 0)::bigint AS "receivedPaise"
+      FROM "contribution_period" AS period
+      LEFT JOIN received ON received."period_id" = period."id"
+      WHERE (period."year" * 100 + period."month") >= ${fromKey}
+        AND (period."year" * 100 + period."month") <= ${toKey}
+      ORDER BY period."year" ASC, period."month" ASC, period."id" ASC
+      LIMIT ${CONTRIBUTION_BUCKET_MAX_ROWS + 1}
+    `;
   }
 }

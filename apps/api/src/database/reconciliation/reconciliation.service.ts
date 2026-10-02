@@ -31,6 +31,34 @@ export interface IncomeTypeBreakdownRow {
   readonly amountPaise: bigint;
 }
 
+/** One calendar month of the `REQ-DASH-012` trend. */
+export interface MonthlyTrendRow {
+  readonly year: number;
+  readonly month: number;
+  readonly incomePaise: bigint;
+  readonly expensePaise: bigint;
+}
+
+/** An expense category's active total, with the label to show for it. */
+export interface NamedCategoryBreakdownRow extends CategoryBreakdownRow {
+  readonly categoryName: string | null;
+}
+
+/** One recent active transaction, already joined to the labels the dashboard shows. */
+export interface RecentTransactionRow {
+  readonly id: string;
+  readonly referenceId: string;
+  readonly transactionType: string;
+  readonly amountPaise: bigint;
+  readonly paymentMethod: PaymentMethod;
+  readonly businessDate: Date;
+  readonly description: string | null;
+  readonly incomeType: string | null;
+  readonly categoryName: string | null;
+  readonly memberName: string | null;
+  readonly hasReceipt: boolean;
+}
+
 const ALL_METHODS: readonly PaymentMethod[] = ['CASH', 'UPI', 'BANK_TRANSFER'];
 
 /**
@@ -187,6 +215,109 @@ export class ReconciliationService {
         AND "business_date" >= ${sqlDate(from)} AND "business_date" <= ${sqlDate(to)}
       GROUP BY "income_type"
       ORDER BY "income_type" ASC
+    `;
+  }
+
+  /**
+   * Active income and expense movement for each calendar month touched by a range.
+   *
+   * `REQ-DASH-012` requires the trend to be a real monthly series, so this groups in the
+   * database rather than fetching rows and folding them in the application. Months with no
+   * activity produce no row here; the caller fills the gaps so the chart has a continuous axis.
+   *
+   * Grouping is on `business_date`, which is already a calendar `DATE`, so no zone conversion
+   * is needed and a transaction recorded at 23:50 IST on the 30th belongs to the 30th's month.
+   */
+  public async monthlyTrend(from: Date, to: Date): Promise<readonly MonthlyTrendRow[]> {
+    return this.prisma.$queryRaw<readonly MonthlyTrendRow[]>`
+      SELECT
+        EXTRACT(YEAR FROM "business_date")::int AS "year",
+        EXTRACT(MONTH FROM "business_date")::int AS "month",
+        COALESCE(SUM("amount_paise") FILTER (WHERE "transaction_type" = 'INCOME'), 0)::bigint AS "incomePaise",
+        COALESCE(SUM("amount_paise") FILTER (WHERE "transaction_type" = 'EXPENSE'), 0)::bigint AS "expensePaise"
+      FROM "financial_transaction"
+      WHERE "status" = 'ACTIVE'
+        AND "business_date" >= ${sqlDate(from)} AND "business_date" <= ${sqlDate(to)}
+      GROUP BY 1, 2
+      ORDER BY 1 ASC, 2 ASC
+    `;
+  }
+
+  /**
+   * Active expenses per category with the category's name.
+   *
+   * A separate query from `expenseByCategory` rather than a widened one, because the existing
+   * shape is already relied on by the reconciliation screens and its tests. Adding a column
+   * would have been the smaller change but would have changed a contract other callers had
+   * already been built against.
+   *
+   * The join is a `LEFT JOIN` so a category row that is somehow missing cannot silently drop
+   * its expenses out of the breakdown total. A breakdown whose parts do not sum to the total
+   * would be worse than one slice labelled as uncategorised.
+   */
+  public async expenseByCategoryWithNames(
+    from: Date,
+    to: Date,
+  ): Promise<readonly NamedCategoryBreakdownRow[]> {
+    return this.prisma.$queryRaw<readonly NamedCategoryBreakdownRow[]>`
+      SELECT
+        transaction."category_id" AS "categoryId",
+        category."name" AS "categoryName",
+        COALESCE(SUM(transaction."amount_paise"), 0)::bigint AS "amountPaise"
+      FROM "financial_transaction" AS transaction
+      LEFT JOIN "expense_category" AS category ON category."id" = transaction."category_id"
+      WHERE transaction."status" = 'ACTIVE' AND transaction."transaction_type" = 'EXPENSE'
+        AND transaction."business_date" >= ${sqlDate(from)} AND transaction."business_date" <= ${sqlDate(to)}
+      GROUP BY transaction."category_id", category."name"
+      ORDER BY SUM(transaction."amount_paise") DESC, transaction."category_id" ASC
+    `;
+  }
+
+  /**
+   * The most recently dated active transactions, for the dashboard's recent-activity list.
+   *
+   * `REQ-FIN-001` means voided rows are excluded: this is the live ledger, and the voided
+   * history is reachable through the transaction screens. Ordering by `business_date` first
+   * matches what "recent" means to a bookkeeper entering a back-dated receipt.
+   *
+   * `occurred_at` cannot order rows within one business date because the application derives it
+   * as the start of that business day, so it is identical for every row sharing the date.
+   * `created_at` is the immutable recorded instant and therefore orders the ties so that the
+   * entry written last appears first; `id` then only breaks an exact `created_at` collision.
+   *
+   * `has_receipt` counts only `AVAILABLE` documents, so a removed receipt is reported as absent
+   * rather than as a link that answers `410`.
+   */
+  public async recentTransactions(limit: number): Promise<readonly RecentTransactionRow[]> {
+    if (!Number.isInteger(limit) || limit <= 0) {
+      return [];
+    }
+
+    return this.prisma.$queryRaw<readonly RecentTransactionRow[]>`
+      SELECT
+        transaction."id" AS "id",
+        transaction."reference_id" AS "referenceId",
+        transaction."transaction_type" AS "transactionType",
+        transaction."amount_paise" AS "amountPaise",
+        transaction."payment_method" AS "paymentMethod",
+        transaction."business_date" AS "businessDate",
+        transaction."description" AS "description",
+        transaction."income_type" AS "incomeType",
+        category."name" AS "categoryName",
+        member."name" AS "memberName",
+        EXISTS (
+          SELECT 1 FROM "transaction_document" AS document
+          WHERE document."transaction_id" = transaction."id" AND document."status" = 'AVAILABLE'
+        ) AS "hasReceipt"
+      FROM "financial_transaction" AS transaction
+      LEFT JOIN "expense_category" AS category ON category."id" = transaction."category_id"
+      LEFT JOIN "member" AS member ON member."id" = transaction."member_id"
+      WHERE transaction."status" = 'ACTIVE'
+      ORDER BY
+        transaction."business_date" DESC,
+        transaction."created_at" DESC,
+        transaction."id" DESC
+      LIMIT ${limit}
     `;
   }
 }

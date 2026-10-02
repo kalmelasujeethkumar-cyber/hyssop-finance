@@ -3,6 +3,7 @@ import { normalizePhone, PhoneFormatError } from '@hyssop/contracts';
 import type { MemberSortDirection, MemberSortField } from '@hyssop/contracts';
 import type { Member, Prisma } from '@prisma/client';
 import { notFound, staleRevision, validationFailed } from '../../common/errors/domain.errors';
+import { BUSINESS_TIMEZONE, formatBusinessDate } from '../../common/time/business-date';
 import { AuditEventRepository, AUDIT_ENTITY_TYPES } from '../audit/audit-event.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReferenceAllocatorService } from '../references/reference-allocator.service';
@@ -233,6 +234,68 @@ export class MemberRepository {
 
   public async count(): Promise<number> {
     return this.prisma.member.count();
+  }
+
+  /**
+   * Counts members created on or before an Asia/Kolkata business date.
+   *
+   * `REQ-DASH-018` requires the dashboard's member figure to be *as of* the period end, not the
+   * size of the member table today. Without this boundary a member added in November appears
+   * in an October dashboard, which overstates how many people the church had in October.
+   *
+   * `created_at` is a `TIMESTAMPTZ`, so the comparison converts the instant into the business
+   * zone before comparing it with a calendar `DATE`. Comparing the raw instant against
+   * `::date` would make the answer depend on the database session time zone: a member created
+   * at 02:00 IST on the 1st is the 31st in UTC, and the count would quietly change with the
+   * server's configuration.
+   */
+  public async countCreatedThrough(to: Date): Promise<number> {
+    const row = await this.prisma.$queryRaw<readonly [{ readonly member_count: bigint }]>`
+      SELECT COUNT(*)::bigint AS "member_count"
+      FROM "member"
+      WHERE (("created_at" AT TIME ZONE ${BUSINESS_TIMEZONE})::date) <= ${formatBusinessDate(to)}::date
+    `;
+
+    return Number(row[0]?.member_count ?? 0n);
+  }
+
+  /**
+   * Counts members created in each Asia/Kolkata calendar month of a range.
+   *
+   * The dashboard needs a per-month member denominator for `REQ-CONTRIB-006`'s `Not configured`
+   * bucket: for each month, how many members existed by that month's end. This returns the
+   * raw per-month creation counts and the caller accumulates them, because a running total
+   * across months is a comparison of counts rather than a financial sum — no paise is involved
+   * and no rounding can occur.
+   *
+   * The month is taken from the zoned timestamp, not from the raw instant, for the same reason
+   * as `countCreatedThrough`.
+   */
+  public async countCreatedByMonth(
+    from: Date,
+    to: Date,
+  ): Promise<readonly { readonly year: number; readonly month: number; readonly count: number }[]> {
+    const rows = await this.prisma.$queryRaw<
+      readonly { readonly year: number; readonly month: number; readonly count: bigint }[]
+    >`
+      SELECT
+        EXTRACT(YEAR FROM ("created_at" AT TIME ZONE ${BUSINESS_TIMEZONE}))::int AS "year",
+        EXTRACT(MONTH FROM ("created_at" AT TIME ZONE ${BUSINESS_TIMEZONE}))::int AS "month",
+        COUNT(*)::bigint AS "count"
+      FROM "member"
+      WHERE ("created_at" AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+          >= ${formatBusinessDate(from)}::date
+        AND ("created_at" AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+          <= ${formatBusinessDate(to)}::date
+      GROUP BY 1, 2
+      ORDER BY 1 ASC, 2 ASC
+    `;
+
+    return rows.map((row) => ({
+      year: row.year,
+      month: row.month,
+      count: Number(row.count),
+    }));
   }
 }
 

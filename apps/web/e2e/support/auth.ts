@@ -20,7 +20,10 @@ export async function signIn(page: Page): Promise<void> {
   await page.getByLabel(/Admin identifier/i).fill(E2E_ADMIN_IDENTIFIER);
   await page.getByLabel(/^Password/i).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Foundation' })).toBeVisible();
+  // The dashboard is the signed-in landing screen, so waiting for it is what proves the session
+  // was established. Waiting for the status screen instead would now fail on every journey,
+  // because that page is reached through navigation rather than through sign-in.
+  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
 }
 /** The session probe path, which is the one route that legitimately answers 401. */
 const SESSION_PROBE_PATH = '/api/v1/auth/me';

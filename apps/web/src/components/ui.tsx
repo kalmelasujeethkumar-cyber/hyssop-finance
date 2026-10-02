@@ -115,6 +115,14 @@ export function controlClassName(extra?: string): string {
 export interface BannerProps {
   readonly tone: 'info' | 'success' | 'warning' | 'danger';
   readonly children: ReactNode;
+  /**
+   * An optional control shown beside the message.
+   *
+   * It exists because `docs/03-UI-UX-RULES.md` requires a failure state to offer a way forward:
+   * an error the Admin can only stare at would be a dead end, and "Try again" is the honest
+   * recovery when the cause is a transport failure rather than bad input.
+   */
+  readonly action?: ReactNode | undefined;
 }
 
 const TONE_CLASS: Record<BannerProps['tone'], string> = {
@@ -131,13 +139,16 @@ const TONE_CLASS: Record<BannerProps['tone'], string> = {
  * `role="status"` for the neutral and success tones so a confirmation is announced without
  * interrupting. Every tone states its meaning in words, so colour is never the only signal.
  */
-export function Banner({ tone, children }: BannerProps) {
+export function Banner({ tone, children, action }: BannerProps) {
   return (
     <div
       role={tone === 'danger' || tone === 'warning' ? 'alert' : 'status'}
       className={`rounded-md border px-4 py-3 text-supporting font-semibold ${TONE_CLASS[tone]}`}
     >
-      {children}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span>{children}</span>
+        {action === undefined ? null : <div className="shrink-0">{action}</div>}
+      </div>
     </div>
   );
 }

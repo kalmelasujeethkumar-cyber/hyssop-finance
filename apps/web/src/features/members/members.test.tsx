@@ -657,7 +657,7 @@ describe('the Members navigation', () => {
 
     renderMembers(stubApiClient(), '/');
 
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
     const membersLink = screen.getByRole('link', { name: 'Members' });
 
     expect(membersLink).toBeInTheDocument();

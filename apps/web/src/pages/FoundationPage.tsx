@@ -2,12 +2,16 @@ import { Link } from 'react-router-dom';
 import { HealthCard } from '../features/health/HealthCard';
 
 /**
- * The starting screen.
+ * The build-status screen.
  *
  * It states what this build can and cannot do. `docs/03-UI-UX-RULES.md` requires the
  * interface to be honest about state, and a screen that quietly implied a finished product
  * would be dishonest in a way no amount of correct code elsewhere could fix: the parts that
  * do not exist yet are named, and nothing on this page is a placeholder figure.
+ *
+ * It is no longer the landing screen — the dashboard is, since `docs/03-UI-UX-RULES.md` makes
+ * that the signed-in entry point — but it keeps its own address because it still answers two
+ * questions the product pages cannot: what is built, and is the API reachable.
  */
 export function FoundationPage() {
   return (
@@ -15,9 +19,9 @@ export function FoundationPage() {
       <div className="space-y-2">
         <h1 className="text-page-title font-bold text-text-primary">Foundation</h1>
         <p className="max-w-2xl text-supporting text-text-secondary">
-          The workspace, toolchain, and shared HTTP contract are in place. Members, income, and
-          expenses can now be recorded, searched, corrected, and voided, with every amount
-          calculated by the API from the transactions that actually exist.
+          The workspace, toolchain, and shared HTTP contract are in place. Members, income,
+          expenses, receipts, and the dashboard can now be used, with every amount calculated by the
+          API from the transactions that actually exist.
         </p>
       </div>
 
@@ -46,9 +50,24 @@ export function FoundationPage() {
             Expense recording against a required category, with custom categories, an honest
             <em> Receipt Missing</em> state, and the same correction, void, and audit behaviour.
           </li>
+          <li>
+            Receipts and other documents attached to a transaction through project-controlled
+            storage, with an available-and-removed state that stays auditable.
+          </li>
+          <li>
+            A period-aware dashboard whose totals, method balances, contribution status, monthly
+            trend, and recent transactions all come from the API.
+          </li>
           <li>Unit, integration, and browser checks for everything listed here.</li>
         </ul>
         <p className="mt-4 text-supporting text-text-secondary">
+          <Link
+            to="/"
+            className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
+          >
+            Go to the dashboard
+          </Link>
+          {' · '}
           <Link
             to="/members"
             className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
@@ -80,11 +99,11 @@ export function FoundationPage() {
           What is not in this build yet
         </h2>
         <p className="mt-2 text-supporting text-text-secondary">
-          Attaching receipts and other documents, church-wide reports, and the settings screens are
-          not implemented. No figure anywhere in this application is a stored total or a
-          placeholder: every amount shown is calculated by the API from the transactions that
-          actually exist. Because documents cannot be attached yet, every expense currently shows{' '}
-          <em>Receipt Missing</em>, which is the true state rather than a broken control.
+          Church-wide printable reports with CSV export, a standalone audit-history browser, and
+          settings screens are not implemented. No figure anywhere in this application is a stored
+          total or a placeholder: every amount shown is calculated by the API from the transactions
+          that actually exist, and an expense with no receipt attached says so rather than implying
+          one exists.
         </p>
       </section>
     </div>

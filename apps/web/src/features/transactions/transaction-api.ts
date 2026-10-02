@@ -18,6 +18,7 @@ import {
 import { useApiClient } from '../../app/providers/ApiClientProvider';
 import { ApiClientError, ApiTransportError } from '../../lib/api-client';
 import { useSession } from '../auth/SessionProvider';
+import { DASHBOARD_QUERY_KEY } from '../dashboard/dashboard-api';
 import { CONTRIBUTION_SUMMARY_QUERY_KEY, MEMBER_DETAIL_QUERY_KEY } from '../members/member-api';
 
 /**
@@ -85,6 +86,12 @@ export const TRANSACTION_RECEIPT_QUERY_KEY = ['transactions', 'receipt'] as cons
  * mutations cannot drift apart and reopen the same hole. The member *list* is deliberately not
  * invalidated: it shows only the member ID, name, phone, and date added, none of which a
  * transaction can change.
+ *
+ * The dashboard is included for the same reason as the member screen and with more force: every
+ * card, chart, and total on it is derived from the ledger, so a create, a correction, or a void
+ * makes each one wrong. Leaving it cached would mean returning to the dashboard from an income
+ * form and reading a total the ledger no longer supports, which is exactly the "stale total
+ * presented as final" the phase prohibits.
  */
 export function invalidateTransactionDependents(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: TRANSACTION_LIST_QUERY_KEY });
@@ -93,6 +100,7 @@ export function invalidateTransactionDependents(queryClient: QueryClient): void 
   void queryClient.invalidateQueries({ queryKey: TRANSACTION_RECEIPT_QUERY_KEY });
   void queryClient.invalidateQueries({ queryKey: CONTRIBUTION_SUMMARY_QUERY_KEY });
   void queryClient.invalidateQueries({ queryKey: MEMBER_DETAIL_QUERY_KEY });
+  void queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEY });
 }
 
 /**

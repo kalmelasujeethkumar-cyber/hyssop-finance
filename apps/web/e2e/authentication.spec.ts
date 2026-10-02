@@ -16,6 +16,7 @@ test.describe('admin authentication', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Foundation' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toHaveCount(0);
   });
 
   test('the Admin signs in and reaches the product screen', async ({ page }) => {
@@ -25,7 +26,9 @@ test.describe('admin authentication', () => {
     await signIn(page);
 
     await expect(page.getByText('Demo Admin')).toBeVisible();
-    await expect(page.getByTestId('health-status')).toHaveAttribute('data-state', 'connected');
+    // Dashboard is the signed-in landing screen. `health-status` belongs to the Status
+    // screen, which `foundation.spec.ts` covers on its own navigation.
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
     expect(browserErrors).toEqual([]);
   });
 
@@ -39,6 +42,7 @@ test.describe('admin authentication', () => {
     await expect(alert).toContainText('The identifier or password is incorrect.');
     await expect(alert).not.toContainText(/password is wrong|unknown identifier/i);
     await expect(page.getByRole('heading', { level: 1, name: 'Foundation' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toHaveCount(0);
   });
 
   test('every product address requires a session, including an unknown one', async ({ page }) => {
@@ -107,6 +111,7 @@ test.describe('admin authentication', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Foundation' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toHaveCount(0);
     expect(sessionCookie?.value).not.toBe('this-session-was-never-issued-by-the-api');
   });
 

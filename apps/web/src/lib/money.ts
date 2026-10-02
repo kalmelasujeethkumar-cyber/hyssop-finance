@@ -25,22 +25,32 @@ const RUPEE = '₹';
  * value is returned as a visible placeholder rather than silently rendered as `NaN` or
  * `₹0.00`, because a wrong amount on a financial screen is worse than an obvious
  * "unavailable" label.
+ *
+ * A negative amount is rendered with its sign rather than rejected. `REQ-FIN-012` requires a
+ * method balance to go negative when recorded expenses exceed recorded income for that method
+ * and requires the interface not to conceal it, so `-500.00` reads `-₹500.00`; treating the
+ * minus sign as malformed would have hidden exactly the figure the requirement protects. An
+ * all-zero value never carries a sign, so `-0.00` does not appear to be a deficit.
  */
 export function formatInr(amount: string): string {
-  const parsed = parseDecimalAmount(amount);
+  const parsed = parseSignedDecimalAmount(amount);
 
   if (parsed === null) {
     return '—';
   }
 
-  return `${RUPEE}${groupIndianDigits(parsed.rupees)}.${parsed.fraction}`;
+  const sign = parsed.negative ? '-' : '';
+
+  return `${sign}${RUPEE}${groupIndianDigits(parsed.rupees)}.${parsed.fraction}`;
 }
 
 /** The same grouping without the symbol, for a table cell that has its own column header. */
 export function formatInrBare(amount: string): string {
   const formatted = formatInr(amount);
 
-  return formatted === '—' ? formatted : formatted.slice(RUPEE.length);
+  // Strips the leading `-` and `₹` in one step, so a signed negative still loses only the
+  // symbol and keeps the sign its column needs.
+  return formatted === '—' ? formatted : formatted.replace(/^[-₹]/u, '');
 }
 
 /**
@@ -101,18 +111,46 @@ export function groupIndianDigits(digits: string): string {
  * decimal places, which is exactly what the API guarantees for `expectedPaise` and the
  * derived money strings. A malformed value therefore fails loudly here instead of being
  * rounded into a plausible-looking number.
+ *
+ * A negative amount is deliberately *not* accepted here. This function feeds the write-path
+ * comparison in {@link compareDecimalAmounts}, where an amount the API would reject has no
+ * meaningful ordering; display formatting uses {@link parseSignedDecimalAmount} instead.
  */
 export function parseDecimalAmount(amount: string): { rupees: string; fraction: string } | null {
+  const parsed = parseSignedDecimalAmount(amount);
+
+  if (parsed === null || parsed.negative) {
+    return null;
+  }
+
+  return { rupees: parsed.rupees, fraction: parsed.fraction };
+}
+
+/**
+ * Splits an exact decimal amount, keeping a negative sign as a fact rather than an error.
+ *
+ * `REQ-FIN-012` makes a negative method balance a legitimate calculated result, so the sign is
+ * parsed here and reported separately instead of failing the whole parse. A `-0.00` is reported
+ * as non-negative, because a zero that arrived with a minus sign is not a deficit and must not
+ * be rendered as one.
+ */
+function parseSignedDecimalAmount(
+  amount: string,
+): { negative: boolean; rupees: string; fraction: string } | null {
   const trimmed = amount.trim();
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(trimmed);
+  const hasSign = trimmed.startsWith('-');
+  const unsigned = hasSign ? trimmed.slice(1) : trimmed;
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(unsigned);
 
   if (match === null) {
     return null;
   }
 
   const [, rupees = '', fraction = ''] = match;
+  // Only a value with at least one non-zero digit is treated as negative.
+  const negative = hasSign && /[1-9]/.test(unsigned);
 
-  return { rupees, fraction: fraction.padEnd(2, '0') };
+  return { negative, rupees, fraction: fraction.padEnd(2, '0') };
 }
 
 /**

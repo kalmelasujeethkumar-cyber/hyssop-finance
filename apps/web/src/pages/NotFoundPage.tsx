@@ -11,7 +11,7 @@ export function NotFoundPage() {
         to="/"
         className="inline-block rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-supporting font-semibold text-text-inverse transition-colors hover:bg-blue-700 active:bg-blue-700"
       >
-        Back to foundation
+        Back to dashboard
       </Link>
     </div>
   );

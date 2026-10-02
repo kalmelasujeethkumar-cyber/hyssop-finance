@@ -20,7 +20,7 @@ describe('protected route access', () => {
     renderRoute({ client: stubApiClient({ session: unauthenticated }) });
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 1, name: 'Foundation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Dashboard' })).not.toBeInTheDocument();
   });
 
   it('never stores a session token in browser storage', async () => {
@@ -42,17 +42,19 @@ describe('protected route access', () => {
     await user.type(screen.getByLabelText(/^Password/i), 'correct horse battery');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
     const login = client.calls.find((call) => call.path === '/auth/login');
     expect(login).toBeDefined();
     expect(login?.body).toEqual({ identifier: 'admin', password: 'correct horse battery' });
     expect(login?.csrfToken).toBe(CSRF_TOKEN_RESULT.csrfToken);
+    // Signing in lands on the dashboard, so the projection - not a health probe - is what the
+    // authenticated session is asked for first.
     expect(client.calls.map((call) => call.path)).toEqual([
       '/auth/me',
       '/auth/csrf',
       '/auth/login',
-      '/health',
+      '/dashboard?period=thisMonth',
     ]);
   });
 
@@ -114,7 +116,7 @@ describe('protected route access', () => {
 
     releaseLogin();
 
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
     expect(client.calls.filter((call) => call.path === '/auth/login')).toHaveLength(1);
   });
 
@@ -132,9 +134,7 @@ describe('session lifecycle', () => {
   it('shows who is signed in only after the API confirmed the session', async () => {
     renderRoute({ client: clientResolvingWith() });
 
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Foundation' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByText(ADMIN_PROFILE.displayName)).toBeInTheDocument();
     expect(screen.getByText(/Demo Admin/)).toBeInTheDocument();
   });
@@ -144,12 +144,12 @@ describe('session lifecycle', () => {
     const client = stubApiClient();
 
     renderRoute({ client });
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 1, name: 'Foundation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Dashboard' })).not.toBeInTheDocument();
     expect(client.calls.filter((call) => call.path === '/auth/logout')).toHaveLength(1);
   });
 
@@ -158,13 +158,13 @@ describe('session lifecycle', () => {
     const client = stubApiClient({ logout: transportFailure });
 
     renderRoute({ client });
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Sign out did not complete. Please try again.');
-    expect(screen.getByRole('heading', { level: 1, name: 'Foundation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
   });
 
   it('does not claim a sign-out happened when the request is refused with a CSRF failure', async () => {
@@ -175,13 +175,13 @@ describe('session lifecycle', () => {
     const client = stubApiClient({ logout: csrfFailed });
 
     renderRoute({ client });
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Sign out did not complete. Please try again.');
-    expect(screen.getByRole('heading', { level: 1, name: 'Foundation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByText(ADMIN_PROFILE.displayName)).toBeInTheDocument();
   });
 
@@ -217,7 +217,7 @@ describe('session lifecycle', () => {
     };
 
     renderRoute({ client });
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
@@ -229,11 +229,13 @@ describe('session lifecycle', () => {
 
   it('returns to the sign-in screen when a protected route reports the session is gone', async () => {
     const base = stubApiClient();
-    // The bootstrap succeeds, so the product screen is shown, and the protected call that
-    // follows reports that the session no longer exists. The API, not the browser, decides.
+    // The bootstrap succeeds, so the product screen is shown, and the protected dashboard call
+    // that follows reports that the session no longer exists. The API, not the browser, decides.
     const client: ApiClient = {
       get: <TData,>(path: string, options?: { signal?: AbortSignal }) =>
-        path === '/health' ? Promise.reject(unauthenticated) : base.get<TData>(path, options),
+        path.startsWith('/dashboard')
+          ? Promise.reject(unauthenticated)
+          : base.get<TData>(path, options),
       post: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
         base.post<TData>(path, body, options),
       patch: <TData,>(path: string, body?: unknown, options?: ApiRequestOptions) =>
@@ -251,6 +253,6 @@ describe('session lifecycle', () => {
     renderRoute({ client });
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 1, name: 'Foundation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Dashboard' })).not.toBeInTheDocument();
   });
 });

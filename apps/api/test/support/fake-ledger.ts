@@ -6,7 +6,7 @@ import {
   staleRevision,
   validationFailed,
 } from '../../src/common/errors/domain.errors';
-import { parseBusinessDate } from '../../src/common/time/business-date';
+import { businessDateFromInstant, parseBusinessDate } from '../../src/common/time/business-date';
 import { hashToken } from '../../src/auth/token.util';
 import type { AuthenticatedSession } from '../../src/auth/session.service';
 import { normalizeCategoryName } from '../../src/database/categories/expense-category.repository';
@@ -508,7 +508,15 @@ export class FakeAudit {
 }
 
 export class FakeMembers {
-  public constructor(private readonly members: readonly FakeMember[]) {}
+  /**
+   * @param members      the stored members.
+   * @param createdAtById each member's `created_at` instant, keyed by id. Only the dashboard's
+   *   period-end member boundary needs it; the suites that do not exercise that boundary omit it.
+   */
+  public constructor(
+    private readonly members: readonly FakeMember[],
+    private readonly createdAtById: ReadonlyMap<string, Date> = new Map(),
+  ) {}
 
   public async findById(id: string): Promise<FakeMember> {
     const found = this.members.find((member) => member.id === id);
@@ -519,6 +527,63 @@ export class FakeMembers {
 
     return found;
   }
+
+  /**
+   * Members whose `created_at` falls on or before a business date, in `Asia/Kolkata`.
+   *
+   * Reproduces the real query's `AT TIME ZONE 'Asia/Kolkata'::date <= $1` rule. The zone matters:
+   * an instant recorded at `2026-09-30T19:00:00Z` is `2026-10-01` in Kolkata, so comparing raw
+   * instants would put that member in the wrong month.
+   */
+  public async countCreatedThrough(to: Date): Promise<number> {
+    const boundary = zonedDayNumber(to);
+
+    return this.members.filter((member) => zonedDayNumber(this.createdAtFor(member.id)) <= boundary)
+      .length;
+  }
+
+  /** Members whose `created_at` falls inside an inclusive month range, grouped by month. */
+  public async countCreatedByMonth(
+    from: Date,
+    to: Date,
+  ): Promise<readonly { readonly year: number; readonly month: number; readonly count: number }[]> {
+    const start = zonedDayNumber(from);
+    const end = zonedDayNumber(to);
+    const totals = new Map<number, number>();
+
+    for (const member of this.members) {
+      const created = this.createdAtFor(member.id);
+
+      if (zonedDayNumber(created) < start || zonedDayNumber(created) > end) {
+        continue;
+      }
+
+      const zoned = businessDateFromInstant(created);
+      const key = zoned.getUTCFullYear() * 100 + (zoned.getUTCMonth() + 1);
+      totals.set(key, (totals.get(key) ?? 0) + 1);
+    }
+
+    return [...totals.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([key, count]) => ({ year: Math.floor(key / 100), month: key % 100, count }));
+  }
+
+  /**
+   * The creation instant for a member.
+   *
+   * Defaults to `2026-01-01T04:00:00.000Z` — midnight on 1 January 2026 in Asia/Kolkata — which is
+   * "this member has been on the roll since before the demo year began". Using one shared default
+   * means a fixture that does not care about the boundary still reports a stable, early join date
+   * instead of an epoch date that would place it before every period.
+   */
+  private createdAtFor(id: string): Date {
+    return this.createdAtById.get(id) ?? new Date('2026-01-01T04:00:00.000Z');
+  }
+}
+
+/** The Asia/Kolkata calendar day of an instant, as a UTC-midnight epoch number. */
+function zonedDayNumber(instant: Date): number {
+  return businessDateFromInstant(instant).getTime();
 }
 
 export class FakePeriods {
@@ -531,7 +596,16 @@ export class FakePeriods {
 
   public readonly actors: string[] = [];
 
-  public constructor(private readonly periods: FakePeriod[]) {}
+  /**
+   * @param periods  the stored member-months.
+   * @param ledger   the shared ledger, needed only by `aggregateAmountsByMonthRange` to total
+   *   active contributions. Optional so the income, expense, and document suites keep their
+   *   one-argument construction; those never call the dashboard aggregate.
+   */
+  public constructor(
+    private readonly periods: FakePeriod[],
+    private readonly ledger?: FakeLedger,
+  ) {}
 
   public async findOrCreateWithinTransaction(
     _tx: unknown,
@@ -578,6 +652,68 @@ export class FakePeriods {
         return { period, receivedPaise: 0n };
       }),
     );
+  }
+
+  /**
+   * The dashboard's per-month bucket aggregate.
+   *
+   * Reproduces the real query's two halves: the `(year * 100 + month)` numeric key range, and a
+   * `LEFT JOIN` onto active `MEMBER_CONTRIBUTION` sums so a period with no payment reads as zero
+   * received rather than disappearing. Received amounts come from `this.transactions` so a
+   * contribution recorded through the HTTP routes is reflected here.
+   *
+   * Status is *not* decided here — `DashboardService` calls `deriveContributionStatus`, which is
+   * the single authority for that rule. Returning only the amounts is what keeps this double from
+   * becoming a second implementation of `REQ-CONTRIB-002`.
+   */
+  public async aggregateAmountsByMonthRange(
+    fromKey: number,
+    toKey: number,
+  ): Promise<
+    readonly {
+      readonly year: number;
+      readonly month: number;
+      readonly expectedPaise: bigint;
+      readonly receivedPaise: bigint;
+    }[]
+  > {
+    if (fromKey > toKey) {
+      return [];
+    }
+
+    const receivedByPeriodId = new Map<string, bigint>();
+
+    for (const row of this.ledger?.rows ?? []) {
+      // Active only, and member contributions only: the same filter the real `received` CTE
+      // applies, so a voided payment lowers what the month shows.
+      if (
+        row.status !== 'ACTIVE' ||
+        row.incomeType !== 'MEMBER_CONTRIBUTION' ||
+        row.contributionPeriodId === null
+      ) {
+        continue;
+      }
+
+      const found = receivedByPeriodId.get(row.contributionPeriodId) ?? 0n;
+      receivedByPeriodId.set(row.contributionPeriodId, found + row.amountPaise);
+    }
+
+    return this.periods
+      .filter((period) => {
+        const key = period.year * 100 + period.month;
+
+        return key >= fromKey && key <= toKey;
+      })
+      .sort(
+        (left, right) =>
+          left.year - right.year || left.month - right.month || left.id.localeCompare(right.id),
+      )
+      .map((period) => ({
+        year: period.year,
+        month: period.month,
+        expectedPaise: period.expectedPaise,
+        receivedPaise: receivedByPeriodId.get(period.id) ?? 0n,
+      }));
   }
 }
 

@@ -13,9 +13,12 @@ import { useSession } from '../../features/auth/SessionProvider';
  * **Only sections that exist are listed.** The rules name Dashboard, Members, Income,
  * Expenses, Documents, Reports, Audit History, and Settings as the eventual navigation, but
  * the same rules forbid presenting unimplemented behaviour as a completed feature, and no
- * dead control or `Coming Soon` placeholder is permitted. Members, Income, and Expenses are the
- * sections delivered so far; the rest appear in the phase that actually implements them, which
- * is why this navigation is shorter than the target rather than longer.
+ * dead control or `Coming Soon` placeholder is permitted. The Dashboard, Members, Income, and
+ * Expenses sections are delivered so far, along with the build-status screen; the rest appear in
+ * the phase that actually implements them, which is why this navigation is shorter than the
+ * target rather than longer. Receipts are attached from an expense or income record rather than
+ * having their own section, because a standalone document list would have nothing to show that
+ * the transaction it belongs to does not already show.
  */
 export function AppLayout() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -69,7 +72,7 @@ export function AppLayout() {
           >
             <ul className="flex flex-col gap-1 md:flex-row md:items-center md:gap-4">
               <NavigationItem to="/" end onNavigate={() => setIsMenuOpen(false)}>
-                Foundation
+                Dashboard
               </NavigationItem>
               <NavigationItem to="/members" onNavigate={() => setIsMenuOpen(false)}>
                 Members
@@ -79,6 +82,9 @@ export function AppLayout() {
               </NavigationItem>
               <NavigationItem to="/expenses" onNavigate={() => setIsMenuOpen(false)}>
                 Expenses
+              </NavigationItem>
+              <NavigationItem to="/foundation" onNavigate={() => setIsMenuOpen(false)}>
+                Status
               </NavigationItem>
             </ul>
           </nav>
@@ -91,8 +97,8 @@ export function AppLayout() {
 
       <footer className="border-t border-border-default bg-surface">
         <div className="mx-auto max-w-6xl px-6 py-4 text-supporting text-text-secondary">
-          Member, contribution, income, and expense records are stored in the HYSSOP FINANCE
-          database. Report, document, and settings sections are not yet available.
+          Member, contribution, income, expense, and receipt records are stored in the HYSSOP
+          FINANCE database. Church-wide reports and settings are not yet available.
         </div>
       </footer>
     </div>

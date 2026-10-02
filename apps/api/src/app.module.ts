@@ -7,6 +7,7 @@ import { ApiExceptionFilter } from './common/errors/api-exception.filter';
 import { RequestContextMiddleware } from './common/http/request-context.middleware';
 import { LoggingModule } from './common/logging/logging.module';
 import { loadAppEnvironment } from './config/environment.loader';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { DatabaseModule } from './database/database.module';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { DocumentsModule } from './documents/documents.module';
@@ -30,6 +31,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     AuthModule,
     HealthModule,
     MembersModule,
+    DashboardModule,
     TransactionsModule,
     IncomeModule,
     ExpensesModule,

@@ -13,21 +13,30 @@ import {
   unauthenticated,
 } from '../test/stub-client';
 
-describe('foundation shell routing', () => {
-  it('renders the application identity and the foundation screen', async () => {
-    renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+describe('application shell routing', () => {
+  it('lands a signed-in Admin on the dashboard', async () => {
+    renderRoute({ client: stubApiClient() });
+
+    // The dashboard is the index route, because `docs/03-UI-UX-RULES.md` makes it the landing
+    // screen. A test that lands on the build-status screen instead would mean the real financial
+    // summary had been demoted.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByText('HYSSOP FINANCE')).toBeInTheDocument();
+  });
+
+  it('shows the build-status screen at its own address', async () => {
+    renderRoute({ path: '/foundation', client: stubApiClient() });
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Foundation' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('HYSSOP FINANCE')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'API connectivity' })).toBeInTheDocument();
   });
 
   it('exposes a skip link and a main landmark for keyboard and screen-reader use', async () => {
-    renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+    renderRoute({ client: stubApiClient() });
 
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
     expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute(
       'href',
@@ -37,32 +46,28 @@ describe('foundation shell routing', () => {
   });
 
   it('names the features that are not built yet instead of showing placeholder figures', async () => {
-    renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+    renderRoute({ path: '/foundation', client: stubApiClient() });
 
     await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
     // The screen has to say what does not exist, so the Pastor is not left believing a
-    // missing screen is a broken one. Documents, reports, and settings are what remains, and
-    // the statement about receipts is the honest one: documents cannot be attached yet, so
-    // every expense truthfully reads Receipt Missing.
+    // missing screen is a broken one. Church-wide reports and settings are what remains.
     expect(
       screen.getByRole('heading', { level: 2, name: 'What is not in this build yet' }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Attaching receipts and other documents, church-wide reports/),
-    ).toBeVisible();
-    // No dashboard figures, because none are calculated for this screen.
+    expect(screen.getByText(/Church-wide printable reports with CSV export/)).toBeVisible();
+    // No financial table, because none is calculated for this screen.
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
   it('offers navigation only to the sections that are implemented', async () => {
-    renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+    renderRoute({ client: stubApiClient() });
 
-    await screen.findByRole('heading', { level: 1, name: 'Foundation' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
-    // A link to a screen that does not exist would be a dead control. Members, Income, and
-    // Expenses are the product sections built so far, so they are the only product links
-    // offered. Documents, reports, and settings arrive in later phases and are still absent
+    // A link to a screen that does not exist would be a dead control. Dashboard, Members,
+    // Income, Expenses, and the status screen are the sections built so far, so they are the
+    // only links offered. Reports and settings arrive in later phases and are still absent
     // here, which is what keeps this assertion honest.
     const navigation = screen.getByRole('navigation', { name: 'Primary' });
 
@@ -70,8 +75,7 @@ describe('foundation shell routing', () => {
       within(navigation)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Foundation', 'Members', 'Income', 'Expenses']);
-    expect(within(navigation).queryByRole('link', { name: /Documents/ })).not.toBeInTheDocument();
+    ).toEqual(['Dashboard', 'Members', 'Income', 'Expenses', 'Status']);
     expect(within(navigation).queryByRole('link', { name: /Reports/ })).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument();
   });
@@ -79,16 +83,16 @@ describe('foundation shell routing', () => {
   it('shows a not-found screen for an unknown address and returns home from it', async () => {
     const user = userEvent.setup();
 
-    renderRoute({ path: '/no-such-screen', client: clientResolvingWith(HEALTH_REPORT) });
+    renderRoute({ path: '/no-such-screen', client: stubApiClient() });
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Page not found' }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Back to foundation' }));
+    await user.click(screen.getByRole('link', { name: 'Back to dashboard' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: 'Foundation' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
     });
   });
 
@@ -103,8 +107,11 @@ describe('foundation shell routing', () => {
 });
 
 describe('connectivity status', () => {
+  // The connectivity card lives on the status screen, so these cases render `/foundation`. The
+  // dashboard does not show API health: a financial screen that reported its own transport as a
+  // banner would put an infrastructure detail beside every figure.
   it('shows the connected state with the reported service details', async () => {
-    renderRoute({ client: clientResolvingWith(HEALTH_REPORT) });
+    renderRoute({ path: '/foundation', client: clientResolvingWith(HEALTH_REPORT) });
 
     const status = await screen.findByTestId('health-status');
 
@@ -142,7 +149,7 @@ describe('connectivity status', () => {
         base.upload<TData>(path, form, options),
     };
 
-    renderRoute({ client });
+    renderRoute({ path: '/foundation', client });
 
     const status = await screen.findByTestId('health-status');
     expect(status).toHaveAttribute('data-state', 'unavailable');
@@ -157,7 +164,7 @@ describe('connectivity status', () => {
   });
 
   it('shows the request reference when the API reports a failure', async () => {
-    renderRoute({ client: clientFailingWith(serverFailure) });
+    renderRoute({ path: '/foundation', client: clientFailingWith(serverFailure) });
 
     const status = await screen.findByTestId('health-status');
 
