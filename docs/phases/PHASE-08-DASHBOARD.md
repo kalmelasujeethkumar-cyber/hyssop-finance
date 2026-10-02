@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires the ledger, contribution, income, expense, and document contracts to be available.
+- Status: `COMPLETE`; the quality gate passed on 2026-10-02 and the Git gate is recorded in `docs/runtime/PHASE-HISTORY.md`.
 - Preconditions: Phases 01–07 complete and the canonical calculation layer is reviewed.
 - Handoff rule: period movement and ending balances are separate labeled projections.
 
@@ -91,8 +91,8 @@ Revert or correct the aggregate service with a focused commit and regression tes
 
 ## Completion checklist
 
-- [ ] All required metrics and charts work.
-- [ ] All period filters work.
-- [ ] Values reconcile across dashboard, API, and database.
-- [ ] States and quick actions are real.
-- [ ] Documentation, tests, and Git gate complete.
+- [x] All required metrics and charts work.
+- [x] All period filters work.
+- [x] Values reconcile across dashboard, API, and database.
+- [x] States and quick actions are real.
+- [x] Documentation, tests, and Git gate complete.
