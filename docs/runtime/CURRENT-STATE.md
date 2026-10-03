@@ -15,18 +15,18 @@
 
 ## Current stage
 
-- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE), PHASE 07 — DOCUMENTS (COMPLETE), PHASE 08 — DASHBOARD (COMPLETE), PHASE 09 — REPORTS (COMPLETE), PHASE 10 — AUDIT AND SETTINGS (COMPLETE), PHASE 11 — UI INTEGRATION (QUALITY GATE PASSED)**
+- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE), PHASE 07 — DOCUMENTS (COMPLETE), PHASE 08 — DASHBOARD (COMPLETE), PHASE 09 — REPORTS (COMPLETE), PHASE 10 — AUDIT AND SETTINGS (COMPLETE), PHASE 11 — UI INTEGRATION (COMPLETE)**
 - Current phase: `PHASE-11-UI-INTEGRATION`
-- Status: **PHASE 11 QUALITY GATE PASSED; GIT GATE PENDING (implementation tree verified on 2026-10-03; commit and push not yet recorded)**
+- Status: **PHASE 11 GIT GATE CLOSED (implementation commit `c94f1aa23ec58682080c36543ddb553cd3d5e6bf` pushed and verified on 2026-10-03)**
 - Next gate: `PHASE-12-FINAL-QA`
 - Phase 06: **COMPLETE**; closed with commit `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479`
 - Phase 07: **COMPLETE**; closed with commit `2e1d778287da8d7c67c90cac2d25a63a80ba0e82`
 - Phase 08: **COMPLETE**; closed with commit `525493c63a99f43430558307401bf41ed4bca477`
 - Phase 09: **COMPLETE**; closed with commit `416080493a86fb827c597013518d7026b78c0198`
 - Phase 10: **COMPLETE**; closed with commit `6a5b1785ffa890d50d284c8920897718a98eee31`
-- Phase 11: **QUALITY GATE PASSED**; the accessible shell and the unsaved-work guard were delivered on 2026-10-03, Git gate pending
-- Application implementation: **PHASE 01 THROUGH PHASE 11 COMPLETE** (foundation, persistence, authentication, members, income, expenses, documents, dashboard, reports, audit and settings, UI integration); Phases 01–10 are closed and pushed, and Phase 11 is implemented pending its Git gate
-- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 through Phase 10 gates closed with recorded evidence; Phase 11 evidence is recorded and its commit hash is pending verification
+- Phase 11: **COMPLETE**; closed with commit `c94f1aa23ec58682080c36543ddb553cd3d5e6bf`
+- Application implementation: **PHASE 01 THROUGH PHASE 11 COMPLETE** (foundation, persistence, authentication, members, income, expenses, documents, dashboard, reports, audit and settings, UI integration); Phases 01–11 are closed and pushed
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 through Phase 11 gates closed with recorded evidence; the Phase 11 commit hash is recorded
 - Database migrations: **6 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`; Phase 06 through Phase 09 added none, Phase 10 added `20261003120000_audit_entity_reference_width` to widen `audit_event.entity_reference` from `VARCHAR(32)` to `VARCHAR(64)`, and Phase 11 added none
 - External services: **NOT CONFIGURED**
 
@@ -60,7 +60,9 @@ Phase 11 is implemented and its quality gate has passed on 2026-10-03. It owns `
 
 ## Next planned step
 
-Phase 11's quality gate has passed and its Git gate is pending: inspect the diff, stage only the intended Phase 11 files (excluding the machine-local `apps/api/.jest-audit-verbose.txt`), commit, push to `origin/main` without force, then verify with a fresh `git fetch` that `git rev-parse HEAD` equals `git rev-parse origin/main` and record the verified hash in `PHASE-HISTORY.md`, `TEST-RESULTS.md`, and this file.
+The Phase 11 Git gate is closed: 19 implementation and documentation files were committed as `c94f1aa23ec58682080c36543ddb553cd3d5e6bf` and pushed to `origin/main`; after a fresh `git fetch` `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash. A follow-up evidence-only documentation commit records the verified hash.
+
+Begin `PHASE-12-FINAL-QA` by rereading its phase contract and the applicable specifications.
 
 The Phase 10 Git gate is closed: 38 implementation and evidence files were committed as `6a5b1785ffa890d50d284c8920897718a98eee31` and pushed to `origin/main`; after a fresh `git fetch` `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash. A follow-up evidence-only documentation commit records the verified hash.
 
