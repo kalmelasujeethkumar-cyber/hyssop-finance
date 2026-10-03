@@ -31,6 +31,12 @@ describe('parseEnvironment', () => {
         loginRateLimitMaxAttempts: 5,
         loginRateLimitWindowMinutes: 15,
       },
+      rateLimit: {
+        mutation: { maxRequests: 300, windowMinutes: 1 },
+        search: { maxRequests: 300, windowMinutes: 1 },
+        upload: { maxRequests: 120, windowMinutes: 1 },
+        export: { maxRequests: 120, windowMinutes: 1 },
+      },
       storage: {
         driver: 'local',
         localStoragePath: './storage/uploads',

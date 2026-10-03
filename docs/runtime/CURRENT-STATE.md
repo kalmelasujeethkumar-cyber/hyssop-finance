@@ -15,20 +15,20 @@
 
 ## Current stage
 
-- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE), PHASE 07 — DOCUMENTS (COMPLETE), PHASE 08 — DASHBOARD (COMPLETE), PHASE 09 — REPORTS (COMPLETE), PHASE 10 — AUDIT AND SETTINGS (COMPLETE), PHASE 11 — UI INTEGRATION (COMPLETE)**
-- Current phase: `PHASE-11-UI-INTEGRATION`
-- Status: **PHASE 11 GIT GATE CLOSED (implementation commit `c94f1aa23ec58682080c36543ddb553cd3d5e6bf` pushed and verified on 2026-10-03)**
-- Next gate: `PHASE-12-FINAL-QA`
+- Current stage: **PHASE 05 — INCOME (COMPLETE), PHASE 06 — EXPENSES (COMPLETE), PHASE 07 — DOCUMENTS (COMPLETE), PHASE 08 — DASHBOARD (COMPLETE), PHASE 09 — REPORTS (COMPLETE), PHASE 10 — AUDIT AND SETTINGS (COMPLETE), PHASE 11 — UI INTEGRATION (COMPLETE), PHASE 12 — FINAL QA (QUALITY GATE PASSED, DEPLOYMENT BLOCKED)**
+- Current phase: `PHASE-12-FINAL-QA`
+- Status: **PHASE 12 LOCAL QUALITY GATE PASSED; DEPLOYMENT BLOCKED (`ISSUE-051`); GIT GATE PENDING (2026-10-03)**
+- Next gate: final demo deployment authorization (`TEST-DEPLOY-001`), then the Phase 12 Git gate and final report sign-off
 - Phase 06: **COMPLETE**; closed with commit `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479`
 - Phase 07: **COMPLETE**; closed with commit `2e1d778287da8d7c67c90cac2d25a63a80ba0e82`
 - Phase 08: **COMPLETE**; closed with commit `525493c63a99f43430558307401bf41ed4bca477`
 - Phase 09: **COMPLETE**; closed with commit `416080493a86fb827c597013518d7026b78c0198`
 - Phase 10: **COMPLETE**; closed with commit `6a5b1785ffa890d50d284c8920897718a98eee31`
 - Phase 11: **COMPLETE**; closed with commit `c94f1aa23ec58682080c36543ddb553cd3d5e6bf`
-- Application implementation: **PHASE 01 THROUGH PHASE 11 COMPLETE** (foundation, persistence, authentication, members, income, expenses, documents, dashboard, reports, audit and settings, UI integration); Phases 01–11 are closed and pushed
-- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 through Phase 11 gates closed with recorded evidence; the Phase 11 commit hash is recorded
-- Database migrations: **6 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`; Phase 06 through Phase 09 added none, Phase 10 added `20261003120000_audit_entity_reference_width` to widen `audit_event.entity_reference` from `VARCHAR(32)` to `VARCHAR(64)`, and Phase 11 added none
-- External services: **NOT CONFIGURED**
+- Application implementation: **PHASE 01 THROUGH PHASE 12 IMPLEMENTED** (foundation, persistence, authentication, members, income, expenses, documents, dashboard, reports, audit and settings, UI integration, final QA); Phases 01–11 are closed and pushed, and Phase 12 has passed its complete local quality gate with its required deployment recorded `BLOCKED`
+- Documentation: Prompt 01 baseline and Prompt 01B hardening pushed; Phase 01 through Phase 11 gates closed with recorded evidence; the Phase 12 local quality gate and deployment `BLOCKED` are recorded and the Phase 12 Git gate is pending
+- Database migrations: **6 REVIEWED MIGRATIONS APPLIED** to `hyssop_finance_dev` and `hyssop_finance_test`; Phase 06 through Phase 09 added none, Phase 10 added `20261003120000_audit_entity_reference_width` to widen `audit_event.entity_reference` from `VARCHAR(32)` to `VARCHAR(64)`, and Phase 11 and Phase 12 added none
+- External services: **NOT CONFIGURED**; the Phase 12 demo deployment is recorded `BLOCKED` (`ISSUE-051`) because no hosting target is authorized and no account, credential, or paid service has been accessed
 
 ## Progress
 
@@ -60,9 +60,9 @@ Phase 11 is implemented and its quality gate has passed on 2026-10-03. It owns `
 
 ## Next planned step
 
-The Phase 11 Git gate is closed: 19 implementation and documentation files were committed as `c94f1aa23ec58682080c36543ddb553cd3d5e6bf` and pushed to `origin/main`; after a fresh `git fetch` `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash. A follow-up evidence-only documentation commit records the verified hash.
+Phase 12 has passed its complete local quality gate. One mandated control was found missing and fixed with regression tests: the upload/search/export/mutation rate limits `docs/07-SECURITY-RULES.md` requires were not implemented beyond the login limiter (`ISSUE-050`), now enforced by a general in-process `RequestRateLimiter`, a global `RateLimitGuard` after `SessionGuard`, and a `@RateLimit` decorator (`DEC-106`). The whole gate was then re-run from the beginning: `npm run verify` exited `0` (lint, typecheck, `typecheck:scripts`, 38 API suites / 770 tests, 21 web files / 501 tests, both builds, `format:check`), `npm run test:db` passed 13 suites / 250 real-PostgreSQL tests, `npm run test:e2e` reported `66 passed` with no rate-limit rejections, and `db:validate`, `db:status` (6 migrations, up to date), and `db:drift` (no difference) are clean. The required demo deployment (`TEST-DEPLOY-001`) cannot proceed without external-service authorization, so it is recorded `BLOCKED` as `ISSUE-051` and the final readiness status is **BLOCKED — DEPLOYMENT NOT AUTHORIZED**, never a fabricated `READY`.
 
-Begin `PHASE-12-FINAL-QA` by rereading its phase contract and the applicable specifications.
+The Phase 11 Git gate is closed: 19 implementation and documentation files were committed as `c94f1aa23ec58682080c36543ddb553cd3d5e6bf` and pushed to `origin/main`; after a fresh `git fetch` `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash. A follow-up evidence-only documentation commit records the verified hash.
 
 The Phase 10 Git gate is closed: 38 implementation and evidence files were committed as `6a5b1785ffa890d50d284c8920897718a98eee31` and pushed to `origin/main`; after a fresh `git fetch` `git rev-parse HEAD` and `git rev-parse origin/main` both return that hash. A follow-up evidence-only documentation commit records the verified hash.
 
@@ -78,7 +78,7 @@ The Phase 05 Git gate is closed: 45 files were committed as `c639fa89504ee5be09e
 
 ## Blockers
 
-No current blockers are known. Twelve advisories are recorded in `docs/runtime/ISSUES.md` (`ISSUE-011` through `ISSUE-016`, `ISSUE-021`, `ISSUE-022`, `ISSUE-023`, and the resolved `ISSUE-024`); none of them blocks the phase, and each records the condition that would require user approval. `ISSUE-021` (a new sign-in currently leaves an earlier session live), `ISSUE-022` (the login rate limit is per API process), and `ISSUE-023` (the contribution-period panel shows only the current business year) are recorded rather than silently decided, because no locked requirement owns any of those behaviors. `ISSUE-025` through `ISSUE-045` are resolved, including the three Phase 08 findings; `ISSUE-040` and its Phase 08 recurrence `ISSUE-045` (the project-local PostgreSQL cluster inside the OneDrive-synchronised workspace) are environmental rather than project defects, so a further recurrence with no authorized non-OneDrive location available must be reported as `PHASE 11: BLOCKED — DATABASE GATE` rather than worked around. The condition did not recur for Phase 09, whose gate used the documented start path, and it did not recur for Phase 10, whose cluster was already accepting connections on the documented port. Phase 10 recorded and resolved four findings (`ISSUE-046` the too-narrow `audit_event.entity_reference` column, `ISSUE-047` a doubled `/api/v1` prefix in the browser audit/settings clients, `ISSUE-048` settings writes that omitted the CSRF token, and `ISSUE-049` an audit filter error that misreported a bad vocabulary value as a date), so no `ISSUE-050` or later entry exists. Phase 11 recorded no new finding and the cluster condition did not recur, so `ISSUE-050` still does not exist. If a locked-requirement conflict, authorization need, secret requirement, or unsafe operation arises, record it in `docs/runtime/ISSUES.md` and stop.
+One blocker is open. Phase 12's required demo deployment (`TEST-DEPLOY-001`) is recorded `BLOCKED` as `ISSUE-051`: no hosting target is configured or authorized and no external service has been accessed, so per `docs/12-DEPLOYMENT-PLAN.md` and `AGENTS.md` the phase stops and asks the user for an authorized path or an explicit local-only acceptance, and the final readiness status is **BLOCKED — DEPLOYMENT NOT AUTHORIZED**, not `READY`. The Phase 12 adversarial review found and resolved one mandated gap, `ISSUE-050` (the missing upload/search/export/mutation rate limits), fixed under `DEC-106` and covered by unit and real-HTTP regression tests. The remaining advisories are non-blocking and were recorded rather than silently decided: `ISSUE-011` (Nest CLI Node engine warning), `ISSUE-012` (NestJS internal legacy-route advisory), `ISSUE-013` (partial-index deviation), `ISSUE-014` (Prisma-CLI-only `deepmerge-ts` advisory), `ISSUE-015` (Prisma 7 configuration deprecation), `ISSUE-016` (unverified Docker/Compose path), `ISSUE-021` (a new sign-in leaves an earlier session live), `ISSUE-022` (the rate limit is per API process, now also bounding `DEC-106`), and `ISSUE-023` (the contribution-period panel shows only the current business year). `ISSUE-024` through `ISSUE-049` are resolved, including `ISSUE-046` through `ISSUE-049` from Phase 10, and `ISSUE-050` from Phase 12. The `ISSUE-040`/`ISSUE-045` OneDrive-synchronised cluster condition is environmental rather than a project defect and did not recur for Phase 09, Phase 10, Phase 11, or Phase 12. If a locked-requirement conflict, authorization need, secret requirement, or unsafe operation arises, record it in `docs/runtime/ISSUES.md` and stop.
 
 ## Authorization reminder
 

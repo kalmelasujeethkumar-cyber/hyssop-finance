@@ -19,6 +19,7 @@ import {
   type LogoutResult,
 } from '@hyssop/contracts';
 import type { Request, Response } from 'express';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { getAppEnvironment } from '../config/environment';
 import { CurrentSession, Public } from './auth.decorators';
 import { AuthCookieService } from './auth-cookie.service';
@@ -52,6 +53,7 @@ export class AuthController {
   @Post('login')
   @Version('1')
   @Public()
+  @RateLimit('none')
   @HttpCode(HttpStatus.OK)
   public async login(
     @Body() body: LoginRequestDto,
@@ -95,6 +97,7 @@ export class AuthController {
   @Post('logout')
   @Version('1')
   @Public()
+  @RateLimit('none')
   @HttpCode(HttpStatus.OK)
   public async logout(
     @Req() request: Request,

@@ -10,10 +10,15 @@ import {
   DEFAULT_ARGON2_MEMORY_KIB,
   DEFAULT_ARGON2_PARALLELISM,
   DEFAULT_CSRF_TTL_MINUTES,
+  DEFAULT_EXPORT_RATE_LIMIT_MAX_REQUESTS,
   DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
   DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES,
+  DEFAULT_MUTATION_RATE_LIMIT_MAX_REQUESTS,
+  DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+  DEFAULT_SEARCH_RATE_LIMIT_MAX_REQUESTS,
   DEFAULT_SESSION_TTL_HOURS,
   DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
   type AppEnvironment,
 } from '../../src/config/environment';
 
@@ -47,6 +52,32 @@ export const TEST_STORAGE_ENVIRONMENT: AppEnvironment['storage'] = {
 };
 
 /**
+ * General request-abuse ceilings for HTTP-level tests.
+ *
+ * The documented defaults are used unchanged so the shared instance cannot accidentally refuse a
+ * test's own work. A suite that proves the threshold builds its own application with explicit low
+ * values instead, exactly as the login rate-limit suite does.
+ */
+export const TEST_RATE_LIMIT_ENVIRONMENT: AppEnvironment['rateLimit'] = {
+  mutation: {
+    maxRequests: DEFAULT_MUTATION_RATE_LIMIT_MAX_REQUESTS,
+    windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+  },
+  search: {
+    maxRequests: DEFAULT_SEARCH_RATE_LIMIT_MAX_REQUESTS,
+    windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+  },
+  upload: {
+    maxRequests: DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+    windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+  },
+  export: {
+    maxRequests: DEFAULT_EXPORT_RATE_LIMIT_MAX_REQUESTS,
+    windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+  },
+};
+
+/**
  * Cookie policy for HTTP-level tests. The names are stable so a test can assert on them,
  * and the CSRF cookie is expected to be readable by script, unlike the session cookie.
  */
@@ -74,6 +105,7 @@ export const TEST_ENVIRONMENT: AppEnvironment = {
   databaseUrl: TEST_DATABASE_URL,
   directDatabaseUrl: TEST_DIRECT_DATABASE_URL,
   auth: TEST_AUTH_ENVIRONMENT,
+  rateLimit: TEST_RATE_LIMIT_ENVIRONMENT,
   storage: TEST_STORAGE_ENVIRONMENT,
 };
 
@@ -110,6 +142,19 @@ export function authEnvironmentProcessVariables(
   };
 }
 
+/** Every general request-abuse variable, so a suite can set them for its own application. */
+export function rateLimitEnvironmentProcessVariables(
+  rateLimit: AppEnvironment['rateLimit'] = TEST_RATE_LIMIT_ENVIRONMENT,
+): Record<string, string> {
+  return {
+    MUTATION_RATE_LIMIT_MAX_REQUESTS: String(rateLimit.mutation.maxRequests),
+    SEARCH_RATE_LIMIT_MAX_REQUESTS: String(rateLimit.search.maxRequests),
+    UPLOAD_RATE_LIMIT_MAX_REQUESTS: String(rateLimit.upload.maxRequests),
+    EXPORT_RATE_LIMIT_MAX_REQUESTS: String(rateLimit.export.maxRequests),
+    RATE_LIMIT_WINDOW_MINUTES: String(rateLimit.mutation.windowMinutes),
+  };
+}
+
 /**
  * `ConfigModule` reads `process.env` while the module initializes, so the test
  * environment is applied and then restored around the module lifecycle.
@@ -123,6 +168,7 @@ export function applyTestProcessEnvironment(overrides: Record<string, string | u
     'DATABASE_URL',
     'DIRECT_DATABASE_URL',
     ...Object.keys(authEnvironmentProcessVariables()),
+    ...Object.keys(rateLimitEnvironmentProcessVariables()),
     ...Object.keys(overrides),
   ];
 
@@ -137,6 +183,10 @@ export function applyTestProcessEnvironment(overrides: Record<string, string | u
   process.env['DIRECT_DATABASE_URL'] = TEST_DIRECT_DATABASE_URL;
 
   for (const [key, value] of Object.entries(authEnvironmentProcessVariables())) {
+    process.env[key] = value;
+  }
+
+  for (const [key, value] of Object.entries(rateLimitEnvironmentProcessVariables())) {
     process.env[key] = value;
   }
 

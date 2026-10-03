@@ -54,6 +54,15 @@ export default defineConfig({
         // rate-limit message are verified against the documented values in
         // `apps/api/test/database/auth-http.db-spec.ts`.
         LOGIN_RATE_LIMIT_MAX_ATTEMPTS: '100',
+        // The same reasoning applies to the general abuse ceilings: the suite drives one
+        // Admin through several journeys from one address, and one shared in-memory limiter.
+        // Only this throwaway test process is opened wider; the documented defaults and the
+        // generic 429 envelope are verified for every category in
+        // `apps/api/test/database/rate-limit-http.db-spec.ts`.
+        MUTATION_RATE_LIMIT_MAX_REQUESTS: '5000',
+        SEARCH_RATE_LIMIT_MAX_REQUESTS: '5000',
+        UPLOAD_RATE_LIMIT_MAX_REQUESTS: '500',
+        EXPORT_RATE_LIMIT_MAX_REQUESTS: '500',
       },
     },
     {

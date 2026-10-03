@@ -19,6 +19,7 @@ import type { Response } from 'express';
 import { CurrentRequestId, CurrentSession } from '../auth/auth.decorators';
 import type { AuthenticatedSession } from '../auth/session.service';
 import { IDEMPOTENCY_KEY_HEADER, readIdempotencyKey } from '../common/http/idempotency';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { MAX_UPLOAD_MAX_BYTES } from '../config/environment';
 import { DocumentIdParamDto, RemoveDocumentDto, TransactionIdParamDto } from './dto/document.dto';
 import {
@@ -160,6 +161,7 @@ export class TransactionDocumentsController {
   @Post(':id/documents')
   @Version('1')
   @HttpCode(HttpStatus.CREATED)
+  @RateLimit('upload')
   @UseInterceptors(
     FileInterceptor(DOCUMENT_UPLOAD_FIELD, {
       limits: { files: 1, fileSize: MAX_UPLOAD_MAX_BYTES },

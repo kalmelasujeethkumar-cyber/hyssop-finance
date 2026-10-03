@@ -36,6 +36,23 @@ export const DEFAULT_CSRF_TTL_MINUTES = 15;
 export const DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5;
 export const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES = 15;
 
+/**
+ * General request-abuse ceilings.
+ *
+ * Authority: `docs/07-SECURITY-RULES.md` requires "safe login, upload, search, export, and
+ * mutation limits", and the login control above covers only sign-in. These four ceilings cover
+ * the remaining categories the document names. They are validated, named values rather than
+ * constants in the guard so an operator can tighten them without a code change, and the defaults
+ * are deliberately generous: the demo has one Admin, so a limit that a single deliberate session
+ * can reach would refuse honest work rather than abuse. `RATE_LIMIT_WINDOW_MINUTES` is shared by
+ * all four categories.
+ */
+export const DEFAULT_RATE_LIMIT_WINDOW_MINUTES = 1;
+export const DEFAULT_MUTATION_RATE_LIMIT_MAX_REQUESTS = 300;
+export const DEFAULT_SEARCH_RATE_LIMIT_MAX_REQUESTS = 300;
+export const DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS = 120;
+export const DEFAULT_EXPORT_RATE_LIMIT_MAX_REQUESTS = 120;
+
 /** Maximum session lifetime, so a mistyped value cannot create a permanent session. */
 export const MAX_SESSION_TTL_HOURS = 720;
 /**
@@ -97,6 +114,24 @@ export interface AuthEnvironment {
   readonly loginRateLimitWindowMinutes: number;
 }
 
+/** One request-abuse ceiling: at most `maxRequests` per `windowMinutes`, per client. */
+export interface RateLimitRule {
+  readonly maxRequests: number;
+  readonly windowMinutes: number;
+}
+
+/**
+ * The non-login abuse ceilings of `docs/07-SECURITY-RULES.md`. Login keeps its own dedicated,
+ * pre-credential limiter (see `DEC-066`); these cover uploads, searches, exports, and every
+ * state-changing method.
+ */
+export interface RateLimitEnvironment {
+  readonly mutation: RateLimitRule;
+  readonly search: RateLimitRule;
+  readonly upload: RateLimitRule;
+  readonly export: RateLimitRule;
+}
+
 export interface AppEnvironment {
   readonly nodeEnv: NodeEnvironment;
   readonly port: number;
@@ -107,6 +142,8 @@ export interface AppEnvironment {
   /** Schema-owner connection string used only by migration commands, when configured. */
   readonly directDatabaseUrl: string | null;
   readonly auth: AuthEnvironment;
+  /** Phase 12 general request-abuse ceilings. */
+  readonly rateLimit: RateLimitEnvironment;
   /** Phase 07 document storage. `docs/02-ARCHITECTURE.md` "Storage boundary". */
   readonly storage: StorageEnvironment;
 }
@@ -151,6 +188,7 @@ export function parseEnvironment(source: EnvironmentSource): AppEnvironment {
   const databaseUrl = parseDatabaseUrl(source['DATABASE_URL'], problems);
   const directDatabaseUrl = parseDirectDatabaseUrl(source['DIRECT_DATABASE_URL'], problems);
   const auth = parseAuthEnvironment(source, problems);
+  const rateLimit = parseRateLimitEnvironment(source, problems);
   const storage = parseStorageEnvironment(source, problems);
 
   if (problems.length > 0) {
@@ -165,6 +203,7 @@ export function parseEnvironment(source: EnvironmentSource): AppEnvironment {
     databaseUrl,
     directDatabaseUrl,
     auth,
+    rateLimit,
     storage,
   };
 }
@@ -385,6 +424,39 @@ export function parseAuthEnvironment(
     argon2,
     loginRateLimitMaxAttempts,
     loginRateLimitWindowMinutes,
+  };
+}
+
+/**
+ * Parses the general request-abuse ceilings.
+ *
+ * Every value is bounded on both sides. A zero ceiling would refuse the very action the limit is
+ * meant to protect rather than abuse it, and an enormous one would be no limit at all; both are
+ * caught at startup so a mistyped `.env` fails loudly instead of silently changing the posture.
+ */
+export function parseRateLimitEnvironment(
+  source: EnvironmentSource,
+  problems: string[],
+): RateLimitEnvironment {
+  const windowMinutes = parseBoundedNumber(
+    source['RATE_LIMIT_WINDOW_MINUTES'],
+    'RATE_LIMIT_WINDOW_MINUTES',
+    DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+    1,
+    1440,
+    problems,
+  );
+
+  const rule = (variable: string, fallback: number): RateLimitRule => ({
+    maxRequests: parseBoundedNumber(source[variable], variable, fallback, 1, 100_000, problems),
+    windowMinutes,
+  });
+
+  return {
+    mutation: rule('MUTATION_RATE_LIMIT_MAX_REQUESTS', DEFAULT_MUTATION_RATE_LIMIT_MAX_REQUESTS),
+    search: rule('SEARCH_RATE_LIMIT_MAX_REQUESTS', DEFAULT_SEARCH_RATE_LIMIT_MAX_REQUESTS),
+    upload: rule('UPLOAD_RATE_LIMIT_MAX_REQUESTS', DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS),
+    export: rule('EXPORT_RATE_LIMIT_MAX_REQUESTS', DEFAULT_EXPORT_RATE_LIMIT_MAX_REQUESTS),
   };
 }
 

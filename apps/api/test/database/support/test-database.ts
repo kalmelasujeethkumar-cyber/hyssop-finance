@@ -23,10 +23,15 @@ import {
   DEFAULT_ARGON2_MEMORY_KIB,
   DEFAULT_ARGON2_PARALLELISM,
   DEFAULT_CSRF_TTL_MINUTES,
+  DEFAULT_EXPORT_RATE_LIMIT_MAX_REQUESTS,
   DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
   DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MINUTES,
+  DEFAULT_MUTATION_RATE_LIMIT_MAX_REQUESTS,
+  DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+  DEFAULT_SEARCH_RATE_LIMIT_MAX_REQUESTS,
   DEFAULT_SESSION_TTL_HOURS,
   DEFAULT_UPLOAD_MAX_BYTES,
+  DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
   type AppEnvironment,
 } from '../../../src/config/environment';
 import { AuditEventRepository } from '../../../src/database/audit/audit-event.repository';
@@ -123,10 +128,36 @@ export function testAppEnvironment(overrides: Partial<AppEnvironment> = {}): App
     databaseUrl: 'postgresql://unused/used-by-injection',
     directDatabaseUrl: null,
     auth: testAuthEnvironment(),
+    rateLimit: testRateLimitEnvironment(),
     storage: {
       driver: 'local',
       localStoragePath: join(tmpdir(), 'hyssop-finance-test-storage'),
       uploadMaxBytes: DEFAULT_UPLOAD_MAX_BYTES,
+    },
+    ...overrides,
+  };
+}
+
+/** Documented default abuse ceilings, so a repository suite cannot accidentally be limited. */
+export function testRateLimitEnvironment(
+  overrides: Partial<AppEnvironment['rateLimit']> = {},
+): AppEnvironment['rateLimit'] {
+  return {
+    mutation: {
+      maxRequests: DEFAULT_MUTATION_RATE_LIMIT_MAX_REQUESTS,
+      windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+    },
+    search: {
+      maxRequests: DEFAULT_SEARCH_RATE_LIMIT_MAX_REQUESTS,
+      windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+    },
+    upload: {
+      maxRequests: DEFAULT_UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+      windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
+    },
+    export: {
+      maxRequests: DEFAULT_EXPORT_RATE_LIMIT_MAX_REQUESTS,
+      windowMinutes: DEFAULT_RATE_LIMIT_WINDOW_MINUTES,
     },
     ...overrides,
   };

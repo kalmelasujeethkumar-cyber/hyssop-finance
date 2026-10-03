@@ -7,6 +7,8 @@ import { SessionGuard } from './auth/session.guard';
 import { ApiExceptionFilter } from './common/errors/api-exception.filter';
 import { RequestContextMiddleware } from './common/http/request-context.middleware';
 import { LoggingModule } from './common/logging/logging.module';
+import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
+import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { loadAppEnvironment } from './config/environment.loader';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DatabaseModule } from './database/database.module';
@@ -31,6 +33,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     LoggingModule,
     PrismaModule,
     DatabaseModule,
+    RateLimitModule,
     AuthModule,
     HealthModule,
     MembersModule,
@@ -53,6 +56,13 @@ import { TransactionsModule } from './transactions/transactions.module';
       // added in a later phase cannot be reachable without a session by accident.
       provide: APP_GUARD,
       useClass: SessionGuard,
+    },
+    {
+      // Registered after `SessionGuard` so an unauthenticated request is answered `401`, not
+      // `429`. Mutations are limited by default and reads are not, so a new mutating route is
+      // covered unless it is deliberately annotated.
+      provide: APP_GUARD,
+      useClass: RateLimitGuard,
     },
   ],
 })

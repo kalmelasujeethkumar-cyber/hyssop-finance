@@ -23,6 +23,7 @@ import {
   type TransactionType,
 } from '@hyssop/contracts';
 import { validationFailed } from '../common/errors/domain.errors';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import {
   currentBusinessDate,
   resolvePeriod,
@@ -182,6 +183,7 @@ export class ReportsController {
   @Get(':reportId/export.csv')
   @Version('1')
   @HttpCode(HttpStatus.OK)
+  @RateLimit('export')
   public async exportCsv(
     @Param() params: ReportIdParamDto,
     @Query() query: ReportQueryDto,
@@ -254,6 +256,7 @@ export class SearchController {
   @Get()
   @Version('1')
   @HttpCode(HttpStatus.OK)
+  @RateLimit('search')
   public async search(@Query() query: SearchQueryDto): Promise<{ data: GlobalSearchResponse }> {
     return success(
       await this.reports.search({
