@@ -65,7 +65,7 @@ async function loadContract() {
 }
 
 function main() {
-  const settings = readDotEnv();
+  const settings = process.env['HYSSOP_ADMIN_BOOTSTRAP_IGNORE_DOTENV'] === '1' ? {} : readDotEnv();
   const password = process.env['HYSSOP_ADMIN_PASSWORD'] ?? settings['HYSSOP_ADMIN_PASSWORD'];
   const identifier = (
     process.env['HYSSOP_ADMIN_IDENTIFIER'] ??

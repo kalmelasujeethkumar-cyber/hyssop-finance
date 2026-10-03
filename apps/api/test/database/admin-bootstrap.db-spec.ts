@@ -82,7 +82,10 @@ describe('the Admin bootstrap command', () => {
   });
 
   it('refuses to run without a password, and names the variable it needs', () => {
-    const result = runBootstrap({ DIRECT_DATABASE_URL: migrationUrl });
+    const result = runBootstrap({
+      DIRECT_DATABASE_URL: migrationUrl,
+      HYSSOP_ADMIN_BOOTSTRAP_IGNORE_DOTENV: '1',
+    });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('HYSSOP_ADMIN_PASSWORD');
