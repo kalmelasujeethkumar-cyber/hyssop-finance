@@ -13,7 +13,7 @@ Provide and verify a demo deployment on free-tier infrastructure where practical
 
 ## Current prompt status
 
-No deployment has been configured. No account has been accessed, no credentials have been created or requested, and nothing has been purchased. Platform capabilities must be verified at actual deployment time because free-tier limits, regional availability, session behavior, storage, and database options change.
+The Netlify frontend target is authorized and a repository-root `netlify.toml` now defines its build (`npm run build:contracts && npm run build:web`), publish directory (`apps/web/dist`), Node version, and SPA fallback, fixing the `TS2307 Cannot find module '@hyssop/contracts'` workspace-resolution failure (`DEC-107`). The hosted deployment itself has not been performed or smoke-tested from this workspace, and no account, credential, or paid service has been accessed here. Platform capabilities must be verified at actual deployment time because free-tier limits, regional availability, session behavior, storage, and database options change.
 
 ## Candidate shape
 

@@ -7,9 +7,9 @@
 - Referenced by: external review and the final completion gate.
 - Change rule: report only observed evidence; keep the status `NOT READY` until the implementation and QA requirements are actually satisfied.
 
-**STATUS: BLOCKED — DEPLOYMENT NOT AUTHORIZED**
+**STATUS: NOT READY — DEPLOYMENT CONFIGURED, HOSTED VERIFICATION PENDING**
 
-The complete local implementation and quality gate is green (Phases 01–11 implemented and pushed; Phase 12 adversarial QA passed with one mandated control gap found and fixed). The final status is not `READY` because Phase 12's required demo deployment (`TEST-DEPLOY-001`) has no authorized target: no hosting account has been accessed, no environment or database association exists, and no durable document-storage adapter has been selected. That is recorded `BLOCKED` as `ISSUE-051`. A local-only run is not a deployment, so this report does not claim one.
+The complete local implementation and quality gate is green (Phases 01–11 implemented and pushed; Phase 12 adversarial QA passed with one mandated control gap found and fixed). The final status is not `READY` because Phase 12's required demo deployment (`TEST-DEPLOY-001`) has not been performed or smoke-tested. Netlify is authorized as the frontend target (`DEC-013`) and the `TS2307 Cannot find module '@hyssop/contracts'` build failure is fixed by a repository-root `netlify.toml` that compiles the contracts package before the web app (`DEC-107`), verified locally; but no hosted deployment exists yet, `VITE_API_BASE_URL` is not set on a host, the separate backend, PostgreSQL, and durable document-storage targets are not associated, and no live URL has been smoke-tested. That is recorded `OPEN` as `ISSUE-051`. A local-only run is not a deployment, so this report does not claim one.
 
 ## Report identity
 
@@ -17,7 +17,7 @@ The complete local implementation and quality gate is green (Phases 01–11 impl
 - Version or commit: Phase 12 verified commit `c1314b69a0d73c289136346caa6741472fb5b897` (`origin/main`); the preceding Phase 11 verified state was `b9d14f0de6001736e139310e52b91a451b0aa00c`
 - Report date: 2026-10-03
 - Prepared by: OpenCode, Phase 12 final QA
-- Deployment environment: **none** — no deployment target is authorized (`ISSUE-051`)
+- Deployment environment: **Netlify authorized frontend target, not accessed from this workspace** — a repository-root `netlify.toml` fixes the `TS2307` workspace-resolution build failure (`DEC-107`), and the hosted deployment is unverified (`ISSUE-051`)
 - Local run instructions: repository-root npm scripts (`npm run db:start`, `npm run db:migrate`, `npm run admin:bootstrap`, `npm run dev`), with configuration read from a repository-root `.env` (only `.env.example` is tracked)
 - Demo login guidance: one Admin is provisioned through the approved `npm run admin:bootstrap` path; no credential is published in this report or in the repository
 
@@ -29,7 +29,7 @@ The complete local implementation and quality gate is green (Phases 01–11 impl
 - Database and Prisma status: implemented — PostgreSQL 16 with 6 reviewed forward migrations; money is exact `BIGINT` paise; database-enforced transaction, void, period, reference, and append-only audit invariants
 - Authentication status: implemented — single Admin, Argon2id password hashing, opaque revocable server-side sessions, HTTP-only session cookie and CSRF cookie, origin-bound single-use pre-auth CSRF, login rate limiting
 - Storage adapter status: implemented — reusable `DocumentStorage` abstraction with a project-controlled local adapter; bytes never stored in PostgreSQL
-- Deployment status: **BLOCKED** — no authorized target (`ISSUE-051`)
+- Deployment status: **NOT READY** — build config added and locally verified, hosted deployment pending (`ISSUE-051`)
 
 ## Phase status
 
@@ -47,7 +47,7 @@ The complete local implementation and quality gate is green (Phases 01–11 impl
 | 09 Reports | COMPLETE | `416080493a86fb827c597013518d7026b78c0198` | Eleven reports, search, CSV, print |
 | 10 Audit and Settings | COMPLETE | `6a5b1785ffa890d50d284c8920897718a98eee31` | Audit history, limited settings, audited changes |
 | 11 UI Integration | COMPLETE | `c94f1aa23ec58682080c36543ddb553cd3d5e6bf` | Responsive accessible shell, unsaved-work guard |
-| 12 Final QA | LOCAL QUALITY GATE PASSED, DEPLOYMENT BLOCKED | pending Git gate | Adversarial QA, rate-limit fix, complete regression, deployment `BLOCKED` |
+| 12 Final QA | LOCAL QUALITY GATE PASSED, GIT GATE PASSED, DEPLOYMENT BUILD CONFIG ADDED | `c1314b69a0d73c289136346caa6741472fb5b897` | Adversarial QA, rate-limit fix, complete regression, Netlify build config added and locally verified, hosted deployment pending (`ISSUE-051`) |
 
 ## Verification evidence
 
@@ -63,7 +63,7 @@ The complete local implementation and quality gate is green (Phases 01–11 impl
 - Responsive and accessibility result: responsive shell journeys (desktop sidebar, mobile drawer, no overflow at 360–1440 px) pass; charts carry readable equivalents
 - Security checks: no `dangerouslySetInnerHTML`/`innerHTML`/`eval`/`new Function`; opt-out-only global session guard; mandated upload/search/export/mutation rate limits implemented and tested (`TEST-SEC-001`); CSRF and authorization suites re-run
 - Production build result: contracts declaration build, `nest build`, and `vite build` all pass
-- Deployment and smoke-test result: **not performed** — no authorized deployment target (`ISSUE-051`)
+- Deployment and smoke-test result: **not performed from this workspace** — Netlify is the authorized frontend target and a repository-root `netlify.toml` fixes the `TS2307` workspace-resolution build failure (`DEC-107`), locally verified; the hosted redeploy and `TEST-DEPLOY-001` smoke test remain pending (`ISSUE-051`)
 
 ## Financial integrity evidence
 
@@ -90,13 +90,13 @@ The documented financial scenario is verified by deterministic real-PostgreSQL t
 | ID | Found in | Severity | Root cause | Fix | Regression evidence | Status |
 |---|---|---|---|---|---|---|
 | `ISSUE-050` | Phase 12 | Security control gap | `docs/07-SECURITY-RULES.md` required safe login/upload/search/export/mutation limits, but only the login limiter existed | General in-process `RequestRateLimiter`, global `RateLimitGuard` after `SessionGuard`, `@RateLimit` decorator, validated configuration (`DEC-106`) | `request-rate-limiter.service.spec.ts`, `rate-limit.guard.spec.ts`, and the real-HTTP `rate-limit-http.db-spec.ts` (`TEST-SEC-001`) for every category | RESOLVED |
-| `ISSUE-051` | Phase 12 | Acceptance blocker | No authorized deployment target exists | None — recorded honestly, no external service touched | Local-only run explicitly is not a deployment | BLOCKED |
+| `ISSUE-051` | Phase 12 | Acceptance item | Netlify frontend build failed with `TS2307 Cannot find module '@hyssop/contracts'` because the workspace-linked contracts package's generated `dist/` was not built before the web typecheck, and no hosted deployment exists | Added a repository-root `netlify.toml` that builds contracts before the web app (`DEC-107`); no external service touched | Local `build:contracts` clean, `build:web` has no TypeScript error, and `npm run verify` exits `0`; hosted smoke test still pending | OPEN |
 
 Earlier phase defects (`ISSUE-011` through `ISSUE-049`) are individually recorded with root cause and regression evidence in `docs/runtime/ISSUES.md` and the per-phase tables in `docs/runtime/TEST-RESULTS.md`; all are resolved except the non-blocking advisories listed under known limitations.
 
 ## Known limitations
 
-- Hosted deployment and hosted document storage are unverified because no deployment target is authorized (`ISSUE-051`). This is the one open `BLOCKED` item.
+- Hosted deployment and hosted document storage are unverified: Netlify is authorized as the frontend target and its build configuration is fixed and locally verified (`DEC-107`), but no hosted deployment exists and no backend, PostgreSQL, or document-storage target is associated (`ISSUE-051`). This is the one open item.
 - The upload/search/export/mutation rate limit is enforced per API process (`ISSUE-022`, `DEC-106`), so a future multi-instance deployment would need a shared store.
 - A successful sign-in does not replace an earlier live session (`ISSUE-021`); no locked requirement specifies single-session enforcement.
 - The contribution-period panel shows only the current business year with no year selector (`ISSUE-023`); the API accepts any year.
@@ -115,7 +115,7 @@ Earlier phase defects (`ISSUE-011` through `ISSUE-049`) are individually recorde
 - `.env` protection: `.env` is ignored and untracked; only `.env.example` is tracked
 - Upload and document access review: byte-content detection, invalid-key and traversal rejection, session and CSRF enforcement, `410 Gone` after removal
 - Authentication and authorization review: single Admin, server-side revocable sessions, origin-bound single-use pre-auth CSRF, opt-out-only global session guard
-- External service authorization status: **none** — no service was authorized or accessed
+- External service authorization status: Netlify is authorized as the frontend target (`DEC-013`) but was not accessed from this workspace; the repository-root `netlify.toml` is a local configuration change (`DEC-107`), and no external service was contacted or configured
 
 ## Git evidence
 

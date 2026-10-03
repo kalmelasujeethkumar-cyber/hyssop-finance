@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `LOCAL QUALITY GATE PASSED; DEPLOYMENT BLOCKED — NOT AUTHORIZED` (`ISSUE-051`). Requires Phases 01–11 complete; all are complete. The complete local test process passed from the beginning after the one fix, and the required demo deployment is recorded `BLOCKED` because no target is authorized.
+- Status: `LOCAL QUALITY GATE PASSED; DEPLOYMENT BUILD CONFIG ADDED, HOSTED DEPLOYMENT PENDING` (`ISSUE-051`). Requires Phases 01–11 complete; all are complete. The complete local test process passed from the beginning after the one fix, and the required demo deployment now has an authorized Netlify frontend target with a repository-root `netlify.toml` that fixes the `TS2307` workspace-resolution build failure (`DEC-107`); the hosted deployment itself remains unperformed and unverified.
 - Preconditions: all feature contracts implemented, test commands documented, and deployment authorization available or a `BLOCKED` record permitted.
 - Handoff rule: the complete required test process restarts from the beginning after any final-QA fix.
 
