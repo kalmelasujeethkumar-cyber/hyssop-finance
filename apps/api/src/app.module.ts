@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { AuditEventsModule } from './audit/audit-events.module';
 import { AuthModule } from './auth/auth.module';
 import { SessionGuard } from './auth/session.guard';
 import { ApiExceptionFilter } from './common/errors/api-exception.filter';
@@ -16,6 +17,7 @@ import { HealthModule } from './health/health.module';
 import { IncomeModule } from './income/income.module';
 import { MembersModule } from './members/members.module';
 import { ReportsModule } from './reports/reports.module';
+import { SettingsModule } from './settings/settings.module';
 import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
@@ -38,6 +40,8 @@ import { TransactionsModule } from './transactions/transactions.module';
     ExpensesModule,
     DocumentsModule,
     ReportsModule,
+    AuditEventsModule,
+    SettingsModule,
   ],
   providers: [
     {

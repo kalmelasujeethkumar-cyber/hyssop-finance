@@ -1,4 +1,5 @@
 export * from './api-envelope';
+export * from './audit-events';
 export * from './auth';
 export * from './dashboard';
 export * from './documents';
@@ -8,4 +9,5 @@ export * from './income';
 export * from './members';
 export * from './phone';
 export * from './reports';
+export * from './settings';
 export * from './transactions';

@@ -2,6 +2,7 @@ import type { RouteObject } from 'react-router-dom';
 import { RequireSession } from './auth/RequireSession';
 import { RouteErrorPage } from './errors/RouteErrorPage';
 import { AppLayout } from './layout/AppLayout';
+import { AuditHistoryPage } from '../pages/AuditHistoryPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { ExpenseDetailPage } from '../pages/ExpenseDetailPage';
 import { ExpensesPage } from '../pages/ExpensesPage';
@@ -14,6 +15,7 @@ import { MembersPage } from '../pages/MembersPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { ReportsPage } from '../pages/ReportsPage';
 import { SearchPage } from '../pages/SearchPage';
+import { SettingsPage } from '../pages/SettingsPage';
 import { TransactionReceiptPage } from '../pages/TransactionReceiptPage';
 
 /**
@@ -57,6 +59,8 @@ export function buildRoutes(): RouteObject[] {
         { path: 'transactions/:transactionId/receipt', element: <TransactionReceiptPage /> },
         { path: 'reports', element: <ReportsPage /> },
         { path: 'search', element: <SearchPage /> },
+        { path: 'audit-history', element: <AuditHistoryPage /> },
+        { path: 'settings', element: <SettingsPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],
     },

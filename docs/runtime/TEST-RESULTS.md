@@ -9,6 +9,8 @@
 
 ## Current status
 
+**The Phase 10 audit and settings quality gate passed on 2026-10-03: every mandatory command passed, `npm run verify` exited `0`, and `npm run test:e2e` reported `63 passed`, including the 6 new audit and settings journeys and all 57 pre-existing journeys. The Phase 10 Git gate has NOT yet run: no Phase 10 file is committed or pushed, and the commit hash is pending. Phase 10 is therefore not marked `COMPLETE` until its Git gate evidence is recorded. Phase 09 remains closed with implementation commit `416080493a86fb827c597013518d7026b78c0198` and evidence commit `e1afed8af69994ca4eb7953ef12ea985fa2716cc`.**
+
 **The Phase 09 reports quality gate passed on 2026-10-02: every mandatory command passed and `npm run test:e2e` reported `57 passed`, including the 10 new report and search journeys and all 47 pre-existing journeys. The Phase 09 Git gate is recorded in `PHASE-HISTORY.md`. Phase 08 remains closed with commit `525493c63a99f43430558307401bf41ed4bca477`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
 
 **The Phase 07 documents quality gate passed on 2026-10-01: every mandatory command passed, `npm run verify` exited `0`, and `npm run test:e2e` reported `38 passed`, including the four new document journeys and all 34 pre-existing journeys. The Phase 07 Git gate is recorded in `PHASE-HISTORY.md`. Phase 06 remains closed with commit `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
@@ -20,6 +22,56 @@
 **The Phase 04 gate was independently re-executed on 2026-09-29 after an accidental editor close, and every command passed again against the same committed tree; see "Phase 04 re-verification after the accidental session close" below.**
 
 Phase 04 implemented the Members domain: member create/read/update, `HY-MEM-0001` reference allocation, name/phone/notes validation, search, sorting, pagination, contribution periods with an expected amount, ledger-derived received/remaining/status projections, and the Members list and detail screens with browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
+
+## Phase 10 audit and settings gate
+
+Phase 10 owns `REQ-AUDIT-001`, `REQ-AUDIT-002`, and `REQ-SETTINGS-001`–`REQ-SETTINGS-009`, with the acceptance identifiers `TEST-AUDIT-001`, `TEST-AUDIT-002`, `TEST-SEC-001`, and `TEST-E2E-001`. All evidence below is from the final run on 2026-10-03, after the four Phase 10 findings in the table beneath this gate were fixed. This checkpoint is a resumption: the implementation was already present in the working tree when the session recovered, so the whole applicable gate was re-executed against the delivered tree rather than accepting an earlier run's claim.
+
+Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, project-local PostgreSQL `16` on loopback port `55432`, `hyssop_finance_dev` and `hyssop_finance_test`). The `ISSUE-040`/`ISSUE-045` cluster condition did **not** recur: the project-local cluster was already accepting connections on `127.0.0.1:55432` when the gate began. The Playwright run provisions its own Admin with a random password generated in memory, applies migrations to the `_test` database, and never reads or prints a real credential. `hyssop_finance_test` is not reset between runs, so the audit and settings journeys assert against records they create in the same run with unique tags rather than against seeded values.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run db:validate` | Pass | `The schema at prisma\schema.prisma is valid` |
+| `npm run db:status` | Pass | `6 migrations found in prisma/migrations` and `Database schema is up to date!`; Phase 10 added `20261003120000_audit_entity_reference_width` |
+| `npm run db:drift` | Pass | `No difference detected` for both `migration history vs prisma/schema.prisma` and `hyssop_finance_dev vs prisma/schema.prisma`, then the disposable shadow database was dropped |
+| `npm run lint` | Pass | `eslint .` reported no problems |
+| `npm run format:check` | Pass | `All matched files use Prettier code style!` after one `npx prettier --write` pass over the two files that had drifted |
+| `npm run typecheck` | Pass | Contracts build plus `apps/api` and `apps/web` `tsc --noEmit`, clean |
+| `npm run typecheck:scripts` | Pass | `tsc -p tsconfig.scripts.json` clean |
+| `npm run test:api` | Pass | 36 suites, 760 tests, including the 60-test `audit-settings-http.e2e-spec.ts` contract suite and the unchanged Phase 02–09 regression suites |
+| `npm run test:web` | Pass | 19 files, 492 tests, including the 22 tests across `features/audit/audit-settings.test.tsx` |
+| `npm run test:db` | Pass | 12 suites, 246 tests against real PostgreSQL, including the new 16-test `settings-audit-persistence.db-spec.ts` and the unchanged Phase 02–09 financial and invariant suites |
+| `npm run build` | Pass | Contracts declaration build, `nest build`, and `vite build` |
+| `npm run verify` | Pass | `lint`, `typecheck`, `typecheck:scripts`, `test`, `build`, and `format:check` all passed in one run and the script exited `0` after the format pass |
+| `npm run test:e2e` | Pass after four defect fixes | 63 Playwright tests (`63 passed`) against the rebuilt bundle served by `vite preview`, with a real API process and a real PostgreSQL database; this is the 6 new audit and settings journeys plus all 57 pre-existing journeys, and therefore the combined Phase 03–10 regression in one run |
+| Audit reachability and immutability evidence | Pass | The journey opens Audit History, asserts it is reachable from the primary navigation, and asserts the screen offers no edit, delete, remove, or void control, so the append-only rule is proven from the interface the Admin sees |
+| Audit filter evidence | Pass | A filter narrows the history and its selection is written into the URL so a shared link reproduces the same query, and the Clear control resets the selection rather than leaving a stale filter |
+| Void-history evidence | Pass | The journey records an income, voids it with a reason, filters `action=TRANSACTION_VOIDED`, expands the detail, and asserts the reason is shown, so a void event retains the required reason in history |
+| Settings honesty evidence | Pass | The journey asserts the fixed values (INR currency, Asia/Kolkata timezone, at least one enabled payment method) are shown as read-only and state that they cannot be changed here, so no control is offered that does nothing |
+| Settings persistence and audit evidence | Pass | The journey changes the default monthly contribution and asserts the confirmation banner names the new amount **and** that the newest audit entry records the change with `entityType=app_setting`, the `DEFAULT_MONTHLY_CONTRIBUTION_PAISE` key, and the new paise value |
+| Settings validation evidence | Pass | The journey enters a malformed amount and asserts the API's own `MONEY_FORMAT_MESSAGE` is reported rather than a silent or invented message |
+| Real-PostgreSQL settings evidence | Pass | `settings-audit-persistence.db-spec.ts` asserts exact paise persistence, a written audit event, method ordering and de-duplication, a no-op change writing no event, multi-setting atomicity, identical-replay tolerance, rejection cases, contribution-default paise and replay, no retroactive change, audit ordering/labels/attribution, filtering with unknown-value rejection, business-day inclusivity, redaction, recorded-empty versus absent values, and pagination |
+| Security and redaction evidence | Pass | `TEST-SEC-001` is covered by the contract suite asserting unauthorized and CSRF-less writes are refused, and by the database spec asserting no secret, token, or raw document content appears in audit detail |
+| Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit |
+| Git gate | Pending | No Phase 10 file is committed or pushed. The intended files were inspected and this checkpoint stops for user review before the Git gate |
+
+## Phase 10 defects found and fixed
+
+| Defect | How it was found | Fix | Regression evidence |
+|---|---|---|---|
+| `audit_event.entity_reference` was `VARCHAR(32)`, two characters shorter than the 34-character `DEFAULT_MONTHLY_CONTRIBUTION_PAISE` key, so an audited settings change could not be written (`ISSUE-046`, `DEC-099`) | Writing `settings-audit-persistence.db-spec.ts`: persisting a settings change failed at the audit insert while the settings row itself was writable, and the schema showed the reference column narrower than the key | Added migration `20261003120000_audit_entity_reference_width` widening the column to `VARCHAR(64)`, updated `prisma/schema.prisma` and `docs/05-DATABASE-SPEC.md` | `db:status` reports 6 migrations up to date, `db:drift` reports no difference, and the 16-test settings and audit persistence suite passes against real PostgreSQL |
+| The browser audit and settings clients prefixed an already-versioned base URL, so every request 404'd (`ISSUE-047`, `DEC-100`) | The audit and settings journeys failed at the first request; the request log showed `/api/v1/api/v1/audit-events` while the API client's base URL already ends in `/api/v1` and the income client correctly uses a relative path | Changed the audit client to `/audit-events` and the settings client to `/settings` and `/settings/contribution-default`, and updated the matching stub paths in the web test file | The 22 web audit and settings unit tests pass, and both browser journeys pass against the real API |
+| Settings write mutations omitted the CSRF token, so every settings save was rejected `403 CSRF_FAILED` (`ISSUE-048`, `DEC-101`) | The settings journey reached the API but the save was refused with the CSRF error code while other state-changing writes in the app obtained a token | Wrapped the settings `PATCH` and `POST` mutations in `withCsrf`, matching every other state-changing write in the app | The settings persistence and audit journey passes, and the contract suite continues to refuse a write with no CSRF token |
+| An invalid audit `entityType` or `action` filter value was reported as a date error (`ISSUE-049`, `DEC-102`) | Reading `toHistoryFilter`: the vocabulary guards and the date-boundary parser shared one thrown message, so a bad vocabulary value claimed the date format was wrong | Split the parsing so vocabulary guards keep their `Choose one of` message and a new boundary parser names the offending `from`/`to` field | The HTTP contract suite asserts the correct message for a bad vocabulary value and for a malformed date, and the audit filter journey exercises the valid path |
+
+## Phase 10 non-blocking advisories
+
+| Advisory | Assessment |
+|---|---|
+| The NestJS internal legacy-route advisory about `/api/*` (`ISSUE-012`) | Framework-owned and unchanged by Phase 10. It is emitted during API start-up and does not affect any audit or settings route |
+| The contribution-period panel has no year selector (`ISSUE-023`) | Carried from Phase 04 and unchanged by Phase 10. No settings or audit work touches the contribution-period projection |
+| The project's Vite build reports a chunk larger than 500 kB | Pre-existing and non-blocking: the bundle is served by `vite preview` for acceptance, the figure is a size advisory rather than an error, and it is not a Phase 10 regression |
+| The `ISSUE-040` OneDrive cluster condition did not recur for Phase 10 | The cluster was already up on the documented port when the gate began, so the documented start path needed no workaround and no detached helper was used |
 
 ## Phase 05 income gate
 

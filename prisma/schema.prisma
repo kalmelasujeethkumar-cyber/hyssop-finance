@@ -272,7 +272,7 @@ model AuditEvent {
   action          AuditAction
   entityType      String      @map("entity_type") @db.VarChar(64)
   entityId        String?     @map("entity_id") @db.Uuid
-  entityReference String?     @map("entity_reference") @db.VarChar(32)
+  entityReference String?     @map("entity_reference") @db.VarChar(64)
   before          Json?
   after           Json?
   reason          String?     @db.Text

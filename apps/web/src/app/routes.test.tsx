@@ -51,12 +51,13 @@ describe('application shell routing', () => {
     await screen.findByRole('heading', { level: 1, name: 'Foundation' });
 
     // The screen has to say what does not exist, so the Pastor is not left believing a
-    // missing screen is a broken one. Settings are what remains once Reports and Search
-    // shipped in Phase 09.
+    // missing screen is a broken one. What remains is the single Admin role and the two
+    // features the requirements deliberately exclude: church identity and a database reset.
     expect(
       screen.getByRole('heading', { level: 2, name: 'What is not in this build yet' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Settings screens are not implemented/)).toBeVisible();
+    expect(screen.getByText(/no church-identity configuration/)).toBeVisible();
+    expect(screen.getByText(/no way to reset the database/)).toBeVisible();
     // No financial table, because none is calculated for this screen.
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
@@ -66,18 +67,27 @@ describe('application shell routing', () => {
 
     await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
 
-    // A link to a screen that does not exist would be a dead control. Dashboard, Members,
-    // Income, Expenses, Reports, Search, and the status screen are the sections built so
-    // far, so they are the only links offered. Settings arrives in a later phase and is
-    // still absent here, which is what keeps this assertion honest.
+    // A link to a screen that does not exist would be a dead control, so this list is the whole
+    // navigation: Dashboard, Members, Income, Expenses, Reports, Search, Audit History, Settings,
+    // and the status screen. Audit History and Settings joined it in Phase 10; before that this
+    // assertion existed precisely to prove they were absent.
     const navigation = screen.getByRole('navigation', { name: 'Primary' });
 
     expect(
       within(navigation)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Dashboard', 'Members', 'Income', 'Expenses', 'Reports', 'Search', 'Status']);
-    expect(within(navigation).queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument();
+    ).toEqual([
+      'Dashboard',
+      'Members',
+      'Income',
+      'Expenses',
+      'Reports',
+      'Search',
+      'Audit History',
+      'Settings',
+      'Status',
+    ]);
   });
 
   it('shows a not-found screen for an unknown address and returns home from it', async () => {

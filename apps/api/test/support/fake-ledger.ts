@@ -7,6 +7,10 @@ import {
   validationFailed,
 } from '../../src/common/errors/domain.errors';
 import { businessDateFromInstant, parseBusinessDate } from '../../src/common/time/business-date';
+import {
+  isAppSettingKey,
+  validateAppSettingValue,
+} from '../../src/database/settings/app-setting.validation';
 import { hashToken } from '../../src/auth/token.util';
 import type { AuthenticatedSession } from '../../src/auth/session.service';
 import { normalizeCategoryName } from '../../src/database/categories/expense-category.repository';
@@ -41,7 +45,7 @@ import type {
 export const TEST_ACTOR_ADMIN_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 export const TEST_ACTOR_DISPLAY_NAME = 'Admin';
 
-export type Snapshot = Readonly<Record<string, string | number | boolean | null>>;
+export type Snapshot = Readonly<Record<string, unknown>>;
 
 export interface FakeDocumentRow {
   id: string;
@@ -674,6 +678,7 @@ export class FakeAudit {
       readonly from?: Date;
       readonly to?: Date;
       readonly action?: string;
+      readonly entityType?: string;
     },
     page: { readonly limit: number; readonly offset: number },
   ): Promise<
@@ -702,6 +707,7 @@ export class FakeAudit {
     readonly from?: Date;
     readonly to?: Date;
     readonly action?: string;
+    readonly entityType?: string;
   }): Promise<number> {
     return this.historyRows(filter).length;
   }
@@ -711,6 +717,7 @@ export class FakeAudit {
     readonly from?: Date;
     readonly to?: Date;
     readonly action?: string;
+    readonly entityType?: string;
   }) {
     return this.ledger.events.filter((event) => {
       if (filter.from !== undefined && event.occurredAt.getTime() < filter.from.getTime()) {
@@ -721,7 +728,18 @@ export class FakeAudit {
         return false;
       }
 
-      return filter.action === undefined || event.action === filter.action;
+      if (filter.action !== undefined && event.action !== filter.action) {
+        return false;
+      }
+
+      // An event with no declared kind is treated as a transaction event, which is the same
+      // default the projection above applies, so filtering by `financial_transaction` cannot
+      // disagree with the list it filters.
+      if (filter.entityType !== undefined) {
+        return (event.entityType ?? 'financial_transaction') === filter.entityType;
+      }
+
+      return true;
     });
   }
 }
@@ -1089,11 +1107,71 @@ export class FakePeriods {
   }
 }
 
+/**
+ * The settings double.
+ *
+ * Mutable on purpose, and that is the whole point of it for the Phase 10 suites: a settings change
+ * has to be observable through a *subsequent* read, because `REQ-SETTINGS-005` and the audit trail
+ * are only meaningful if the write actually landed. A double that returned the seed values forever
+ * would let a suite pass for a service that validated the request and then dropped it.
+ *
+ * It reproduces the repository's two rules the HTTP layer depends on:
+ *
+ * - A missing key is a `NOT_FOUND`, so a read cannot be satisfied by inventing a default.
+ * - `updateMany` validates every value before writing anything and writes all of them, so a suite
+ *   cannot observe a half-applied settings change - the atomicity itself is proved against real
+ *   PostgreSQL by `audited-commands.db-spec.ts`.
+ *
+ * It records what it was asked to write, and which key was skipped because its value was already
+ * correct, so a suite can assert that a no-op save wrote no audit event.
+ */
 export class FakeSettings {
-  public constructor(private readonly values: Readonly<Record<string, string>>) {}
+  /**
+   * Every `updateMany` call, in order, with the keys whose stored value already matched.
+   *
+   * `unchangedKeys` is what distinguishes "the Admin saved the same values" from "the Admin
+   * changed something": `AppSettingRepository.updateMany` writes no audit event for an unchanged
+   * key, and `REQ-AUDIT-001` requires an event only for an actual change.
+   */
+  public readonly writes: {
+    readonly entries: readonly { readonly key: string; readonly value: string }[];
+    readonly actorAdminId: string;
+    readonly requestId: string | null;
+    readonly unchangedKeys: readonly string[];
+  }[] = [];
+
+  private readonly values: Map<string, string>;
+
+  public constructor(values: Readonly<Record<string, string>>) {
+    this.values = new Map(Object.entries(values));
+  }
+
+  /**
+   * The rows, ordered by key, as `AppSettingRepository.findAll` returns them.
+   *
+   * A fake row carries the two columns a projection reads. `updatedAt` is fixed rather than
+   * generated because no Phase 10 assertion depends on the wall clock, and a moving value would
+   * make a response body unstable to compare.
+   */
+  public async findAll(): Promise<readonly { key: string; value: string }[]> {
+    return [...this.values.entries()]
+      .map(([key, value]) => ({ key, value, updatedAt: SETTINGS_UPDATED_AT }))
+      .sort((left, right) => left.key.localeCompare(right.key));
+  }
+
+  /**
+   * The same read inside the caller's transaction.
+   *
+   * The real repository reads through the transaction client so the returned state is the one that
+   * committed. The double has one state, so both reads answer identically - which is exactly the
+   * property the real pairing exists to guarantee.
+   */
+  public async findAllWithin(): Promise<readonly { key: string; value: string }[]> {
+    return this.findAll();
+  }
 
   public async findOne(key: string) {
-    const value = this.values[key];
+    const value = this.values.get(key);
 
     if (value === undefined) {
       throw notFound('App setting', key);
@@ -1101,7 +1179,70 @@ export class FakeSettings {
 
     return { key, value };
   }
+
+  /**
+   * Validates and writes several settings, recording the call.
+   *
+   * Validation runs over every entry before any is stored, which is the property the real
+   * transaction gives: an invalid value in the second entry must not leave the first applied. The
+   * real repository's `app-setting.validation` module is reused here rather than reimplemented, so
+   * the double cannot accept something the database would reject.
+   */
+  public async updateMany(
+    entries: readonly { readonly key: string; readonly value: string }[],
+    actorAdminId: string,
+    requestId: string | null = null,
+  ): Promise<void> {
+    return this.updateManyWithin(undefined, entries, actorAdminId, requestId);
+  }
+
+  public async updateManyWithin(
+    _tx: unknown,
+    entries: readonly { readonly key: string; readonly value: string }[],
+    actorAdminId: string,
+    requestId: string | null = null,
+  ): Promise<void> {
+    const validated = entries.map((entry) => {
+      if (!isAppSettingKey(entry.key)) {
+        throw validationFailed('Unsupported setting key.', { key: entry.key });
+      }
+
+      return { key: entry.key, value: validateAppSettingValue(entry.key, entry.value) };
+    });
+
+    const unchangedKeys = validated
+      .filter((entry) => this.values.get(entry.key) === entry.value)
+      .map((entry) => entry.key);
+
+    this.writes.push({ entries: validated, actorAdminId, requestId, unchangedKeys });
+
+    for (const entry of validated) {
+      if (unchangedKeys.includes(entry.key)) {
+        continue;
+      }
+      this.values.set(entry.key, entry.value);
+    }
+  }
+
+  /** The stored value for a key, so a suite can assert what a write actually left behind. */
+  public stored(key: string): string | undefined {
+    return this.values.get(key);
+  }
+
+  /**
+   * Removes a seeded row, so a suite can reproduce an environment whose migration rows are absent.
+   *
+   * A read that invented a default in that state would pass every ordinary assertion while letting
+   * two environments disagree about what a member owes, which is exactly what
+   * `app-setting.validation.ts` refuses to allow.
+   */
+  public forget(key: string): void {
+    this.values.delete(key);
+  }
 }
+
+/** A fixed `updated_at` for fake rows; see {@link FakeSettings.findAll}. */
+const SETTINGS_UPDATED_AT = new Date('2026-01-01T00:00:00.000Z');
 
 /**
  * The category double, including the rename/deactivate lifecycle.

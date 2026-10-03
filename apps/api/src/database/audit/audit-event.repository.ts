@@ -67,6 +67,15 @@ export interface AuditHistoryFilter {
   readonly to?: Date;
   /** Exact `action` match, for example `TRANSACTION_VOIDED`. */
   readonly action?: AuditAction;
+  /**
+   * Exact `entity_type` match, for example `member`.
+   *
+   * Plain `string` rather than {@link AuditEntityType} because `audit_event.entity_type` is a
+   * `VARCHAR(50)`, not an enum: a row written by another version may hold a value this build
+   * does not know, and reading history must not fail because of that. The Phase 10 audit list
+   * validates the value against {@link AUDIT_ENTITY_TYPES} in the shared contract first.
+   */
+  readonly entityType?: string;
 }
 
 /**
@@ -222,6 +231,10 @@ function toHistoryWhere(filter: AuditHistoryFilter): Prisma.AuditEventWhereInput
 
   if (filter.action !== undefined) {
     where.action = filter.action;
+  }
+
+  if (filter.entityType !== undefined) {
+    where.entityType = filter.entityType;
   }
 
   if (filter.from !== undefined || filter.to !== undefined) {

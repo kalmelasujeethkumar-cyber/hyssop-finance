@@ -13,13 +13,11 @@ import { useSession } from '../../features/auth/SessionProvider';
  * **Only sections that exist are listed.** The rules name Dashboard, Members, Income,
  * Expenses, Documents, Reports, Audit History, and Settings as the eventual navigation, but
  * the same rules forbid presenting unimplemented behaviour as a completed feature, and no
- * dead control or `Coming Soon` placeholder is permitted. The Dashboard, Members, Income, and
- * Expenses sections are delivered so far, along with Reports and Search and the build-status
- * screen; the rest appear in the phase that actually implements them, which is why this
- * navigation is shorter than the target rather than longer. Receipts are attached from an
- * expense or income record rather than having their own section, because a standalone
- * document list would have nothing to show that the transaction it belongs to does not
- * already show.
+ * dead control or `Coming Soon` placeholder is permitted. Dashboard, Members, Income,
+ * Expenses, Reports, Search, Audit History, and Settings are all implemented; the build-status
+ * screen answers what is still outstanding. Receipts are attached from an expense or income
+ * record rather than having their own section, because a standalone document list would have
+ * nothing to show that the transaction it belongs to does not already show.
  *
  * The Receipt / Document and Audit reports are reached *inside* Reports, as report choices
  * rather than separate navigation items, because `docs/01-REQUIREMENTS.md` `REQ-REPORT-001`
@@ -95,6 +93,12 @@ export function AppLayout() {
               <NavigationItem to="/search" onNavigate={() => setIsMenuOpen(false)}>
                 Search
               </NavigationItem>
+              <NavigationItem to="/audit-history" onNavigate={() => setIsMenuOpen(false)}>
+                Audit History
+              </NavigationItem>
+              <NavigationItem to="/settings" onNavigate={() => setIsMenuOpen(false)}>
+                Settings
+              </NavigationItem>
               <NavigationItem to="/foundation" onNavigate={() => setIsMenuOpen(false)}>
                 Status
               </NavigationItem>
@@ -110,7 +114,7 @@ export function AppLayout() {
       <footer className="print-hidden border-t border-border-default bg-surface">
         <div className="mx-auto max-w-6xl px-6 py-4 text-supporting text-text-secondary">
           Member, contribution, income, expense, receipt, and report records are stored in the
-          HYSSOP FINANCE database. Settings are not yet available.
+          HYSSOP FINANCE database, together with an append-only record of every change made to them.
         </div>
       </footer>
     </div>

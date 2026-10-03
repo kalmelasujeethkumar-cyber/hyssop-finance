@@ -159,7 +159,7 @@ Format and width are fixed:
 
 ## Audit events
 
-`audit_event` contains `id`, `actor_admin_id`, `action`, `entity_type`, `entity_id UUID NULL`, `entity_reference VARCHAR NULL`, `before JSONB NULL`, `after JSONB NULL`, `reason TEXT NULL`, `request_id UUID NULL`, `ip_hash TEXT NULL`, and `occurred_at TIMESTAMPTZ NOT NULL`.
+`audit_event` contains `id`, `actor_admin_id`, `action`, `entity_type`, `entity_id UUID NULL`, `entity_reference VARCHAR(64) NULL`, `before JSONB NULL`, `after JSONB NULL`, `reason TEXT NULL`, `request_id UUID NULL`, `ip_hash TEXT NULL`, and `occurred_at TIMESTAMPTZ NOT NULL`.
 
 Audit rows are append-only. Application roles have no update or delete permission for audit events. Security events must avoid storing passwords, session tokens, raw documents, or unnecessary personal data.
 

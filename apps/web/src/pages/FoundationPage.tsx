@@ -67,6 +67,15 @@ export function FoundationPage() {
             One global search across members and every income and expense record, including voided
             ones, with the count the API actually matched.
           </li>
+          <li>
+            An append-only audit history of every recorded change, filterable by what changed and by
+            date, with the values before and after the change and nothing removed.
+          </li>
+          <li>
+            A settings screen limited to the two values this church can change - the monthly member
+            expectation and the enabled payment methods - with the currency and the business
+            timezone shown as fixed.
+          </li>
           <li>Unit, integration, and browser checks for everything listed here.</li>
         </ul>
         <p className="mt-4 text-supporting text-text-secondary">
@@ -111,6 +120,20 @@ export function FoundationPage() {
           >
             Go to search
           </Link>
+          {' · '}
+          <Link
+            to="/audit-history"
+            className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
+          >
+            Go to the audit history
+          </Link>
+          {' · '}
+          <Link
+            to="/settings"
+            className="font-semibold text-link-700 underline underline-offset-2 hover:text-link-800"
+          >
+            Go to settings
+          </Link>
         </p>
       </section>
 
@@ -122,11 +145,11 @@ export function FoundationPage() {
           What is not in this build yet
         </h2>
         <p className="mt-2 text-supporting text-text-secondary">
-          Settings screens are not implemented, and the application has one Admin role rather than
-          per-user accounts. No figure anywhere in this application is a stored total or a
-          placeholder: every amount shown is calculated by the API from the transactions that
-          actually exist, and an expense with no receipt attached says so rather than implying one
-          exists.
+          The application has one Admin role rather than per-user accounts, and it deliberately has
+          no church-identity configuration and no way to reset the database. No figure anywhere in
+          this application is a stored total or a placeholder: every amount shown is calculated by
+          the API from the transactions that actually exist, and an expense with no receipt attached
+          says so rather than implying one exists.
         </p>
       </section>
     </div>
