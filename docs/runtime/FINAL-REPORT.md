@@ -14,7 +14,7 @@ The complete local implementation and quality gate is green (Phases 01–11 impl
 ## Report identity
 
 - Project: HYSSOP FINANCE
-- Version or commit: Phase 11 verified commit `b9d14f0de6001736e139310e52b91a451b0aa00c` (`origin/main`); the Phase 12 rate-limit fix and documentation are local and their commit hash is recorded only after the Phase 12 Git gate and push verification succeed
+- Version or commit: Phase 12 verified commit `c1314b69a0d73c289136346caa6741472fb5b897` (`origin/main`); the preceding Phase 11 verified state was `b9d14f0de6001736e139310e52b91a451b0aa00c`
 - Report date: 2026-10-03
 - Prepared by: OpenCode, Phase 12 final QA
 - Deployment environment: **none** — no deployment target is authorized (`ISSUE-051`)
@@ -121,6 +121,6 @@ Earlier phase defects (`ISSUE-011` through `ISSUE-049`) are individually recorde
 
 - Authorized remote: `https://github.com/kalmelasujeethkumar-cyber/hyssop-finance.git` (`origin`)
 - Branch: `main`
-- Final commit: pending the Phase 12 Git gate; the recorded pre-Phase-12 state is `b9d14f0de6001736e139310e52b91a451b0aa00c` (`origin/main`)
-- Push verification: to be recorded in `docs/runtime/PHASE-HISTORY.md` only after the push is verified
-- Recent history: Phases 01–11 are closed and pushed; the Phase 12 rate-limit fix and these documentation updates are the pending change set
+- Final commit: `c1314b69a0d73c289136346caa6741472fb5b897` (`origin/main`)
+- Push verification: `main` pushed to `origin/main` (`b9d14f0..c1314b6`); after a fresh `git fetch`, both `git rev-parse HEAD` and `git rev-parse origin/main` return `c1314b69a0d73c289136346caa6741472fb5b897`
+- Recent history: Phases 01–11 are closed and pushed; the Phase 12 rate-limit fix and QA evidence are committed as `c1314b69a0d73c289136346caa6741472fb5b897`
