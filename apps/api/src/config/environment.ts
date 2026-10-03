@@ -63,7 +63,7 @@ export const MAX_SESSION_TTL_HOURS = 720;
  * name fails loudly at startup instead of silently falling back to local storage in an
  * environment that believes it is talking to object storage.
  */
-export const STORAGE_DRIVERS = ['local'] as const;
+export const STORAGE_DRIVERS = ['local', 's3'] as const;
 export type StorageDriver = (typeof STORAGE_DRIVERS)[number];
 /** Matches the commented placeholder in `.env.example`. */
 export const DEFAULT_LOCAL_STORAGE_PATH = './storage/uploads';
@@ -157,6 +157,11 @@ export interface AppEnvironment {
  * substitution a configuration change rather than a code change.
  */
 export interface StorageEnvironment {
+  readonly s3Endpoint?: string | null;
+  readonly s3Region?: string;
+  readonly s3Bucket?: string | null;
+  readonly s3AccessKeyId?: string | null;
+  readonly s3SecretAccessKey?: string | null;
   readonly driver: StorageDriver;
   /** As configured, so it can be reported honestly without resolving it into an absolute path. */
   readonly localStoragePath: string;
@@ -493,6 +498,11 @@ function parseStorageEnvironment(
   }
 
   const rawPath = source['LOCAL_STORAGE_PATH']?.trim();
+  const s3Endpoint = source['STORAGE_S3_ENDPOINT']?.trim() || null;
+  const s3Region = source['STORAGE_S3_REGION']?.trim() || 'us-east-1';
+  const s3Bucket = source['STORAGE_S3_BUCKET']?.trim() || null;
+  const s3AccessKeyId = source['STORAGE_S3_ACCESS_KEY_ID']?.trim() || null;
+  const s3SecretAccessKey = source['STORAGE_S3_SECRET_ACCESS_KEY']?.trim() || null;
   const localStoragePath =
     rawPath === undefined || rawPath === '' ? DEFAULT_LOCAL_STORAGE_PATH : rawPath;
 
@@ -500,9 +510,22 @@ function parseStorageEnvironment(
     problems.push('LOCAL_STORAGE_PATH must stay inside the project and must not contain ".."');
   }
 
+  if (driver === 's3') {
+    if (!s3Endpoint || !s3Bucket || !s3AccessKeyId || !s3SecretAccessKey) {
+      problems.push(
+        'S3 storage requires STORAGE_S3_ENDPOINT, STORAGE_S3_BUCKET, STORAGE_S3_ACCESS_KEY_ID, and STORAGE_S3_SECRET_ACCESS_KEY',
+      );
+    }
+  }
+
   return {
     driver: STORAGE_DRIVERS.includes(driver) ? driver : 'local',
     localStoragePath,
+    s3Endpoint,
+    s3Region,
+    s3Bucket,
+    s3AccessKeyId,
+    s3SecretAccessKey,
     uploadMaxBytes: parseBoundedNumber(
       source['UPLOAD_MAX_BYTES'],
       'UPLOAD_MAX_BYTES',
