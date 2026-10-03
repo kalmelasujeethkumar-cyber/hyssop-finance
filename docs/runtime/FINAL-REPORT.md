@@ -124,3 +124,4 @@ Earlier phase defects (`ISSUE-011` through `ISSUE-049`) are individually recorde
 - Final commit: `c1314b69a0d73c289136346caa6741472fb5b897` (`origin/main`)
 - Push verification: `main` pushed to `origin/main` (`b9d14f0..c1314b6`); after a fresh `git fetch`, both `git rev-parse HEAD` and `git rev-parse origin/main` return `c1314b69a0d73c289136346caa6741472fb5b897`
 - Recent history: Phases 01–11 are closed and pushed; the Phase 12 rate-limit fix and QA evidence are committed as `c1314b69a0d73c289136346caa6741472fb5b897`
+- Deployment build configuration: `e68cc9199c96c07130e6b6b342e811d5a7b62873` (`origin/main`), the repository-root `netlify.toml` (`DEC-107`) that builds `@hyssop/contracts` before the web app; pushed and verified after a fresh `git fetch`
