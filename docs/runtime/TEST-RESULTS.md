@@ -9,6 +9,8 @@
 
 ## Current status
 
+**The Phase 11 UI-integration quality gate passed on 2026-10-03: every mandatory command passed, `npm run verify` completed in full, and `npm run test:e2e` reported `66 passed` — the 3 new responsive journeys plus all 63 pre-existing journeys, i.e. the combined Phase 03–11 regression in one run. Phase 11 adds no migration and no API, contract, or database change. The Phase 11 Git gate is recorded in `PHASE-HISTORY.md` after the push is verified. Phase 10 remains closed with commit `6a5b1785ffa890d50d284c8920897718a98eee31`, and Phase 09 with implementation `416080493a86fb827c597013518d7026b78c0198` and evidence `e1afed8af69994ca4eb7953ef12ea985fa2716cc`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
+
 **The Phase 10 audit and settings quality gate passed on 2026-10-03: every mandatory command passed, `npm run verify` exited `0`, and `npm run test:e2e` reported `63 passed`, including the 6 new audit and settings journeys and all 57 pre-existing journeys. The Phase 10 Git gate is closed: 38 implementation and evidence files were committed as `6a5b1785ffa890d50d284c8920897718a98eee31` and pushed to `origin/main`, and after a fresh `git fetch` both `git rev-parse HEAD` and `git rev-parse origin/main` return that hash. Phase 09 remains closed with implementation commit `416080493a86fb827c597013518d7026b78c0198` and evidence commit `e1afed8af69994ca4eb7953ef12ea985fa2716cc`.**
 
 **The Phase 09 reports quality gate passed on 2026-10-02: every mandatory command passed and `npm run test:e2e` reported `57 passed`, including the 10 new report and search journeys and all 47 pre-existing journeys. The Phase 09 Git gate is recorded in `PHASE-HISTORY.md`. Phase 08 remains closed with commit `525493c63a99f43430558307401bf41ed4bca477`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
@@ -22,6 +24,37 @@
 **The Phase 04 gate was independently re-executed on 2026-09-29 after an accidental editor close, and every command passed again against the same committed tree; see "Phase 04 re-verification after the accidental session close" below.**
 
 Phase 04 implemented the Members domain: member create/read/update, `HY-MEM-0001` reference allocation, name/phone/notes validation, search, sorting, pagination, contribution periods with an expected amount, ledger-derived received/remaining/status projections, and the Members list and detail screens with browser journeys that prove the whole stack against a real API and a real PostgreSQL database.
+
+## Phase 11 UI integration gate
+
+Phase 11 owns `REQ-RESP-001`–`REQ-RESP-013` and integrates the already-delivered feature contracts; it adds no new business behavior, API contract, or database rule. The acceptance identifiers are `TEST-E2E-001`, `TEST-E2E-002`, `TEST-RESP-001`, `TEST-RESP-002`, and `TEST-SEC-001`. All evidence below is from the run on 2026-10-03 against the delivered tree. This checkpoint is a resumption: the shell rewrite and the unsaved-work guard were already present in the working tree when the session recovered, so the whole applicable gate was executed against the delivered tree rather than accepting an earlier run's claim.
+
+Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, PowerShell 5.1, project-local PostgreSQL `16` on loopback port `55432`, `hyssop_finance_dev` and `hyssop_finance_test`). The `ISSUE-040`/`ISSUE-045` cluster condition did **not** recur: the cluster was already accepting connections on `127.0.0.1:55432` when the gate began. The Playwright run provisions its own Admin with a random password generated in memory, applies migrations to the `_test` database, and never reads or prints a real credential. `hyssop_finance_test` is not reset between runs, so the journeys assert against records they create in the same run with unique tags rather than against seeded values.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm run db:validate` | Pass | `The schema at prisma\schema.prisma is valid 🚀` |
+| `npm run db:status` | Pass | `6 migrations found in prisma/migrations` and `Database schema is up to date!`; Phase 11 added no migration |
+| `npm run db:drift` | Pass | `No difference detected` for both `migration history vs prisma/schema.prisma` and `hyssop_finance_dev vs prisma/schema.prisma`, then the disposable shadow database was dropped |
+| `npm run verify` | Pass | `lint`, `typecheck` (contracts + `apps/api` + `apps/web`), `typecheck:scripts`, `test` (api + web), `build` (contracts + `nest build` + `vite build`), and `format:check` all passed in one run; the script reached `format:check` and reported `All matched files use Prettier code style!` |
+| `npm run test:api` | Pass | 36 suites, 760 tests; no API or contract file changed in Phase 11 |
+| `npm run test:web` | Pass | 21 files, 501 tests, including the new `src/app/layout/AppLayout.test.tsx` (4 tests) and `src/app/providers/UnsavedWorkProvider.test.tsx` (5 tests) |
+| `npm run test:db` | Pass | 12 suites, 246 tests against real PostgreSQL; no schema or persistence file changed in Phase 11 |
+| `npm run test:e2e` | Pass | 66 Playwright tests (`66 passed`) against the rebuilt bundle served by `vite preview`, with a real API process and a real PostgreSQL database; this is the 3 new responsive journeys plus all 63 pre-existing journeys, and therefore the combined Phase 03–11 regression in one run |
+| Desktop sidebar and collapse evidence | Pass | `responsive.spec.ts` at 1280 px asserts a single `navigation` landmark is visible, the narrow-viewport `Menu` control is hidden, the collapse control reports its state via `aria-pressed`, every section stays reachable after collapsing, and the collapsed choice survives a reload |
+| Mobile drawer evidence | Pass | `responsive.spec.ts` at 390 px asserts the sidebar is hidden and the `Menu` control is visible with `aria-expanded`/`aria-controls`, that opening the drawer moves focus to the first link and locks body scroll, that `Escape` returns focus to the toggle and closes it, and that choosing a section navigates and closes the drawer |
+| No-overflow evidence | Pass | `responsive.spec.ts` asserts `documentElement.scrollWidth − innerWidth ≤ 1` on the dashboard at 360, 390, 412, 768, 1024, 1280, and 1440 px, so a layout cannot introduce a sideways scrollbar at a documented target size |
+| Unsaved-work evidence | Pass | `UnsavedWorkProvider.test.tsx` renders the provider in a real data router and asserts a clean form does not block navigation, a dirty form blocks it and `Keep editing` stays with the typed value preserved, `Leave and discard` proceeds, and `requestConfirmation` resolves `true`/`false` through the dialog the shell uses before sign-out |
+| Shell accessibility evidence | Pass | `AppLayout.test.tsx` asserts one labelled `Primary` landmark listing every implemented section in order, the collapse control's state and persistence, and the drawer's focus, `Escape`, and scroll-lock behavior; the pre-existing browser foundation journey asserts the skip link is the first focusable element |
+| Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit |
+| Git gate | Pending | The implementation and documentation are committed and pushed in this checkpoint; the verified hash is recorded in `PHASE-HISTORY.md` after the push is confirmed |
+
+Non-blocking advisories and scope notes for this checkpoint (none blocks the phase):
+
+- The Vite production build still reports the pre-existing chunk-size warning for the single `dist/assets/index-*.js` bundle (586.33 kB); it is an advisory, not a failure, and no bundling behavior changed in Phase 11.
+- The `income.test.tsx` and `expenses.test.tsx` runs print a benign React console warning, `Encountered two children with the same key 'eeeeeee1-0000-4000-8000-000000000001'`, from duplicate fixture ids in list rendering. It is unrelated to Phase 11 edits and every test in those files still passes.
+- Phase 11 intentionally ships no standalone Documents navigation section; the deviation and its reason are recorded as `DEC-105`.
+- `apps/api/.jest-audit-verbose.txt` remains a machine-local diagnostic and is deliberately left untracked and uncommitted.
 
 ## Phase 10 audit and settings gate
 

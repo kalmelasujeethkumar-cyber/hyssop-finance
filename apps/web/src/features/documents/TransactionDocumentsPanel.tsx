@@ -22,6 +22,7 @@ import {
   validateDocumentFile,
   validateRemovalReason,
 } from './document-api';
+import { useUnsavedWork } from '../../app/providers/UnsavedWorkProvider';
 
 /**
  * The receipt panel for one transaction.
@@ -69,6 +70,12 @@ export function TransactionDocumentsPanel({
   const removalKey = removingId === undefined ? undefined : removals[removingId]?.idempotencyKey;
   const remove = useRemoveDocument(transactionId, removalKey);
   const objectUrls = useRef<string[]>([]);
+
+  // A chosen-but-not-uploaded file, or a typed-but-not-submitted removal reason, is unsaved work
+  // (`REQ-RESP-008`); navigating away would silently discard it.
+  useUnsavedWork(
+    file !== undefined || Object.values(removals).some((intent) => intent.reason.trim() !== ''),
+  );
 
   // Every object URL this component created is revoked on unmount. A blob URL pins the bytes in
   // memory for the life of the document, so leaking one on every view of a receipt is a slow leak

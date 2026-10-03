@@ -37,6 +37,7 @@ import {
   type ExpenseFieldErrors,
   type ExpenseFormValues,
 } from '../features/expenses/expense-api';
+import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 import {
   TRANSACTION_LIST_DEFAULTS,
   clampTransactionPageSize,
@@ -785,13 +786,14 @@ function RecordExpenseForm({
   readonly onDismiss: () => void;
 }) {
   const create = useCreateExpense();
-  const [values, setValues] = useState<ExpenseFormValues>({
+  // The business date is pre-filled with today in Asia/Kolkata, because the most common entry is
+  // today's expense and a pastor should not have to know the date format. The baseline keeps that
+  // pre-fill from reading as unsaved work while still detecting a genuine change.
+  const [initialValues] = useState<ExpenseFormValues>(() => ({
     ...EMPTY_EXPENSE_FORM,
-    // The business date is pre-filled with today in Asia/Kolkata, because the most common entry
-    // is today's expense and a pastor should not have to know the date format. The Admin can
-    // change it, and the value is still an explicit, visible, editable field.
     businessDate: todayInKolkata(),
-  });
+  }));
+  const [values, setValues] = useState<ExpenseFormValues>(initialValues);
   const [fieldErrors, setFieldErrors] = useState<ExpenseFieldErrors>({});
   const [confirmation, setConfirmation] = useState<string | null>(null);
   // One key per submission intent. It is created lazily on the first submit and replaced only
@@ -800,6 +802,9 @@ function RecordExpenseForm({
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
+
+  // `REQ-RESP-008`/`REQ-RESP-009`: warn before a navigation or sign-out discards typed input.
+  useUnsavedWork(JSON.stringify(values) !== JSON.stringify(initialValues));
 
   function update<K extends keyof ExpenseFormValues>(key: K, value: ExpenseFormValues[K]): void {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -1128,6 +1133,9 @@ function AddCategoryForm({
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | undefined>(undefined);
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
+
+  // A typed but unsaved custom category is unfinished work worth warning about.
+  useUnsavedWork(name.trim() !== '');
 
   function handleSubmit(): void {
     if (create.isPending) {

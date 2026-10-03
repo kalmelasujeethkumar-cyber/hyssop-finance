@@ -1,4 +1,12 @@
-import { Children, cloneElement, isValidElement, type ReactNode } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useId,
+  useRef,
+  type ReactNode,
+} from 'react';
 import type { ContributionStatus, TransactionStatus } from '@hyssop/contracts';
 
 /**
@@ -298,3 +306,134 @@ export const PRIMARY_BUTTON_CLASS =
 
 export const SECONDARY_BUTTON_CLASS =
   'rounded-md border border-border-strong bg-surface px-4 py-2 text-supporting font-semibold text-text-primary hover:bg-surface-subtle disabled:bg-surface-subtle disabled:text-text-secondary';
+
+export const DANGER_BUTTON_CLASS =
+  'rounded-md bg-danger-700 px-4 py-2 text-supporting font-semibold text-text-inverse hover:opacity-90 disabled:bg-border-strong';
+
+export interface ConfirmDialogProps {
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel: string;
+  readonly cancelLabel?: string | undefined;
+  readonly tone?: 'danger' | 'primary' | undefined;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}
+
+/**
+ * A confirmation dialog for a destructive or lossy action.
+ *
+ * `docs/03-UI-UX-RULES.md` requires confirmation for void, important financial edits, document
+ * removal, and leaving unsaved work; `docs/04-DESIGN-TOKENS.md` requires dialog semantics and focus
+ * management. The dialog therefore renders with `role="dialog"` and `aria-modal`, moves focus to the
+ * confirming control, traps `Tab` inside the dialog, closes on `Escape`, and returns focus to
+ * whatever was focused before it opened. Focus lands on the confirming control so a keyboard user
+ * reaches the decision immediately, with cancel one `Shift+Tab` away; `tone` only changes the
+ * button's styling and never removes the need to confirm.
+ */
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  cancelLabel = 'Keep editing',
+  tone = 'danger',
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const returnFocusTo = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    returnFocusTo.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    confirmRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+
+      if (event.key !== 'Tab') {
+        return;
+      }
+
+      const dialog = dialogRef.current;
+      if (dialog === null) {
+        return;
+      }
+
+      const focusable = dialog.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0] as HTMLElement;
+      const last = focusable[focusable.length - 1] as HTMLElement;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      returnFocusTo.current?.focus();
+    };
+  }, [onCancel]);
+
+  return (
+    <div
+      className="print-hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="w-full max-w-md rounded-xl border border-border-default bg-surface p-5 shadow-lg"
+      >
+        <h2 id={titleId} className="text-section-title font-bold text-text-primary">
+          {title}
+        </h2>
+        <p id={descriptionId} className="mt-2 text-supporting text-text-secondary">
+          {message}
+        </p>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} className={SECONDARY_BUTTON_CLASS}>
+            {cancelLabel}
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            onClick={onConfirm}
+            className={tone === 'danger' ? DANGER_BUTTON_CLASS : PRIMARY_BUTTON_CLASS}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

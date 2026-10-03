@@ -37,6 +37,7 @@ import {
   type MemberListFilters,
 } from '../features/members/member-api';
 import { formatBusinessDate } from '../lib/money';
+import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 
 /**
  * The member list, search, and create screen.
@@ -541,6 +542,9 @@ function CreateMemberForm({ onDismiss }: { readonly onDismiss: () => void }) {
   const [values, setValues] = useState<MemberFormValues>(EMPTY_MEMBER_FORM);
   const [fieldErrors, setFieldErrors] = useState<MemberFieldErrors>({});
   const [confirmation, setConfirmation] = useState<string | null>(null);
+
+  // `REQ-RESP-008`/`REQ-RESP-009`: warn before a navigation or sign-out discards typed input.
+  useUnsavedWork(values.name !== '' || values.phone !== '' || values.notes !== '');
 
   // Editing a field clears its own error, so a message about a value the Admin has already
   // corrected does not sit next to the corrected field.

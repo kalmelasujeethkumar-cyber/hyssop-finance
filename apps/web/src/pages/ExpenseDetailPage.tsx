@@ -38,6 +38,7 @@ import {
   type CorrectionFormValues,
 } from '../features/transactions/transaction-api';
 import { formatBusinessDate, formatInr, formatIstTimestamp, formatPaiseAsInr } from '../lib/money';
+import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 
 /**
  * One expense record: its stored values, the audited correction, the reason-required void, the
@@ -301,7 +302,7 @@ function CorrectionForm({
 }) {
   const categories = useExpenseCategories();
   const activeCategories = categories.data ?? [];
-  const [values, setValues] = useState<CorrectionFormValues>({
+  const [baseline, setBaseline] = useState<CorrectionFormValues>({
     amount: record.amount,
     paymentMethod: record.paymentMethod,
     businessDate: record.businessDate,
@@ -311,11 +312,16 @@ function CorrectionForm({
     // the expense to whichever option happens to be first in the list.
     categoryId: record.category.id,
   });
+  const [values, setValues] = useState<CorrectionFormValues>(baseline);
   const [fieldErrors, setFieldErrors] = useState<CorrectionFieldErrors>({});
   // One key per correction intent: reused by a retry of the same intent and replaced after a
   // success, so a double submit cannot record two corrections.
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => createIdempotencyKey());
   const correct = useCorrectTransaction(record.id, idempotencyKey);
+
+  // A correction that has not been saved is unsaved work; saving moves the baseline forward so a
+  // completed write is not mistaken for unfinished editing (`REQ-RESP-008`).
+  useUnsavedWork(JSON.stringify(values) !== JSON.stringify(baseline));
 
   // A category that has been deactivated since this expense was recorded is not in the active
   // list. It is still the expense's real category and is still shown as a selected option with a
@@ -367,6 +373,7 @@ function CorrectionForm({
       { ...values, revision: record.revision },
       {
         onSuccess: (updated) => {
+          setBaseline(values);
           setIdempotencyKey(createIdempotencyKey());
           // A correction response is the shared transaction shape, so the moved category is only
           // readable after the same narrowing the detail screen uses. If the API ever answered
@@ -630,6 +637,9 @@ function VoidForm({
   const [reasonError, setReasonError] = useState<string | undefined>(undefined);
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => createIdempotencyKey());
   const voidTransaction = useVoidTransaction(record.id, idempotencyKey);
+
+  // A typed void reason is unsaved work; leaving before saving it would lose the justification.
+  useUnsavedWork(reason.trim() !== '');
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();

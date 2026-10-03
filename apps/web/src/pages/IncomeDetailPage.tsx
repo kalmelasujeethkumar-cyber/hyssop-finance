@@ -42,6 +42,7 @@ import {
   formatMonthYear,
   formatPaiseAsInr,
 } from '../lib/money';
+import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 
 /**
  * One income record: its stored values, the audited correction, the reason-required void, the
@@ -305,18 +306,23 @@ function CorrectionForm({
   readonly onSaved: (message: string) => void;
   readonly onCancel: () => void;
 }) {
-  const [values, setValues] = useState<CorrectionFormValues>({
+  const [baseline, setBaseline] = useState<CorrectionFormValues>({
     amount: record.amount,
     paymentMethod: record.paymentMethod,
     businessDate: record.businessDate,
     description: record.description ?? '',
     notes: record.notes ?? '',
   });
+  const [values, setValues] = useState<CorrectionFormValues>(baseline);
   const [fieldErrors, setFieldErrors] = useState<CorrectionFieldErrors>({});
   // One key per correction intent: reused by a retry of the same intent and replaced after a
   // success, so a double submit cannot record two corrections.
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => createIdempotencyKey());
   const correct = useCorrectTransaction(record.id, idempotencyKey);
+
+  // A correction that has not been saved is unsaved work; saving moves the baseline forward so a
+  // completed write is not mistaken for unfinished editing (`REQ-RESP-008`).
+  useUnsavedWork(JSON.stringify(values) !== JSON.stringify(baseline));
 
   function update<K extends keyof CorrectionFormValues>(
     key: K,
@@ -359,6 +365,7 @@ function CorrectionForm({
       { ...values, revision: record.revision },
       {
         onSuccess: (updated) => {
+          setBaseline(values);
           setIdempotencyKey(createIdempotencyKey());
           onSaved(`Correction saved. ${updated.referenceId} is now ${formatInr(updated.amount)}.`);
         },
@@ -574,6 +581,9 @@ function VoidForm({
   const [reasonError, setReasonError] = useState<string | undefined>(undefined);
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => createIdempotencyKey());
   const voidTransaction = useVoidTransaction(record.id, idempotencyKey);
+
+  // A typed void reason is unsaved work; leaving before saving it would lose the justification.
+  useUnsavedWork(reason.trim() !== '');
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();

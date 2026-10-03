@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { PaymentMethod } from '@hyssop/contracts';
+import type { DemoSettings, PaymentMethod } from '@hyssop/contracts';
 import {
   Banner,
   FormField,
@@ -24,6 +24,7 @@ import {
 } from '../features/settings/settings-api';
 import { createIdempotencyKey } from '../features/transactions/transaction-api';
 import { formatInr } from '../lib/money';
+import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 
 /**
  * The Settings screen.
@@ -68,6 +69,10 @@ export function SettingsPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
+
+  // Any edited, unsaved Settings value is unsaved work (`REQ-RESP-008`); leaving would discard it.
+  // The comparison is hoisted above the loading/error returns because it must run on every render.
+  useUnsavedWork(settings.isSuccess && settingsHaveChanges(amount, enabledMethods, settings.data));
 
   if (settings.isPending) {
     return (
@@ -415,5 +420,26 @@ export function SettingsPage() {
         </p>
       </Panel>
     </div>
+  );
+}
+
+/**
+ * Whether the Admin has edited either editable Settings value away from what the API reported.
+ *
+ * The null fields are the "untouched" markers the form uses for partial saves, so the comparison
+ * falls back to the reported value exactly as `hasChanges` does for the visible controls.
+ */
+function settingsHaveChanges(
+  amount: string | null,
+  enabledMethods: readonly PaymentMethod[] | null,
+  current: DemoSettings,
+): boolean {
+  const amountValue = amount ?? current.defaultMonthlyContribution;
+  const methodsValue = enabledMethods ?? current.enabledPaymentMethods;
+
+  return (
+    amountValue !== current.defaultMonthlyContribution ||
+    methodsValue.length !== current.enabledPaymentMethods.length ||
+    methodsValue.some((method, index) => method !== current.enabledPaymentMethods[index])
   );
 }

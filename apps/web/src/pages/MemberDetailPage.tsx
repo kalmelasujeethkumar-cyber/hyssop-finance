@@ -28,6 +28,7 @@ import {
   type MemberFieldErrors,
   type MemberFormValues,
 } from '../features/members/member-api';
+import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 import { formatBusinessDate, formatInr, formatIstTimestamp, formatMonthYear } from '../lib/money';
 
 /**
@@ -190,6 +191,9 @@ function EditMemberForm({
   }, [member]);
 
   const isDirty = JSON.stringify(values) !== JSON.stringify(toFormValues(member));
+  // The in-page discard warning only covers the editor toggle and Cancel; this registers the same
+  // edit with the shell so leaving the route or signing out is warned about too (`REQ-RESP-008`).
+  useUnsavedWork(isDirty);
   const failure = update.isError ? describeMemberFailure(update.error) : undefined;
   const hasConflict = failure?.conflict === true;
 
@@ -540,6 +544,11 @@ function SetPeriodForm({ member }: { readonly member: MemberDetail }) {
   const [amountError, setAmountError] = useState<string | undefined>(undefined);
   const [yearError, setYearError] = useState<string | undefined>(undefined);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  // The amount last written, so a saved expectation is not mistaken for unfinished work. An empty
+  // field is never unsaved work.
+  const [savedAmount, setSavedAmount] = useState<string | null>(null);
+
+  useUnsavedWork(amount !== '' && amount !== savedAmount);
 
   const failure = setPeriod.isError ? describeMemberFailure(setPeriod.error) : undefined;
 
@@ -580,6 +589,7 @@ function SetPeriodForm({ member }: { readonly member: MemberDetail }) {
       },
       {
         onSuccess: (period: ContributionPeriodView) => {
+          setSavedAmount(amount);
           setConfirmation(
             `${formatMonthYear(period.year, period.month)} is set to ${formatInr(period.expectedPaise)} per member. Received ${formatInr(period.receivedPaise)}; status ${statusWords(period)}.`,
           );

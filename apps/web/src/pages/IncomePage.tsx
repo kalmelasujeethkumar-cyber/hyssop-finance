@@ -37,6 +37,7 @@ import {
   type IncomeFormValues,
 } from '../features/income/income-api';
 import { useMemberList, MEMBER_LIST_DEFAULTS } from '../features/members/member-api';
+import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 import {
   TRANSACTION_LIST_DEFAULTS,
   clampTransactionPageSize,
@@ -755,13 +756,15 @@ function IncomePagination({
  */
 function RecordIncomeForm({ onDismiss }: { readonly onDismiss: () => void }) {
   const create = useCreateIncome();
-  const [values, setValues] = useState<IncomeFormValues>({
+  // The business date is pre-filled with today in Asia/Kolkata, because the most common entry is
+  // today's income and a pastor should not have to know the date format. The Admin can change it,
+  // and the value is still an explicit, visible, editable field. The baseline keeps that pre-fill
+  // from reading as unsaved work while still detecting a genuine change.
+  const [initialValues] = useState<IncomeFormValues>(() => ({
     ...EMPTY_INCOME_FORM,
-    // The business date is pre-filled with today in Asia/Kolkata, because the most common
-    // entry is today's income and a pastor should not have to know the date format. The Admin
-    // can change it, and the value is still an explicit, visible, editable field.
     businessDate: todayInKolkata(),
-  });
+  }));
+  const [values, setValues] = useState<IncomeFormValues>(initialValues);
   const [fieldErrors, setFieldErrors] = useState<IncomeFieldErrors>({});
   const [confirmation, setConfirmation] = useState<string | null>(null);
   // One key per submission intent. It is created lazily on the first submit and replaced only
@@ -769,6 +772,9 @@ function RecordIncomeForm({ onDismiss }: { readonly onDismiss: () => void }) {
   // by the API as one contribution rather than two.
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
   const [createdId, setCreatedId] = useState<string | null>(null);
+
+  // `REQ-RESP-008`/`REQ-RESP-009`: warn before a navigation or sign-out discards typed input.
+  useUnsavedWork(JSON.stringify(values) !== JSON.stringify(initialValues));
 
   const members = useMemberList({
     search: '',
