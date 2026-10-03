@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `IMPLEMENTED AND QUALITY-GATE PASSED` (2026-10-03); the Git gate is `PENDING`, so the phase is not yet `COMPLETE`. Evidence is recorded in `docs/runtime/TEST-RESULTS.md` and findings `ISSUE-046`–`ISSUE-049` are resolved.
+- Status: `COMPLETE`; the quality and Git gates passed on 2026-10-03 with commit `6a5b1785ffa890d50d284c8920897718a98eee31`. Evidence is recorded in `docs/runtime/TEST-RESULTS.md` and findings `ISSUE-046`–`ISSUE-049` are resolved.
 - Preconditions: Phases 01–09 complete; Phase 06 category lifecycle is available for the Settings entry point.
 - Handoff rule: Phase 10 may present category management but does not duplicate or weaken the Phase 06 lifecycle.
 
@@ -94,4 +94,4 @@ Correct audit or settings behavior with a focused change and regression tests. N
 - [x] Audit detail is safe and useful.
 - [x] Settings are limited, validated, and audited.
 - [x] Tests and browser flows pass.
-- [ ] Documentation, tests, and Git gate complete. (Documentation and tests are recorded; the Git gate has not run, so the commit is pending and this item is intentionally left unchecked.)
+- [x] Documentation, tests, and Git gate complete. (Quality gate passed 2026-10-03; 38 files committed as `6a5b1785ffa890d50d284c8920897718a98eee31` and pushed to `origin/main`, and the push was verified against a fresh `git fetch`.)

@@ -9,7 +9,7 @@
 
 ## Current status
 
-**The Phase 10 audit and settings quality gate passed on 2026-10-03: every mandatory command passed, `npm run verify` exited `0`, and `npm run test:e2e` reported `63 passed`, including the 6 new audit and settings journeys and all 57 pre-existing journeys. The Phase 10 Git gate has NOT yet run: no Phase 10 file is committed or pushed, and the commit hash is pending. Phase 10 is therefore not marked `COMPLETE` until its Git gate evidence is recorded. Phase 09 remains closed with implementation commit `416080493a86fb827c597013518d7026b78c0198` and evidence commit `e1afed8af69994ca4eb7953ef12ea985fa2716cc`.**
+**The Phase 10 audit and settings quality gate passed on 2026-10-03: every mandatory command passed, `npm run verify` exited `0`, and `npm run test:e2e` reported `63 passed`, including the 6 new audit and settings journeys and all 57 pre-existing journeys. The Phase 10 Git gate is closed: 38 implementation and evidence files were committed as `6a5b1785ffa890d50d284c8920897718a98eee31` and pushed to `origin/main`, and after a fresh `git fetch` both `git rev-parse HEAD` and `git rev-parse origin/main` return that hash. Phase 09 remains closed with implementation commit `416080493a86fb827c597013518d7026b78c0198` and evidence commit `e1afed8af69994ca4eb7953ef12ea985fa2716cc`.**
 
 **The Phase 09 reports quality gate passed on 2026-10-02: every mandatory command passed and `npm run test:e2e` reported `57 passed`, including the 10 new report and search journeys and all 47 pre-existing journeys. The Phase 09 Git gate is recorded in `PHASE-HISTORY.md`. Phase 08 remains closed with commit `525493c63a99f43430558307401bf41ed4bca477`. No phase is marked `COMPLETE` until its Git gate evidence is recorded.**
 
@@ -53,7 +53,7 @@ Environment assumptions: unchanged (Windows, Node `22.19.0`, npm `10.9.3`, Power
 | Real-PostgreSQL settings evidence | Pass | `settings-audit-persistence.db-spec.ts` asserts exact paise persistence, a written audit event, method ordering and de-duplication, a no-op change writing no event, multi-setting atomicity, identical-replay tolerance, rejection cases, contribution-default paise and replay, no retroactive change, audit ordering/labels/attribution, filtering with unknown-value rejection, business-day inclusivity, redaction, recorded-empty versus absent values, and pagination |
 | Security and redaction evidence | Pass | `TEST-SEC-001` is covered by the contract suite asserting unauthorized and CSRF-less writes are refused, and by the database spec asserting no secret, token, or raw document content appears in audit detail |
 | Traceability review | Pass | No `REQ-*` or `TEST-*` identifier was added, removed, or renumbered, so `docs/14-TRACEABILITY-MATRIX.md` needed no edit |
-| Git gate | Pending | No Phase 10 file is committed or pushed. The intended files were inspected and this checkpoint stops for user review before the Git gate |
+| Git gate | Pass | 38 intended implementation and evidence files committed as `6a5b1785ffa890d50d284c8920897718a98eee31` and pushed to `origin/main`; after a fresh `git fetch` both `git rev-parse HEAD` and `git rev-parse origin/main` return that hash. `apps/api/.jest-audit-verbose.txt` is a machine-local diagnostic and was intentionally left untracked |
 
 ## Phase 10 defects found and fixed
 
