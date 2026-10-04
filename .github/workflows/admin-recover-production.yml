@@ -1,0 +1,72 @@
+# HYSSOP FINANCE - manual production Admin credential recovery.
+#
+# Authority: `docs/05-DATABASE-SPEC.md` (this command is the only command that may replace
+# the credential of an Admin that already exists) and `docs/07-SECURITY-RULES.md`
+# ("Never log passwords", "Never commit secrets").
+#
+# Safety properties:
+#   * `workflow_dispatch` only, so no push, pull request, fork, or schedule can run it;
+#   * `contents: read` only, so the workflow token can read the repository and nothing else;
+#   * the `production` environment lets the repository owner require a manual approval
+#     before the job starts. This file never creates or changes environment settings;
+#   * `cancel-in-progress: false`, so a second run can never interrupt a run that is
+#     already writing the credential;
+#   * no secret is written into this file, echoed, passed as a command-line argument, or
+#     uploaded. Only the final step receives secrets, and only as environment variables;
+#   * the command updates the existing `admin_user` row and revokes that Admin's live
+#     sessions in one transaction. It never creates an Admin; that is
+#     `npm run admin:provision:production`, which is create-only.
+
+name: Admin recover production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-recover-production
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Recover the production Admin credential
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Required: `packages/contracts/dist` is generated and git-ignored, and
+      # `@hyssop/contracts` resolves its entry point from it. Without this build the
+      # recovery command refuses to start because it cannot read the password policy.
+      - name: Build the shared contracts package
+        run: npm run build:contracts
+
+      # Required: the generated Prisma client disables postinstall generation, so
+      # `npm ci` alone does not guarantee a client the recovery command can load.
+      - name: Generate the Prisma client
+        run: npm run db:generate
+
+      # The identifier is a low-sensitivity login name, but it is still read from a secret
+      # so that no production identifier is ever written into a committed file.
+      # `HYSSOP_ADMIN_DISPLAY_NAME` is deliberately omitted: when it is unset the command
+      # preserves the stored display name.
+      - name: Recover the production Admin credential
+        run: npm run admin:recover:production
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          HYSSOP_ADMIN_PASSWORD: ${{ secrets.HYSSOP_ADMIN_PASSWORD }}
+          HYSSOP_ADMIN_IDENTIFIER: ${{ secrets.HYSSOP_ADMIN_IDENTIFIER }}
+          HYSSOP_ADMIN_RECOVER_CONFIRM: recover-production-admin
