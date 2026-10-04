@@ -40,6 +40,11 @@ describe('parseEnvironment', () => {
       storage: {
         driver: 'local',
         localStoragePath: './storage/uploads',
+        s3Endpoint: null,
+        s3Region: 'us-east-1',
+        s3Bucket: null,
+        s3AccessKeyId: null,
+        s3SecretAccessKey: null,
         uploadMaxBytes: 10485760,
       },
     });

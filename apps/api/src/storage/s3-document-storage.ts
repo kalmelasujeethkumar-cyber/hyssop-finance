@@ -1,8 +1,15 @@
-﻿import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { ConfigService } from '@nestjs/config';
+﻿import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import type { ConfigService } from '@nestjs/config';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
-import { DocumentStorage, StoredDocumentObject } from './document-storage';
+import type { Readable } from 'node:stream';
+import { getAppEnvironment } from '../config/environment';
+import type { DocumentStorage, StoredDocumentObject } from './document-storage';
 
 export class S3DocumentStorage implements DocumentStorage {
   private readonly client: S3Client;
@@ -10,19 +17,13 @@ export class S3DocumentStorage implements DocumentStorage {
   private readonly prefix: string;
 
   constructor(config: ConfigService) {
-    const storage = config.get<{
-      s3Endpoint?: string | null;
-      s3Region?: string;
-      s3Bucket?: string | null;
-      s3AccessKeyId?: string | null;
-      s3SecretAccessKey?: string | null;
-    }>('storage');
+    const { storage } = getAppEnvironment(config);
 
-    const endpoint = storage?.s3Endpoint;
-    const region = storage?.s3Region || 'us-east-1';
-    const accessKeyId = storage?.s3AccessKeyId;
-    const secretAccessKey = storage?.s3SecretAccessKey;
-    this.bucket = storage?.s3Bucket || '';
+    const endpoint = storage.s3Endpoint;
+    const region = storage.s3Region || 'us-east-1';
+    const accessKeyId = storage.s3AccessKeyId;
+    const secretAccessKey = storage.s3SecretAccessKey;
+    this.bucket = storage.s3Bucket || '';
     this.prefix = (process.env.STORAGE_S3_PREFIX || 'documents').replace(/^\/+|\/+$/g, '');
 
     if (!endpoint || !accessKeyId || !secretAccessKey || !this.bucket) {
@@ -64,7 +65,8 @@ export class S3DocumentStorage implements DocumentStorage {
 
       return result.Body ? (result.Body as Readable) : null;
     } catch (error: unknown) {
-      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode;
       if (status === 404) return null;
       throw error;
     }
@@ -92,7 +94,8 @@ export class S3DocumentStorage implements DocumentStorage {
 
       return true;
     } catch (error: unknown) {
-      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode;
       if (status === 404) return false;
       throw error;
     }
