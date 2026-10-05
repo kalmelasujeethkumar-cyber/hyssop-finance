@@ -323,6 +323,15 @@ export interface ReportTransactionRow {
   readonly incomeType: IncomeType | null;
   readonly documentCount: number;
   readonly hasAvailableDocument: boolean;
+  /**
+   * The oldest currently available document, or `null` when none is attached.
+   *
+   * `REQ-EXPORT-001` asks an export for a useful document reference, so the row carries the same
+   * {@link ReportDocumentLink} the Receipt / Document report uses rather than leaving the
+   * documented reference columns to be invented downstream. `documentCount` stays the full history,
+   * including removed records; this is only what the Admin can open today.
+   */
+  readonly document: ReportDocumentLink | null;
 }
 
 export interface TransactionListReport {
@@ -463,6 +472,18 @@ export interface AuditReport {
   readonly generatedAt: string;
 }
 
+/**
+ * One Complete Transaction row.
+ *
+ * The shared {@link TransactionSummary} plus the same {@link ReportDocumentLink} the Offering and
+ * Donation rows carry, so `transactions` can fill its documented document columns from the read that
+ * already loaded the documents instead of leaving them blank (`REQ-EXPORT-001`). It is a widening
+ * rather than a new shape, so every consumer of `TransactionSummary` keeps reading this report.
+ */
+export interface CompleteTransactionReportRow extends TransactionSummary {
+  readonly document: ReportDocumentLink | null;
+}
+
 /** `REQ-REPORT-001` Complete Transaction — the history report, so voided rows are retained. */
 export interface CompleteTransactionReport {
   readonly reportId: 'transactions';
@@ -472,7 +493,7 @@ export interface CompleteTransactionReport {
   readonly status: TransactionStatus | null;
   readonly total: string;
   readonly transactionCount: number;
-  readonly rows: readonly TransactionSummary[];
+  readonly rows: readonly CompleteTransactionReportRow[];
   readonly pagination: ApiPagination;
   readonly generatedAt: string;
 }
@@ -542,10 +563,11 @@ export const CSV_CONTENT_DISPOSITION = 'attachment';
  * exact decimal strings; `REQ-EXPORT-001` asks for useful financial fields, and this is the list
  * that satisfies it.
  *
- * `docs` and `transactions` end with the document-reference columns, satisfying `REQ-EXPORT-001`'s
- * "useful document reference or link where applicable". The link column's header and values state
- * the `REQ-EXPORT-002` reachability rule in words so an exported sheet never implies a permanent
- * public URL.
+ * `offerings`, `donations`, `transactions`, and `documents` end with the document-reference columns,
+ * satisfying `REQ-EXPORT-001`'s "useful document reference or link where applicable". Each of those
+ * columns is filled from the row's `document` link, so a declared column is never a permanently
+ * blank one. The link column's header and values state the `REQ-EXPORT-002` reachability rule in
+ * words so an exported sheet never implies a permanent public URL.
  */
 export const REPORT_CSV_COLUMNS: Readonly<Record<ReportId, readonly string[]>> = {
   'financial-summary': ['Metric', 'Amount (INR)'],

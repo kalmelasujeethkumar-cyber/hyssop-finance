@@ -12,6 +12,7 @@ import {
   type AuditReportRow,
   type BreakdownReport,
   type CompleteTransactionReport,
+  type CompleteTransactionReportRow,
   type DocumentReport,
   type FinancialSummaryReport,
   type GlobalSearchResponse,
@@ -19,6 +20,7 @@ import {
   type MemberContributionReportRow,
   type PaymentMethodReport,
   type ReportBreakdownRow,
+  type ReportDocumentLink,
   type ReportDocumentRow,
   type ReportDocumentState,
   type ReportTransactionRow,
@@ -27,7 +29,6 @@ import {
   type SearchTransactionResult,
   type SearchType,
   type TransactionListReport,
-  type TransactionSummary,
 } from '@hyssop/contracts';
 import { validationFailed } from '../common/errors/domain.errors';
 import { formatPaise } from '../common/money/paise';
@@ -456,7 +457,9 @@ export class ReportsService {
    *
    * The rows are the canonical `TransactionSummary`, mapped through the same mapper the income and
    * expense screens use, so an anonymous donation is stripped of identity here exactly as it is
-   * there (`REQ-INCOME-006`).
+   * there (`REQ-INCOME-006`). Each row is widened with the attached document the same repository
+   * read already loaded, because the export's documented document columns must name a document the
+   * Admin can open rather than stay blank (`REQ-EXPORT-001`).
    */
   public async transactions(
     period: ResolvedPeriod,
@@ -484,7 +487,10 @@ export class ReportsService {
       this.transactionRepo.sumMatching(query),
     ]);
 
-    const summaries: TransactionSummary[] = rows.map(toTransactionSummary);
+    const summaries: CompleteTransactionReportRow[] = rows.map((row) => ({
+      ...toTransactionSummary(row),
+      document: toAttachedDocumentLink(row.documents[0]),
+    }));
 
     const pagination = list([], {
       page: page.page,
@@ -639,6 +645,42 @@ function assertPeriodSpan(period: ResolvedPeriod): void {
   assertSpanWithinLimit(period, DASHBOARD_CUSTOM_RANGE_MONTH_LIMIT);
 }
 
+/**
+ * The attached document a transaction row names, as a {@link ReportDocumentLink}.
+ *
+ * `REQ-EXPORT-002` makes reachability reported data rather than an implied permanent URL, and the
+ * Offering and Donation exports carry this link in their documented document columns, so the same
+ * wording and the same honest path are used there as in the Receipt / Document report.
+ *
+ * `status` is deliberately absent: `TRANSACTION_LIST_INCLUDE` already restricts `documents` to
+ * `AVAILABLE` rows and orders them, so only the stored bytes decide whether the Admin can open the
+ * file. The Receipt / Document report keeps its own `state === 'AVAILABLE'` test because it must
+ * also project `REMOVED` and `VOIDED` documents.
+ */
+function toAttachedDocumentLink(
+  document:
+    | {
+        readonly id: string;
+        readonly referenceId: string;
+        readonly originalFilename: string;
+        readonly storageKey: string | null;
+      }
+    | undefined,
+): ReportDocumentLink | null {
+  if (document === undefined) {
+    return null;
+  }
+
+  return {
+    documentId: document.id,
+    referenceId: document.referenceId,
+    originalFilename: document.originalFilename,
+    storagePath: `/api/v1/documents/${document.id}/download`,
+    locallyReachable: document.storageKey !== null,
+    accessNote: DOCUMENT_ACCESS_NOTE,
+  };
+}
+
 function toReportTransactionRow(row: {
   readonly id: string;
   readonly referenceId: string;
@@ -649,7 +691,12 @@ function toReportTransactionRow(row: {
   readonly incomeType: IncomeType | null;
   readonly member: { readonly referenceId: string; readonly name: string } | null;
   readonly category: { readonly name: string } | null;
-  readonly documents: readonly unknown[];
+  readonly documents: readonly {
+    readonly id: string;
+    readonly referenceId: string;
+    readonly originalFilename: string;
+    readonly storageKey: string | null;
+  }[];
   readonly _count: { readonly documents: number };
 }): ReportTransactionRow {
   // The same predicate the canonical mapper and the income screen use, so this report cannot decide
@@ -671,6 +718,7 @@ function toReportTransactionRow(row: {
     incomeType: row.incomeType,
     documentCount: row._count.documents,
     hasAvailableDocument: row.documents.length > 0,
+    document: toAttachedDocumentLink(row.documents[0]),
   };
 }
 

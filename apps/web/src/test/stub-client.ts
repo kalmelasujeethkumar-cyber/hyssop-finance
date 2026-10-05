@@ -859,6 +859,7 @@ export const OFFERINGS_REPORT: TransactionListReport = {
       incomeType: 'OFFERING',
       documentCount: 0,
       hasAvailableDocument: false,
+      document: null,
     },
   ],
   rowsTruncated: true,
@@ -893,6 +894,7 @@ export const DONATIONS_REPORT: TransactionListReport = {
       incomeType: 'ANONYMOUS_DONATION',
       documentCount: 0,
       hasAvailableDocument: false,
+      document: null,
     },
   ],
   rowsTruncated: false,
@@ -1059,7 +1061,10 @@ export const TRANSACTION_REPORT: CompleteTransactionReport = {
   status: null,
   total: '20700.00',
   transactionCount: 4,
-  rows: [INCOME_TWO, EXPENSE_ONE, EXPENSE_TWO, INCOME_VOIDED],
+  rows: [INCOME_TWO, EXPENSE_ONE, EXPENSE_TWO, INCOME_VOIDED].map((transaction) => ({
+    ...transaction,
+    document: null,
+  })),
   pagination: { page: 1, pageSize: 20, totalItems: 4, totalPages: 1 },
   generatedAt: '2026-09-30T10:30:00.000Z',
 };

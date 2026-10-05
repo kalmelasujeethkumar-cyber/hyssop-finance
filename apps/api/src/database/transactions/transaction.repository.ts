@@ -152,12 +152,21 @@ export type TransactionWithRelations = Prisma.FinancialTransactionGetPayload<{
  * filtered to `AVAILABLE` because `REQ-DOC-003` asks whether a receipt is currently attached, and
  * a removed receipt is not one — reporting `true` after a removal would claim the Admin can open a
  * file the API will answer with `410 Gone`.
+ *
+ * `documents` also carries `referenceId`, `originalFilename`, and `storageKey`, and is ordered by
+ * `uploadedAt` ascending, so the first element is a stable "oldest attached document" that the
+ * report projections can name without a second query. The order matters: an unordered relation
+ * would let the reference in an exported sheet change between two exports of the same period.
  */
 const TRANSACTION_LIST_INCLUDE = {
   member: { select: { id: true, referenceId: true, name: true } },
   category: { select: { id: true, name: true, status: true } },
   contributionPeriod: { select: { id: true, year: true, month: true } },
-  documents: { where: { status: 'AVAILABLE' }, select: { id: true } },
+  documents: {
+    where: { status: 'AVAILABLE' },
+    orderBy: { uploadedAt: 'asc' },
+    select: { id: true, referenceId: true, originalFilename: true, storageKey: true },
+  },
   _count: { select: { documents: true } },
 } as const satisfies Prisma.FinancialTransactionInclude;
 

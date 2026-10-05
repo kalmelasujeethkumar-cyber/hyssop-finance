@@ -7,6 +7,7 @@ import {
   type FinancialSummaryReport,
   type MemberContributionReport,
   type PaymentMethodReport,
+  type ReportDocumentLink,
   type ReportId,
   type TransactionListReport,
 } from '@hyssop/contracts';
@@ -88,9 +89,17 @@ const ABSENT = '';
  * An exported sheet leaves this application, so a bare path would outlive its meaning. The cell
  * therefore carries the accessibility note and never a bare path on its own — an unavailable
  * document says so instead of offering a link that cannot open.
+ *
+ * A row with no attached document writes a blank cell rather than "Unavailable", because there is
+ * nothing to be unavailable: the two are different facts and a reader must not have to guess which
+ * one an empty-looking export meant.
  */
-function documentLinkCell(row: DocumentReport['rows'][number]): string {
-  return row.link.locallyReachable ? row.link.accessNote : `Unavailable — ${row.link.accessNote}`;
+function documentLinkCell(link: ReportDocumentLink | null): string {
+  if (link === null) {
+    return ABSENT;
+  }
+
+  return link.locallyReachable ? link.accessNote : `Unavailable — ${link.accessNote}`;
 }
 
 function financialSummaryRows(report: FinancialSummaryReport): Cell[][] {
@@ -125,6 +134,8 @@ function transactionRows(report: TransactionListReport): Cell[][] {
     row.paymentMethod,
     { value: row.memberName ?? ABSENT, text: true },
     { value: row.description ?? ABSENT, text: true },
+    { value: row.document?.referenceId ?? ABSENT, text: true },
+    { value: documentLinkCell(row.document), text: true },
   ]);
 }
 
@@ -156,7 +167,7 @@ function documentRows(report: DocumentReport): Cell[][] {
     row.amount,
     row.businessDate,
     { value: row.memberName ?? ABSENT, text: true },
-    { value: documentLinkCell(row), text: true },
+    { value: documentLinkCell(row.link), text: true },
   ]);
 }
 
@@ -186,5 +197,7 @@ function completeTransactionRows(report: CompleteTransactionReport): Cell[][] {
     { value: row.category?.name ?? ABSENT, text: true },
     { value: row.description ?? ABSENT, text: true },
     { value: row.voidReason ?? ABSENT, text: true },
+    { value: row.document?.referenceId ?? ABSENT, text: true },
+    { value: documentLinkCell(row.document), text: true },
   ]);
 }

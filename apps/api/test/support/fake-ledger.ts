@@ -275,6 +275,12 @@ export class FakeTransactions {
         row.documents ??
         Array.from({ length: row.documentCount }, (_unused, index) => ({
           id: `${row.id}-document-${index + 1}`,
+          // A stand-in document still has to be namable: the reports project its reference and
+          // filename into the exported document columns and the receipt link. The values are
+          // derived from the transaction so two fixtures can never claim the same document.
+          referenceId: `${row.referenceId}-DOC-${index + 1}`,
+          originalFilename: `document-${index + 1}.pdf`,
+          storageKey: 'b'.repeat(64),
         })),
     };
   }

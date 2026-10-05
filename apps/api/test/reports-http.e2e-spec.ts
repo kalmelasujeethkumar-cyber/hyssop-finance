@@ -568,6 +568,38 @@ describe('Reports HTTP contract', () => {
       );
     });
 
+    it('names the oldest available document on a Complete Transaction row, not a removed one', async () => {
+      const csv = await authGet(`/api/v1/reports/transactions/export.csv?${SEPTEMBER_QUERY}`);
+
+      expect(csv.status).toBe(200);
+
+      // `HY-EXP-000002` carries an AVAILABLE and a REMOVED document. Only the first can be opened, so
+      // it is the one the exported reference may name, and the exported link cell states the local
+      // reachability rule in words rather than printing a path (`REQ-EXPORT-001`, `REQ-EXPORT-002`).
+      const row = csv.text
+        .trimEnd()
+        .split('\r\n')
+        .find((line) => line.startsWith('HY-EXP-000002,'));
+
+      expect(row).toContain('HY-DOC-000001,Valid only while this local application is running');
+      expect(row).not.toContain('HY-DOC-000002');
+    });
+
+    it('leaves the document columns blank on a row with no document attached', async () => {
+      const csv = await authGet(`/api/v1/reports/offerings/export.csv?${SEPTEMBER_QUERY}`);
+
+      expect(csv.status).toBe(200);
+
+      // The Offering fixture has no attachment at all, so its two document cells are empty. An
+      // exported sheet must not invent a reference, and must not claim an unavailable one either.
+      const row = csv.text
+        .trimEnd()
+        .split('\r\n')
+        .find((line) => line.startsWith('HY-INC-000001,'));
+
+      expect(row).toBe('HY-INC-000001,2026-09-06,1000.00,CASH,,"Sunday offering, ""main"" box",,');
+    });
+
     it('quotes a description holding a comma so the later columns stay in their own cells', async () => {
       const csv = await authGet(`/api/v1/reports/offerings/export.csv?${SEPTEMBER_QUERY}`);
 
