@@ -150,7 +150,10 @@ async function recordIncome(
     readonly amount: string;
     readonly paymentMethod?: string;
     readonly description?: string;
+    /** The exact option label the form shows, which the member search must return. */
     readonly memberOption?: string;
+    /** The member's permanent ID, used as the search term. */
+    readonly memberId?: string;
   },
 ): Promise<string> {
   await openRecordForm(page);
@@ -165,7 +168,15 @@ async function recordIncome(
   await page.getByLabel('Business date (required)').fill(currentBusinessDate());
 
   if (options.memberOption !== undefined) {
-    await page.getByLabel('Member (required)').selectOption({ label: options.memberOption });
+    // The member control is a search, not a list over the first page by name. The reference is
+    // half of the option label, so searching by it proves the documented ID lookup works as well
+    // as reaching this member at all.
+    await page.getByLabel('Search members').fill(options.memberId ?? '');
+    const select = page.getByLabel('Member (required)');
+
+    await expect(select).toBeVisible();
+    await expect(page.getByTestId('member-picker-updating')).toHaveCount(0);
+    await select.selectOption({ label: options.memberOption });
   }
 
   if (options.description !== undefined) {
@@ -193,14 +204,20 @@ async function openRecordByDescription(page: Page, description: string): Promise
 }
 
 /**
- * Creates a member whose name sorts first, and returns the option label the income form shows.
+ * Creates a member and returns the name and the option label the income form shows for them.
  *
- * The income form's member picker is a plain select over the first page of members ordered by
- * name, so a member created by this run is only selectable if it sorts near the front. The `A0 `
- * prefix guarantees that against a test database that accumulates members from every earlier run.
+ * The name no longer needs a `A0 ` prefix. The income form's member picker used to be a plain
+ * select over the first page of members ordered by name, so a member created by this run was only
+ * selectable if it sorted near the front and the prefix had to guarantee that. The picker is now a
+ * search over the real member list, so any member is reachable by name or by permanent ID
+ * regardless of how many members an earlier run left behind.
  */
-async function createFirstSortingMember(page: Page): Promise<{ name: string; option: string }> {
-  const name = `A0 ${uniqueRunTag()}`;
+async function createMemberForPayment(page: Page): Promise<{
+  name: string;
+  referenceId: string;
+  option: string;
+}> {
+  const name = `Payment Target ${uniqueRunTag()}`;
 
   await page.getByRole('link', { name: 'Members', exact: true }).click();
   await page.getByRole('button', { name: 'Add a member' }).click();
@@ -213,7 +230,7 @@ async function createFirstSortingMember(page: Page): Promise<{ name: string; opt
 
   expect(referenceId).toMatch(/^HY-MEM-\d{4}$/);
 
-  return { name, option: `${name} (${referenceId ?? ''})` };
+  return { name, referenceId: referenceId ?? '', option: `${name} (${referenceId ?? ''})` };
 }
 
 test.describe('income management', () => {
@@ -280,10 +297,10 @@ test.describe('income management', () => {
     const browserErrors = collectBrowserErrors(page);
     const month = currentBusinessMonth();
 
-    // Signing in first is not optional: `createFirstSortingMember` drives the Members screen
+    // Signing in first is not optional: `createMemberForPayment` drives the Members screen
     // through the product navigation, which does not exist for a signed-out visitor.
     await openIncome(page);
-    const member = await createFirstSortingMember(page);
+    const member = await createMemberForPayment(page);
 
     // An expected amount is configured first, so the derived status that follows is the API's
     // arithmetic over the ledger rather than an accident of the default amount.
@@ -310,6 +327,7 @@ test.describe('income management', () => {
       incomeType: 'MEMBER_CONTRIBUTION',
       amount: '500.00',
       memberOption: member.option,
+      memberId: member.referenceId,
       description,
     });
 
@@ -612,3 +630,95 @@ async function searchMember(page: Page, name: string): Promise<void> {
   await search.fill(name);
   await search.press('Enter');
 }
+
+/**
+ * The member picker is a search, and these three journeys are the user-facing proof.
+ *
+ * The control used to list only the first page of members ordered by name while its own hint
+ * promised a search, so a member past that page could not be paid at all and the test suite had to
+ * name its members `A0 …` to sort them into the front of the list. Each journey here searches the
+ * real member list the three documented ways, against a member whose name deliberately does not
+ * sort first, and reaches the same member every time.
+ */
+test.describe('finding the member a contribution is for', () => {
+  test('searches a member by name, by member ID, and by phone number', async ({ page }) => {
+    const browserErrors = collectBrowserErrors(page);
+
+    await openIncome(page);
+
+    // A phone number is recorded so the phone search has something to match, and so the option label
+    // carries it: the number is what distinguishes two members who share a name. It starts with `7`
+    // because `REQ-MEM-005` stores national digits only and strips a leading `91`, so a number
+    // starting `91` would be persisted shorter than it was typed and would not match this search.
+    const name = `Search Target ${uniqueRunTag()}`;
+    const phone = `7${Date.now().toString().slice(-9)}`;
+
+    await page.getByRole('link', { name: 'Members', exact: true }).click();
+    await page.getByRole('button', { name: 'Add a member' }).click();
+    await page.getByLabel('Full name').fill(name);
+    await page.getByLabel('Phone number').fill(phone);
+    await page.getByRole('button', { name: 'Add member' }).click();
+
+    const banner = page.getByText(/was added as member HY-MEM-\d{4}/);
+    await expect(banner).toBeVisible();
+    const referenceId = /HY-MEM-\d{4}/.exec((await banner.textContent()) ?? '')?.[0] ?? '';
+    const optionLabel = `${name} (${referenceId}) · ${phone}`;
+
+    await gotoIncome(page);
+    await openRecordForm(page);
+
+    // One character matches most of the parish, so it narrows nothing and the control is not even
+    // offered. Nothing is requested for it.
+    await page.getByLabel('Search members').fill('S');
+    await expect(page.getByTestId('member-picker-prompt')).toBeVisible();
+    await expect(page.getByLabel('Member (required)')).toHaveCount(0);
+
+    for (const term of [name, referenceId, phone]) {
+      await page.getByLabel('Search members').fill(term);
+
+      const select = page.getByLabel('Member (required)');
+
+      await expect(select).toBeVisible();
+      // The previous search's members are withheld rather than offered under a new term, so the
+      // list is never a stale answer presented as this search's.
+      await expect(page.getByTestId('member-picker-updating')).toHaveCount(0);
+      await expect(select.locator('option', { hasText: referenceId })).toHaveCount(1);
+      await expect(page.getByTestId('member-picker-count')).toHaveText('1 member matches.');
+    }
+
+    // The final term left in the box is the phone number, and the option was reached by every one
+    // of the three documented terms.
+    await page.getByLabel('Member (required)').selectOption({ label: optionLabel });
+
+    // A chosen member is then shown read-only, so the payment cannot be redirected by a mis-aimed
+    // click and the name, ID, and phone stay visible after the search text is cleared.
+    await page.getByLabel('Search members').fill('');
+    const locked = page.getByTestId('locked-member');
+
+    await expect(locked.getByText(name)).toBeVisible();
+    await expect(locked.getByText(referenceId)).toBeVisible();
+    await expect(locked.getByText(phone)).toBeVisible();
+
+    expect(browserErrors).toEqual([]);
+  });
+
+  test('says so when nothing matches and never creates a member from a search', async ({
+    page,
+  }) => {
+    const browserErrors = collectBrowserErrors(page);
+
+    await openIncome(page);
+    await openRecordForm(page);
+
+    await page.getByLabel('Search members').fill(`Nobody ${uniqueRunTag()}`);
+
+    // A member who does not exist yet has to be added as a member first. Inventing one here would
+    // hide a real master-data gap behind a silent write, and no duplicate-member rule exists.
+    await expect(page.getByTestId('member-picker-empty')).toContainText(
+      'add the member from the Members screen first',
+    );
+    await expect(page.getByLabel('Member (required)').locator('option')).toHaveCount(1);
+
+    expect(browserErrors).toEqual([]);
+  });
+});

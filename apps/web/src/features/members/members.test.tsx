@@ -668,3 +668,262 @@ describe('the Members navigation', () => {
     expect(screen.getByRole('link', { name: 'Members' })).toHaveAttribute('aria-current', 'page');
   });
 });
+
+describe('recording a payment from a member', () => {
+  const memberPaymentPath = `/members/${MEMBER_ONE.id}`;
+
+  /**
+   * Finding a member to pay was the step that stopped contributions being recorded.
+   *
+   * The income screen offered only the first page of members by name, so a member past that page
+   * could not be named at all. These tests hold the member detail screen to removing that lookup
+   * entirely: the Admin opens the member, presses Record payment, and the member is already named
+   * above the amount.
+   */
+  async function openPaymentForm(user: ReturnType<typeof userEvent.setup>): Promise<StubApiClient> {
+    const client = renderMembers(stubApiClient(), memberPaymentPath);
+
+    await screen.findByRole('heading', { level: 1, name: MEMBER_ONE.name });
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    expect(await screen.findByRole('heading', { name: 'Record payment' })).toBeInTheDocument();
+
+    return client;
+  }
+
+  it('names the member and offers no way to change them', async () => {
+    const user = userEvent.setup();
+
+    await openPaymentForm(user);
+
+    const locked = screen.getByTestId('locked-member');
+
+    // The three facts the Admin needs to confirm they are paying the right person: the name, the
+    // permanent ID, and the number that distinguishes two people with the same name.
+    expect(within(locked).getByText(MEMBER_ONE.name)).toBeVisible();
+    expect(within(locked).getByText(MEMBER_ONE.referenceId)).toBeVisible();
+    expect(within(locked).getByText('9000000001')).toBeVisible();
+
+    // No lookup, because the member is not a question here. Leaving one out would invite a search
+    // that could only ever return a different member than the one being paid.
+    expect(screen.queryByLabelText('Search members')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /^Member/ })).not.toBeInTheDocument();
+  });
+
+  it('records the payment against the member the API already identified', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = await openPaymentForm(user);
+
+    const businessDate = screen.getByLabelText<HTMLInputElement>('Business date (required)');
+
+    await user.clear(businessDate);
+    await user.type(businessDate, '2026-09-28');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    expect(await screen.findByText(/credited to September 2026/)).toBeInTheDocument();
+
+    // The identifier is the member's real UUID and the month comes from the business date, so the
+    // payment cannot be filed against a different person or a month the date does not fall in.
+    expect(lastCallTo(client, 'POST', '/income')?.body).toMatchObject({
+      incomeType: 'MEMBER_CONTRIBUTION',
+      memberId: MEMBER_ONE.id,
+      businessDate: '2026-09-28',
+      contributionPeriod: { year: 2026, month: 9 },
+    });
+  });
+
+  it('states which month the payment is credited to, and follows the business date', async () => {
+    const user = userEvent.setup();
+    const stub = stubApiClient();
+
+    renderMembers(stub, memberPaymentPath);
+    await screen.findByRole('heading', { level: 1, name: MEMBER_ONE.name });
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+    await screen.findByRole('heading', { name: 'Record payment' });
+
+    const businessDate = await screen.findByLabelText<HTMLInputElement>('Business date (required)');
+
+    // The pre-filled date is today, so the month is stated without the Admin doing anything.
+    expect(screen.getByTestId('credited-month')).toHaveTextContent(/\d{4} contribution period\.$/);
+
+    // A contribution for last month entered today is credited to last month, and the sentence says
+    // so rather than leaving the Admin to assume the current month.
+    await user.clear(businessDate);
+    await user.type(businessDate, '2026-03-05');
+
+    expect(screen.getByTestId('credited-month')).toHaveTextContent(
+      'Credited to the March 2026 contribution period.',
+    );
+  });
+
+  it('says nothing about a month while the date is unusable, rather than guessing', async () => {
+    const user = userEvent.setup();
+
+    await openPaymentForm(user);
+
+    const businessDate = await screen.findByLabelText<HTMLInputElement>('Business date (required)');
+
+    await user.clear(businessDate);
+
+    // A credited month shown for a date the API will reject is exactly the misleading state the
+    // UI rules forbid, so the honest answer is that the month is not yet knowable.
+    expect(screen.getByTestId('credited-month')).toHaveTextContent(
+      'Enter a business date to see the month this payment is credited to.',
+    );
+  });
+
+  it('does not offer an income type, because a payment is a member contribution', async () => {
+    const user = userEvent.setup();
+
+    await openPaymentForm(user);
+
+    // Offering, Donation, and Anonymous Donation are recordable on the income screen. Offering them
+    // here would let the Admin record something other than the payment they came to record.
+    expect(screen.queryByLabelText('Income type (required)')).not.toBeInTheDocument();
+    expect(screen.getByText(/recorded as member contribution/i)).toBeInTheDocument();
+  });
+
+  it('warns before a typed amount is lost to a navigation', async () => {
+    // `REQ-RESP-008`. The payment is recorded against the ledger, so a half-typed amount that
+    // vanishes silently is a number the Admin believes they entered.
+    const user = userEvent.setup();
+
+    await openPaymentForm(user);
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+
+    await user.click(screen.getByRole('link', { name: 'Members' }));
+
+    expect(await screen.findByText('Leave with unsaved changes?')).toBeInTheDocument();
+    expect(lastCallTo(stubApiClient(), 'POST', '/income')).toBeUndefined();
+  });
+
+  it('closes on Cancel without recording anything', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = await openPaymentForm(user);
+
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByLabelText('Amount (required)')).not.toBeInTheDocument();
+    expect(client.calls.some((call) => call.method === 'POST' && call.path === '/income')).toBe(
+      false,
+    );
+  });
+
+  it('reuses one idempotency key across a retry, so a timeout cannot double-record', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderMembers(
+      stubApiClient({ transactions: { firstCreateFails: transportFailure } }),
+      memberPaymentPath,
+    );
+
+    await screen.findByRole('heading', { level: 1, name: MEMBER_ONE.name });
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+    await screen.findByLabelText('Amount (required)');
+
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The API could not be reached.');
+
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    expect(await screen.findByText(/credited to/)).toBeInTheDocument();
+
+    const keys = client.calls
+      .filter((call) => call.method === 'POST' && call.path === '/income')
+      .map((call) => call.idempotencyKey);
+
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+  });
+});
+
+describe('a member added and paid in one visit', () => {
+  /**
+   * A member who is handed a contribution at the door is very often not in the list yet.
+   *
+   * The two writes stay separate on purpose: the member is created first, and only then is a
+   * payment recorded against its real UUID. Nothing here invents a member as a side effect of
+   * recording money, and nothing records money as a side effect of adding a member.
+   */
+  async function addMember(user: ReturnType<typeof userEvent.setup>): Promise<StubApiClient> {
+    const client = renderMembers(stubApiClient());
+
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('button', { name: 'Add a member' }));
+    await user.type(await screen.findByLabelText('Full name (required)'), 'Ravi Menon');
+    await user.type(screen.getByLabelText('Phone number (optional)'), '9876543210');
+    await user.click(screen.getByRole('button', { name: 'Add member' }));
+
+    await screen.findByText(/Ravi Menon was added as member HY-MEM-/);
+
+    return client;
+  }
+
+  it('opens a payment form for the member just created, with that member locked', async () => {
+    const user = userEvent.setup({ delay: null });
+
+    await addMember(user);
+
+    const locked = await screen.findByTestId('locked-member');
+
+    // The member was named by the create response, so the payment cannot be pointed at anyone else
+    // and no refetch was needed to get the permanent ID. The list page's own member *search* box is
+    // a different control and is not what this form is asserting about.
+    expect(within(locked).getByText('Ravi Menon')).toBeVisible();
+    expect(within(locked).getByText(/HY-MEM-/)).toBeVisible();
+    expect(screen.queryByRole('combobox', { name: /^Member/ })).not.toBeInTheDocument();
+  });
+
+  it('records the payment against the created member rather than creating a second one', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = await addMember(user);
+
+    const created = client.members.find((member) => member.name === 'Ravi Menon');
+
+    expect(created).toBeDefined();
+    await user.type(screen.getByLabelText('Amount (required)'), '750');
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    expect(await screen.findByText(/credited to/)).toBeInTheDocument();
+
+    expect(lastCallTo(client, 'POST', '/income')?.body).toMatchObject({
+      incomeType: 'MEMBER_CONTRIBUTION',
+      memberId: created?.id,
+    });
+    // Two writes, one of each: the member already existed before the payment was recorded.
+    expect(
+      client.calls.filter((call) => call.method === 'POST' && call.path === '/members'),
+    ).toHaveLength(1);
+    expect(client.members.filter((member) => member.name === 'Ravi Menon')).toHaveLength(1);
+  });
+
+  it('records a second payment for the same member without duplicating them', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = await addMember(user);
+
+    await user.type(screen.getByLabelText('Amount (required)'), '750');
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+    await screen.findByText(/credited to/);
+
+    // The form resets after a success, so the same member is paid again for the next month. The
+    // member record is untouched: a second contribution is a second payment, not a second person.
+    const locked = await screen.findByTestId('locked-member');
+
+    expect(within(locked).getByText('Ravi Menon')).toBeVisible();
+
+    await user.type(screen.getByLabelText('Amount (required)'), '750');
+    await user.click(screen.getByRole('button', { name: 'Record payment' }));
+
+    await waitFor(() => {
+      expect(
+        client.calls.filter((call) => call.method === 'POST' && call.path === '/income'),
+      ).toHaveLength(2);
+    });
+
+    expect(client.members.filter((member) => member.name === 'Ravi Menon')).toHaveLength(1);
+  });
+});

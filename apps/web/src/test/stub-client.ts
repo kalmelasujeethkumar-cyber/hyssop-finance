@@ -2072,7 +2072,10 @@ export function stubApiClient(
           nextIncomeNumber += 1;
 
           const created: TransactionSummary = {
-            id: 'eeeeeee1-0000-4000-8000-000000000001',
+            // Unique per created row, as the API's UUID is. A fixed id gave two income rows in one
+            // test the same React key, which the income list warned about, and a list that cannot
+            // key its own rows is not a list that could be trusted to render two of them.
+            id: `eeeeeee1-0000-4000-8000-${String(nextIncomeNumber).padStart(12, '0')}`,
             referenceId,
             type: 'INCOME',
             incomeType: input.incomeType ?? 'MEMBER_CONTRIBUTION',

@@ -29,6 +29,7 @@ import {
   type MemberFormValues,
 } from '../features/members/member-api';
 import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
+import { RecordMemberPaymentForm } from '../features/income/RecordMemberPaymentForm';
 import { formatBusinessDate, formatInr, formatIstTimestamp, formatMonthYear } from '../lib/money';
 
 /**
@@ -56,6 +57,11 @@ export function MemberDetailPage() {
   // worked. `docs/03-UI-UX-RULES.md` requires the outcome of an action to be stated, and it
   // cannot be stated by a component that no longer exists.
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  // The payment panel lives on this screen rather than behind a jump to the income screen,
+  // because the two facts an Admin needs to record a contribution — who is paying and how much —
+  // are both already here. Making them re-find the member in a list is the step that stopped
+  // contributions being recorded at all.
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
 
   if (detail.isPending) {
     return <LoadingBlock label="Loading member…" />;
@@ -96,13 +102,39 @@ export function MemberDetailPage() {
       <PageHeader
         title={member.name}
         description={`Member ${member.referenceId}. The member ID is permanent and cannot be changed.`}
-        action={<BackToMembersLink />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={isRecordingPayment ? SECONDARY_BUTTON_CLASS : PRIMARY_BUTTON_CLASS}
+              aria-expanded={isRecordingPayment}
+              aria-controls="record-member-payment-panel"
+              onClick={() => {
+                setIsRecordingPayment((previous) => !previous);
+              }}
+            >
+              {isRecordingPayment ? 'Cancel recording payment' : 'Record payment'}
+            </button>
+            <BackToMembersLink />
+          </div>
+        }
       />
 
       {confirmation === null ? null : <Banner tone="success">{confirmation}</Banner>}
 
       <MemberIdentity member={member} />
       <EditMemberForm member={member} onSaved={setConfirmation} />
+      <div id="record-member-payment-panel">
+        {isRecordingPayment ? (
+          <RecordMemberPaymentForm
+            member={member}
+            origin="member-detail"
+            onDismiss={() => {
+              setIsRecordingPayment(false);
+            }}
+          />
+        ) : null}
+      </div>
       <ContributionPeriods member={member} />
       <MemberHistory member={member} />
     </div>
@@ -722,7 +754,7 @@ function MemberHistory({ member }: { readonly member: MemberDetail }) {
       {transactions.length === 0 ? (
         <EmptyState
           title="No contribution payments recorded"
-          description="Payments recorded against this member will appear here. Recording a payment is added in a later phase; until then the month statuses above are accurate for whatever the ledger contains."
+          description="Use “Record payment” above to record this member's contribution. Every payment recorded here appears below, and the month statuses above update from the ledger."
         />
       ) : (
         <div className="overflow-x-auto">

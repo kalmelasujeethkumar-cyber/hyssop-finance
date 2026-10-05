@@ -29,21 +29,23 @@ import {
   EMPTY_INCOME_FORM,
   INCOME_TYPE_CHOICES,
   PAYMENT_METHOD_CHOICES,
+  businessDateToday,
   hasIncomeFieldErrors,
+  incomeFieldErrorsFrom,
   showsMemberPicker,
   useCreateIncome,
   validateIncomeFields,
   type IncomeFieldErrors,
   type IncomeFormValues,
 } from '../features/income/income-api';
-import { useMemberList, MEMBER_LIST_DEFAULTS } from '../features/members/member-api';
+import { IncomeFields } from '../features/income/IncomeFields';
+import { MemberSearchField } from '../features/members/MemberSearchField';
 import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 import {
   TRANSACTION_LIST_DEFAULTS,
   clampTransactionPageSize,
   createIdempotencyKey,
   describeTransactionFailure,
-  fieldIssuesByName,
   isTransactionSortFieldValue,
   isTransactionStatusValue,
   useTransactionList,
@@ -762,7 +764,7 @@ function RecordIncomeForm({ onDismiss }: { readonly onDismiss: () => void }) {
   // from reading as unsaved work while still detecting a genuine change.
   const [initialValues] = useState<IncomeFormValues>(() => ({
     ...EMPTY_INCOME_FORM,
-    businessDate: todayInKolkata(),
+    businessDate: businessDateToday(),
   }));
   const [values, setValues] = useState<IncomeFormValues>(initialValues);
   const [fieldErrors, setFieldErrors] = useState<IncomeFieldErrors>({});
@@ -775,14 +777,6 @@ function RecordIncomeForm({ onDismiss }: { readonly onDismiss: () => void }) {
 
   // `REQ-RESP-008`/`REQ-RESP-009`: warn before a navigation or sign-out discards typed input.
   useUnsavedWork(JSON.stringify(values) !== JSON.stringify(initialValues));
-
-  const members = useMemberList({
-    search: '',
-    page: 1,
-    pageSize: MEMBER_LIST_DEFAULTS.pageSize,
-    sort: MEMBER_LIST_DEFAULTS.sort,
-    direction: MEMBER_LIST_DEFAULTS.direction,
-  });
 
   const showMember = showsMemberPicker(values.incomeType);
 
@@ -841,13 +835,13 @@ function RecordIncomeForm({ onDismiss }: { readonly onDismiss: () => void }) {
           // key would make the API replay the *previous* contribution's response.
           setIdempotencyKey(createIdempotencyKey());
           setCreatedId(created.id);
-          setValues({ ...EMPTY_INCOME_FORM, businessDate: todayInKolkata() });
+          setValues({ ...EMPTY_INCOME_FORM, businessDate: businessDateToday() });
           setConfirmation(
             `${formatInr(created.amount)} was recorded as ${created.referenceId}. Open the record to print a receipt.`,
           );
         },
         onError: (error) => {
-          setFieldErrors(toIncomeFieldErrors(error));
+          setFieldErrors(incomeFieldErrorsFrom(error));
         },
       },
     );
@@ -871,182 +865,30 @@ function RecordIncomeForm({ onDismiss }: { readonly onDismiss: () => void }) {
           records one contribution, not two.
         </p>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            id="income-type-input"
-            label="Income type"
-            required
-            error={fieldErrors.incomeType}
-            hint="Member Contribution needs a member. Anonymous Donation records no donor."
-          >
-            <select
-              id="income-type-input"
-              name="incomeType"
-              className={controlClassName()}
-              value={values.incomeType}
-              onChange={(event) => {
-                const value = event.target.value;
-
-                if (isIncomeType(value)) {
-                  update('incomeType', value);
-                }
-              }}
-            >
-              {INCOME_TYPE_CHOICES.map((type) => (
-                <option key={type} value={type}>
-                  {INCOME_TYPE_LABELS[type]}
-                </option>
-              ))}
-            </select>
-          </FormField>
-
-          <FormField
-            id="income-amount"
-            label="Amount"
-            required
-            error={fieldErrors.amount}
-            hint="In rupees, for example 500 or 500.00."
-          >
-            <input
-              id="income-amount"
-              name="amount"
-              type="text"
-              inputMode="decimal"
-              required
-              maxLength={18}
-              value={values.amount}
-              onChange={(event) => {
-                update('amount', event.target.value);
-              }}
-              className={controlClassName()}
-            />
-          </FormField>
-
-          <FormField
-            id="income-method-input"
-            label="Payment method"
-            required
-            error={fieldErrors.paymentMethod}
-          >
-            <select
-              id="income-method-input"
-              name="paymentMethod"
-              className={controlClassName()}
-              value={values.paymentMethod}
-              onChange={(event) => {
-                const value = event.target.value;
-
-                if (isPaymentMethod(value)) {
-                  update('paymentMethod', value);
-                }
-              }}
-            >
-              {PAYMENT_METHOD_CHOICES.map((method) => (
-                <option key={method} value={method}>
-                  {PAYMENT_METHOD_LABELS[method]}
-                </option>
-              ))}
-            </select>
-          </FormField>
-
-          <FormField
-            id="income-business-date"
-            label="Business date"
-            required
-            error={fieldErrors.businessDate}
-            hint="The Asia/Kolkata calendar date this income belongs to."
-          >
-            <input
-              id="income-business-date"
-              name="businessDate"
-              type="date"
-              required
-              value={values.businessDate}
-              onChange={(event) => {
-                update('businessDate', event.target.value);
-              }}
-              className={controlClassName()}
-            />
-          </FormField>
-
-          {showMember ? (
-            <FormField
-              id="income-member"
-              label="Member"
-              {...(values.incomeType === 'MEMBER_CONTRIBUTION'
-                ? { required: true }
-                : { optional: true })}
-              error={fieldErrors.memberId}
-              hint="Search by name or member ID. Leave empty for an offering or donation from a visitor."
-            >
-              <select
-                id="income-member"
-                name="memberId"
-                className={controlClassName()}
-                value={values.memberId}
-                onChange={(event) => {
-                  update('memberId', event.target.value);
-                }}
-              >
-                <option value="">No member</option>
-                {(members.data?.items ?? []).map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name} ({member.referenceId})
-                  </option>
-                ))}
-              </select>
-            </FormField>
-          ) : null}
-        </div>
-
-        {showMember ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              id="income-description"
-              label="Description"
-              optional
-              error={fieldErrors.description}
-              hint="For example Sunday offering or Thank-you donation."
-            >
-              <input
-                id="income-description"
-                name="description"
-                type="text"
-                maxLength={200}
-                value={values.description}
-                onChange={(event) => {
-                  update('description', event.target.value);
-                }}
-                className={controlClassName()}
-              />
-            </FormField>
-
-            <FormField
-              id="income-notes"
-              label="Notes"
-              optional
-              error={fieldErrors.notes}
-              hint="Private. Not shown on a receipt and not included in searches."
-            >
-              <textarea
-                id="income-notes"
-                name="notes"
-                rows={2}
-                maxLength={2000}
-                value={values.notes}
-                onChange={(event) => {
-                  update('notes', event.target.value);
-                }}
-                className={controlClassName()}
-              />
-            </FormField>
-          </div>
-        ) : (
-          <Banner tone="info">
-            An anonymous donation records no donor, description, or note. The church receives the
-            amount and nothing that could identify the person who gave it.
-          </Banner>
-        )}
+        <IncomeFields
+          values={values}
+          fieldErrors={fieldErrors}
+          onChange={update}
+          canChooseIncomeType
+          {...(showMember
+            ? {
+                memberSlot: (
+                  <MemberSearchField
+                    selectedMemberId={values.memberId}
+                    onSelect={(memberId) => {
+                      update('memberId', memberId);
+                    }}
+                    label="Member"
+                    {...(values.incomeType === 'MEMBER_CONTRIBUTION'
+                      ? { required: true }
+                      : { optional: true })}
+                    error={fieldErrors.memberId}
+                    hint="Leave empty for an offering or donation from a visitor."
+                  />
+                ),
+              }
+            : {})}
+        />
 
         {confirmation === null ? null : (
           <Banner tone="success">
@@ -1074,7 +916,7 @@ function RecordIncomeForm({ onDismiss }: { readonly onDismiss: () => void }) {
             className={SECONDARY_BUTTON_CLASS}
             disabled={create.isPending}
             onClick={() => {
-              setValues({ ...EMPTY_INCOME_FORM, businessDate: todayInKolkata() });
+              setValues({ ...EMPTY_INCOME_FORM, businessDate: businessDateToday() });
               setFieldErrors({});
               setConfirmation(null);
               setIdempotencyKey(createIdempotencyKey());
@@ -1113,53 +955,6 @@ function resultCountText(
 
   return `${totalItems} ${totalItems === 1 ? 'record' : 'records'} found`;
 }
-
-/** Today's calendar date in Asia/Kolkata, as `YYYY-MM-DD`. */
-function todayInKolkata(): string {
-  // IST is a fixed +05:30 offset with no daylight saving, so the shift is exact arithmetic
-  // and needs no time-zone database. `Date` is used only to *display* today; no financial
-  // value ever passes through it.
-  const now = new Date(Date.now() + 330 * 60_000);
-
-  return now.toISOString().slice(0, 10);
-}
-
-/** Maps a server-side validation failure onto the income form's own field names. */
-function toIncomeFieldErrors(error: unknown): IncomeFieldErrors {
-  const issues = fieldIssuesByName(error);
-  const errors: {
-    incomeType?: string;
-    amount?: string;
-    paymentMethod?: string;
-    businessDate?: string;
-    memberId?: string;
-    description?: string;
-    notes?: string;
-  } = {};
-
-  // Only the fields this form owns are mapped. An unrecognised field keeps its own name in the
-  // general error banner rather than being attached to the wrong input, which would be a lie
-  // about where the problem is.
-  for (const field of INCOME_FIELD_NAMES) {
-    const message = issues[field];
-
-    if (message !== undefined) {
-      errors[field] = message;
-    }
-  }
-
-  return errors;
-}
-
-const INCOME_FIELD_NAMES = [
-  'incomeType',
-  'amount',
-  'paymentMethod',
-  'businessDate',
-  'memberId',
-  'description',
-  'notes',
-] as const satisfies readonly (keyof IncomeFieldErrors)[];
 
 /** The income list criteria, including the income-type filter this screen adds. */
 interface IncomeListFilters extends TransactionListFilters {

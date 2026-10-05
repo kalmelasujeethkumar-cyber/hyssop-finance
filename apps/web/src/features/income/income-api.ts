@@ -17,7 +17,10 @@ import {
 import { useApiClient } from '../../app/providers/ApiClientProvider';
 import { ApiTransportError } from '../../lib/api-client';
 import { useSession } from '../auth/SessionProvider';
-import { invalidateTransactionDependents } from '../transactions/transaction-api';
+import {
+  fieldIssuesByName,
+  invalidateTransactionDependents,
+} from '../transactions/transaction-api';
 
 /**
  * Income form data access.
@@ -226,6 +229,101 @@ export function contributionMonthOf(
 }
 
 /**
+ * The income type a member payment always is.
+ *
+ * A payment recorded from a member is a member contribution by definition: `REQ-INCOME-003`
+ * requires a member, and the contribution month is derived from the payment date. Naming the
+ * literal in one place keeps the member-payment forms from each restating the wire vocabulary,
+ * and keeps a future reader from wondering whether a payment could be any other income type.
+ */
+export const MEMBER_PAYMENT_INCOME_TYPE: IncomeType = 'MEMBER_CONTRIBUTION';
+
+/**
+ * The minimum a locked payment form needs to identify the member it is paying.
+ *
+ * Structural rather than a named contract type, so both `MemberSummary` (the response of
+ * `POST /api/v1/members`) and `MemberDetail` (the member screen's own projection) satisfy it
+ * without either being widened. A newly created member therefore needs no refetch before a
+ * payment can be recorded against it.
+ */
+export interface MemberPaymentRef {
+  readonly id: string;
+  readonly name: string;
+  readonly referenceId: string;
+  readonly phone: string | null;
+}
+
+/**
+ * Full month names, for a sentence that names the month a payment is credited to.
+ *
+ * `lib/money.ts` deliberately abbreviates (`Sep 2026`) because it formats table cells and
+ * period labels where width matters. This sentence is read rather than scanned, so the full
+ * name is used, and it lives here beside `contributionMonthOf` rather than being imported from
+ * a page that happens to own a month selector.
+ */
+const MEMBER_PAYMENT_MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
+
+/**
+ * The month a payment will be credited to, in words, or `undefined` when it cannot be known.
+ *
+ * Derived from `contributionMonthOf`, which is the single derivation the request itself uses,
+ * so the sentence the Admin reads and the `contributionPeriod` the API receives cannot disagree.
+ * There is no `Date` here and no time zone: the business date is already the Asia/Kolkata
+ * calendar date the API validates, so slicing it is the whole computation.
+ *
+ * `undefined` is returned for an empty or malformed date rather than a guess. A credited month
+ * shown for a date the API will reject is exactly the misleading state the UI rules forbid.
+ */
+export function creditedMonthLabel(businessDate: string): string | undefined {
+  const period = contributionMonthOf(businessDate);
+
+  if (period === undefined) {
+    return undefined;
+  }
+
+  const name = MEMBER_PAYMENT_MONTH_NAMES[period.month - 1];
+
+  return name === undefined ? undefined : `${name} ${period.year}`;
+}
+
+/**
+ * The starting values for recording a payment against one already-identified member.
+ *
+ * `MEMBER_CONTRIBUTION` is fixed rather than chosen, because a payment for a member is that
+ * income type; Offering and Donation remain optional-membership income types chosen on the
+ * general income screen, and the Admin is not offered the wrong vocabulary here. The member is
+ * seeded from the record the server already returned, so the identifier sent is the real UUID
+ * rather than anything typed or invented.
+ *
+ * `businessDate` is supplied by the caller because only the caller knows "today" for the
+ * screen's own locale default, exactly as the general income form passes it in.
+ */
+export function memberPaymentFormValues(
+  member: MemberPaymentRef,
+  businessDate: string,
+): IncomeFormValues {
+  return {
+    ...EMPTY_INCOME_FORM,
+    incomeType: MEMBER_PAYMENT_INCOME_TYPE,
+    memberId: member.id,
+    businessDate,
+  };
+}
+
+/**
  * Whether the member picker should be shown for an income type.
  *
  * Offering and Donation may identify a member, so the control is offered; an anonymous donation
@@ -234,6 +332,65 @@ export function contributionMonthOf(
  */
 export function showsMemberPicker(incomeType: IncomeType): boolean {
   return !isAnonymousIncomeType(incomeType);
+}
+
+/** The income fields the API may report a validation problem against. */
+const INCOME_FIELD_NAMES = [
+  'incomeType',
+  'amount',
+  'paymentMethod',
+  'businessDate',
+  'memberId',
+  'description',
+  'notes',
+] as const satisfies readonly (keyof IncomeFieldErrors)[];
+
+/**
+ * Maps a server-side validation failure onto the income form's own field names.
+ *
+ * Both income forms need this and neither may invent its own mapping: a message attached to the
+ * wrong input is a lie about where the problem is, and an unrecognised field has to stay in the
+ * general error banner rather than being pinned to some input the Admin did not fill in.
+ */
+export function incomeFieldErrorsFrom(error: unknown): IncomeFieldErrors {
+  const issues = fieldIssuesByName(error);
+  // Mutable while it is being assembled, then returned as the read-only shape the forms hold.
+  const errors: {
+    incomeType?: string;
+    amount?: string;
+    paymentMethod?: string;
+    businessDate?: string;
+    memberId?: string;
+    description?: string;
+    notes?: string;
+  } = {};
+
+  for (const field of INCOME_FIELD_NAMES) {
+    const message = issues[field];
+
+    if (message !== undefined) {
+      errors[field] = message;
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Today's calendar date in Asia/Kolkata, as `YYYY-MM-DD`.
+ *
+ * Both income forms pre-fill the business date with it, because the common case is today's income
+ * and a pastor should not have to know the date format. The value stays visible and editable, so
+ * the pre-fill is a convenience rather than a default the Admin cannot see.
+ *
+ * IST is a fixed +05:30 offset with no daylight saving, so the shift is exact arithmetic and
+ * needs no time-zone database. `Date` is used only to *display* today; no financial value ever
+ * passes through it.
+ */
+export function businessDateToday(): string {
+  const now = new Date(Date.now() + 330 * 60_000);
+
+  return now.toISOString().slice(0, 10);
 }
 
 /** The placeholder text for the description of an anonymous donation, for the disabled form. */

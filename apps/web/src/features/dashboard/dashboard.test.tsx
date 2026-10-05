@@ -433,7 +433,17 @@ describe('the states the screen can be in', () => {
     // A successful write has to invalidate the cached dashboard, or a quick action would be a
     // round trip to a screen still showing the totals from *before* the contribution.
     await user.type(screen.getByLabelText('Amount (required)'), '500');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    // The member is chosen by searching for their member ID, because the income screen's member
+    // control is a search rather than a list: the previous version offered the first page of
+    // members by name and left everyone past that page unselectable.
+    await user.type(screen.getByLabelText('Search members'), MEMBER_ONE.referenceId);
+    await user.selectOptions(
+      await screen.findByLabelText('Member (required)'),
+      // The option is awaited, not the select: while the search is in flight the previous
+      // search's members are withheld rather than offered under the new term, so the control is
+      // momentarily empty and then shows only what actually matched.
+      await screen.findByRole('option', { name: new RegExp(MEMBER_ONE.referenceId) }),
+    );
     await user.click(screen.getByRole('button', { name: 'Record income' }));
 
     await waitFor(() => {

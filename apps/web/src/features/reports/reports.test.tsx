@@ -59,7 +59,12 @@ async function renderReports(
 }
 
 describe('the eleven report projections', () => {
-  it('renders a populated body for every documented report', async () => {
+  // This one test mounts the whole Reports route eleven times, once per contract report, so it does
+  // more rendering work than any other test in the suite. The per-test timeout is raised to match
+  // that work rather than the assertion being weakened: every projection is still awaited, and a
+  // report that genuinely stops rendering still fails. Under a full parallel suite run this test
+  // reached roughly five and a half seconds against the five-second default.
+  it('renders a populated body for every documented report', { timeout: 20_000 }, async () => {
     // A report added to the contract without a projection would otherwise render as a blank panel,
     // which is the "dead control presented as complete" outcome the UI rules forbid. Rendering
     // all eleven here makes a new report fail loudly instead of quietly.

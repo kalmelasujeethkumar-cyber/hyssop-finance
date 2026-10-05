@@ -9,6 +9,7 @@ import {
   INCOME_TWO,
   INCOME_VOIDED,
   MEMBER_ONE,
+  MEMBER_TWO,
   notFound,
   serverFailure,
   staleTransactionRevision,
@@ -74,6 +75,24 @@ async function openRecordForm(user: ReturnType<typeof userEvent.setup>) {
   // The toggle now reads "Cancel recording income", so the submit button is the only control
   // still called "Record income" and the two can never be confused for one another.
   expect(screen.getByRole('button', { name: 'Cancel recording income' })).toBeInTheDocument();
+}
+
+/**
+ * Chooses `MEMBER_ONE` the way the screen now requires: search, then pick.
+ *
+ * The control used to be a list of the first page of members by name, which left anyone past
+ * that page unselectable while the field's own hint promised a search. Searching by member ID is
+ * the documented way to reach one member, and it is also what makes the member reachable at all.
+ */
+async function chooseMember(user: ReturnType<typeof userEvent.setup>, member: typeof MEMBER_ONE) {
+  await user.type(screen.getByLabelText('Search members'), member.referenceId);
+
+  await user.selectOptions(
+    await screen.findByLabelText('Member (required)'),
+    // Awaited rather than the select: while the search is in flight the previous search's members
+    // are withheld, so the control is momentarily empty and then holds only what matched.
+    await screen.findByRole('option', { name: new RegExp(member.referenceId) }),
+  );
 }
 
 describe('the income list', () => {
@@ -395,7 +414,7 @@ describe('recording income', () => {
     expect(businessDate.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     await user.type(screen.getByLabelText('Amount (required)'), '750.25');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    await chooseMember(user, MEMBER_ONE);
     await user.type(screen.getByLabelText('Description (optional)'), 'September contribution');
     await user.click(screen.getByRole('button', { name: 'Record income' }));
 
@@ -434,7 +453,7 @@ describe('recording income', () => {
     expect(screen.queryByLabelText(/Income reference/)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Amount (required)'), '500');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    await chooseMember(user, MEMBER_ONE);
     await user.click(screen.getByRole('button', { name: 'Record income' }));
 
     await screen.findByText(/was recorded as HY-INC-/);
@@ -449,7 +468,7 @@ describe('recording income', () => {
     await openRecordForm(user);
 
     await user.type(screen.getByLabelText('Amount (required)'), '0');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    await chooseMember(user, MEMBER_ONE);
     await user.click(screen.getByRole('button', { name: 'Record income' }));
 
     expect(await screen.findByText('The amount must be greater than zero.')).toBeInTheDocument();
@@ -483,7 +502,7 @@ describe('recording income', () => {
     await openRecordForm(user);
 
     await user.type(screen.getByLabelText('Amount (required)'), '500');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    await chooseMember(user, MEMBER_ONE);
     await user.click(screen.getByRole('button', { name: 'Record income' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('The API could not be reached.');
@@ -513,14 +532,14 @@ describe('recording income', () => {
     await openRecordForm(user);
 
     await user.type(screen.getByLabelText('Amount (required)'), '500');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    await chooseMember(user, MEMBER_ONE);
     await user.click(screen.getByRole('button', { name: 'Record income' }));
     await screen.findByText(/was recorded as HY-INC-/);
 
     // The form deliberately starts a fresh submission, so the member is chosen again rather than
     // the previous one being carried over.
     await user.type(screen.getByLabelText('Amount (required)'), '600');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    await chooseMember(user, MEMBER_ONE);
     await user.click(screen.getByRole('button', { name: 'Record income' }));
     await waitFor(() => {
       expect(callsTo(client, 'POST', '/income')).toHaveLength(2);
@@ -542,7 +561,7 @@ describe('recording income', () => {
     await openRecordForm(user);
 
     await user.type(screen.getByLabelText('Amount (required)'), '500');
-    await user.selectOptions(screen.getByLabelText('Member (required)'), MEMBER_ONE.id);
+    await chooseMember(user, MEMBER_ONE);
     await user.click(screen.getByRole('button', { name: 'Record income' }));
 
     expect(await screen.findByText('That member no longer exists.')).toBeInTheDocument();
@@ -974,5 +993,172 @@ describe('income navigation', () => {
     await user.click(screen.getByRole('link', { name: 'Back to all income' }));
 
     expect(await screen.findByRole('table')).toBeInTheDocument();
+  });
+});
+
+describe('finding the member a contribution is for', () => {
+  /**
+   * The member control is a search, not a list.
+   *
+   * It used to render the first page of members ordered by name, which left anyone past that page
+   * unselectable while the field's own hint promised a search. `GET /members?search=` already
+   * matches a name, a member ID, and a phone number in one query, so these tests hold the control
+   * to searching the real data source and to saying what it found.
+   */
+  it('does not request any member before there is a term worth searching', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderIncome(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+
+    expect(callsTo(client, 'GET', '/members')).toHaveLength(0);
+    expect(screen.getByTestId('member-picker-prompt')).toBeVisible();
+    expect(screen.queryByLabelText('Member (required)')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Search members'), 'A');
+
+    // One character matches most of the parish, so it narrows nothing and requests nothing.
+    expect(callsTo(client, 'GET', '/members')).toHaveLength(0);
+    expect(screen.queryByLabelText('Member (required)')).not.toBeInTheDocument();
+  });
+
+  it('finds a member by name, by member ID, and by phone number', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderIncome(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+
+    for (const term of ['Anitha', MEMBER_ONE.referenceId, '9000000001']) {
+      await user.clear(screen.getByLabelText('Search members'));
+      await user.type(screen.getByLabelText('Search members'), term);
+
+      expect(
+        await screen.findByRole('option', { name: new RegExp(MEMBER_ONE.referenceId) }),
+      ).toBeVisible();
+    }
+
+    // The search reached the API rather than filtering a list already in the browser.
+    expect(callsTo(client, 'GET', '/members').length).toBeGreaterThan(0);
+    expect(lastCallTo(client, 'GET', '/members')?.path).toContain('search=');
+  });
+
+  it('shows the count of matches rather than only the list', async () => {
+    const user = userEvent.setup({ delay: null });
+
+    renderIncome(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await user.type(screen.getByLabelText('Search members'), MEMBER_ONE.referenceId);
+
+    expect(await screen.findByText('1 member matches.')).toBeVisible();
+  });
+
+  it('keeps the chosen member visible after the search text is cleared', async () => {
+    // The options belong to the current search, so a selected UUID whose name was no longer in the
+    // list would be a payment attributed to a member the screen could not name.
+    const user = userEvent.setup({ delay: null });
+    const client = renderIncome(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseMember(user, MEMBER_ONE);
+
+    await user.clear(screen.getByLabelText('Search members'));
+
+    const chosen = await screen.findByTestId('locked-member');
+
+    expect(within(chosen).getByText(MEMBER_ONE.name)).toBeVisible();
+    expect(within(chosen).getByText(MEMBER_ONE.referenceId)).toBeVisible();
+    expect(within(chosen).getByText('9000000001')).toBeVisible();
+    // There is nothing left to change it by accident, so the select is gone rather than reset.
+    expect(screen.queryByLabelText('Member (required)')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Record income' }));
+
+    await screen.findByText(/was recorded as HY-INC-/);
+
+    // The cleared search did not drop the payment's member.
+    expect(lastCallTo(client, 'POST', '/income')?.body).toMatchObject({
+      memberId: MEMBER_ONE.id,
+    });
+  });
+
+  it('lets a chosen member be replaced, rather than trapping the Admin on the first one', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderIncome(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseMember(user, MEMBER_ONE);
+
+    await user.click(screen.getByRole('button', { name: 'Choose a different member' }));
+    await chooseMember(user, MEMBER_TWO);
+
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Record income' }));
+
+    await screen.findByText(/was recorded as HY-INC-/);
+
+    expect(lastCallTo(client, 'POST', '/income')?.body).toMatchObject({ memberId: MEMBER_TWO.id });
+  });
+
+  it('says plainly that nothing matched and never creates a member from a search', async () => {
+    // A member who does not exist yet has to be added as a member first. Inventing one here would
+    // hide a real master-data gap behind a silent write, and no duplicate-member rule exists.
+    const user = userEvent.setup({ delay: null });
+    const client = renderIncome(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await user.type(screen.getByLabelText('Search members'), 'Nobody At All');
+
+    expect(await screen.findByTestId('member-picker-empty')).toHaveTextContent(
+      'add the member from the Members screen first',
+    );
+    expect(callsTo(client, 'POST', '/members')).toHaveLength(0);
+  });
+
+  it('shows a failure when the search itself could not be answered', async () => {
+    const user = userEvent.setup({ delay: null });
+
+    renderIncome(stubApiClient({ members: { listFails: transportFailure } }));
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await user.type(screen.getByLabelText('Search members'), 'Anitha');
+
+    // A silent empty list would read as "this person is not a member", which is a different and
+    // much more damaging claim than "the search did not work".
+    expect(await screen.findByTestId('member-picker-error')).toHaveTextContent(
+      'The member list could not be searched',
+    );
+    expect(screen.queryByTestId('member-picker-empty')).not.toBeInTheDocument();
+  });
+
+  it('marks the member optional for an offering from a visitor', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderIncome(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+
+    await user.selectOptions(screen.getByLabelText('Income type (required)'), 'OFFERING');
+    await user.type(screen.getByLabelText('Search members'), 'Anitha');
+
+    // The control is offered, because an offering may name a member, and it is optional, because
+    // it need not. `REQ-INCOME-004`.
+    expect(await screen.findByLabelText('Member (optional)')).toBeVisible();
+
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Record income' }));
+
+    await screen.findByText(/was recorded as HY-INC-/);
+
+    // No member was named, so none was sent.
+    expect(lastCallTo(client, 'POST', '/income')?.body).not.toHaveProperty('memberId');
   });
 });

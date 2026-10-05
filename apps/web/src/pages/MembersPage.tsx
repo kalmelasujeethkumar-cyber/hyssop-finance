@@ -37,6 +37,7 @@ import {
   type MemberListFilters,
 } from '../features/members/member-api';
 import { formatBusinessDate } from '../lib/money';
+import { RecordMemberPaymentForm } from '../features/income/RecordMemberPaymentForm';
 import { useUnsavedWork } from '../app/providers/UnsavedWorkProvider';
 
 /**
@@ -68,6 +69,12 @@ export function MembersPage() {
   const filters = readFilters(searchParams);
   const list = useMemberList(filters);
   const [isCreating, setIsCreating] = useState(false);
+  // A member who has just been added is very often someone handing over a contribution right
+  // now, so the payment form continues straight from the create form instead of making the
+  // Admin close it, search for the member they just created, and start again. The member is
+  // held from the create response, so no refetch is needed and the panel cannot be pointed at
+  // a different member than the one that was added.
+  const [createdMember, setCreatedMember] = useState<MemberSummary | null>(null);
 
   const hasActiveCriteria =
     filters.search !== '' ||
@@ -108,7 +115,24 @@ export function MembersPage() {
         }
       />
 
-      {isCreating ? <CreateMemberForm onDismiss={() => setIsCreating(false)} /> : null}
+      {isCreating ? (
+        <CreateMemberForm
+          onDismiss={() => {
+            setIsCreating(false);
+          }}
+          onCreated={setCreatedMember}
+        />
+      ) : null}
+
+      {createdMember === null ? null : (
+        <RecordMemberPaymentForm
+          member={createdMember}
+          origin="member-created"
+          onDismiss={() => {
+            setCreatedMember(null);
+          }}
+        />
+      )}
 
       <Panel title="Search and filter">
         <div className="space-y-4">
@@ -536,8 +560,20 @@ function MemberPagination({
  *
  * The form stays open after a successful create so the confirmation naming the new member
  * ID is actually visible; closing it on success would show a "nothing happened" moment.
+ *
+ * On success the new member is also handed back to the screen, which opens the payment form for
+ * them straight away. The two are separate writes on purpose: the member record is created, and
+ * only then is a payment recorded against its real UUID. Nothing here invents a member as a
+ * side effect of recording money, and nothing records money as a side effect of adding a
+ * member — the Admin presses Record payment for that.
  */
-function CreateMemberForm({ onDismiss }: { readonly onDismiss: () => void }) {
+function CreateMemberForm({
+  onDismiss,
+  onCreated,
+}: {
+  readonly onDismiss: () => void;
+  readonly onCreated: (member: MemberSummary) => void;
+}) {
   const create = useCreateMember();
   const [values, setValues] = useState<MemberFormValues>(EMPTY_MEMBER_FORM);
   const [fieldErrors, setFieldErrors] = useState<MemberFieldErrors>({});
@@ -590,8 +626,9 @@ function CreateMemberForm({ onDismiss }: { readonly onDismiss: () => void }) {
     create.mutate(values, {
       onSuccess: (created) => {
         setValues(EMPTY_MEMBER_FORM);
+        onCreated(created);
         setConfirmation(
-          `${created.name} was added as member ${created.referenceId}. Open the member to configure a monthly contribution.`,
+          `${created.name} was added as member ${created.referenceId}. Record their contribution below, or open the member to configure a monthly amount.`,
         );
       },
       onError: (error) => {

@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ANONYMOUS_DONATION_DESCRIPTION,
   INCOME_TYPES,
@@ -9,12 +9,18 @@ import {
 import { ApiClientError, ApiTransportError } from '../../lib/api-client';
 import {
   EMPTY_INCOME_FORM,
+  MEMBER_PAYMENT_INCOME_TYPE,
+  businessDateToday,
   contributionMonthOf,
+  creditedMonthLabel,
   hasIncomeFieldErrors,
+  incomeFieldErrorsFrom,
   incomeRequestBody,
+  memberPaymentFormValues,
   showsMemberPicker,
   validateIncomeFields,
   type IncomeFormValues,
+  type MemberPaymentRef,
 } from './income-api';
 import {
   CONTRIBUTION_SUMMARY_QUERY_KEY,
@@ -556,6 +562,157 @@ describe('the caches a transaction write must invalidate', () => {
     invalidateTransactionDependents(queryClient);
 
     expect(invalidated(queryClient, [...MEMBER_LIST_QUERY_KEY, { search: '' }])).toBe(false);
+  });
+});
+
+describe('the values a member payment starts from', () => {
+  const member: MemberPaymentRef = {
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Anitha Kumar',
+    referenceId: 'HY-MEM-0001',
+    phone: '9000000001',
+  };
+
+  it('fixes the income type to a member contribution', () => {
+    // `REQ-INCOME-003`. A payment for a member is that income type by definition, so the payment
+    // form does not offer Offering, Donation, or Anonymous Donation — a control that let the Admin
+    // record something other than the payment they came to record.
+    expect(MEMBER_PAYMENT_INCOME_TYPE).toBe('MEMBER_CONTRIBUTION');
+    expect(memberPaymentFormValues(member, '2026-09-28').incomeType).toBe(
+      MEMBER_PAYMENT_INCOME_TYPE,
+    );
+  });
+
+  it('seeds the member from the record the server returned', () => {
+    // The identifier sent has to be the real UUID. Anything typed, remembered, or invented here
+    // would either fail at the API with a 404 or, worse, be recorded against someone else.
+    const values = memberPaymentFormValues(member, '2026-09-28');
+
+    expect(values.memberId).toBe(member.id);
+    expect(values.businessDate).toBe('2026-09-28');
+  });
+
+  it('starts with an empty amount and no free text, so nothing is pre-filled but the date', () => {
+    const values = memberPaymentFormValues(member, '2026-09-28');
+
+    expect(values.amount).toBe('');
+    expect(values.description).toBe('');
+    expect(values.notes).toBe('');
+    // The pre-filled date is the form's own default, and the Admin can change it.
+    expect(values.paymentMethod).toBe('CASH');
+  });
+
+  it('produces a form the shared validator already accepts', () => {
+    // The one field still missing is the amount, so nothing else is complained about and the
+    // Admin is not told to fix a field that is already correct.
+    expect(validateIncomeFields(memberPaymentFormValues(member, '2026-09-28'))).toEqual({
+      amount: 'Enter an amount.',
+    });
+  });
+});
+
+describe('creditedMonthLabel', () => {
+  it('names the month in full, because it is read inside a sentence', () => {
+    // `formatMonthYear` abbreviates for table cells where width matters. This is prose, and the
+    // Admin is confirming where a payment is being filed.
+    expect(creditedMonthLabel('2026-09-28')).toBe('September 2026');
+    expect(creditedMonthLabel('2026-01-01')).toBe('January 2026');
+    expect(creditedMonthLabel('2026-12-31')).toBe('December 2026');
+  });
+
+  it('agrees with the period the request will carry', () => {
+    // Both come from `contributionMonthOf`, so the sentence the Admin reads cannot promise a
+    // different month from the one the API records. Every case is a boundary, which is where a
+    // second derivation would drift.
+    const cases = [
+      { businessDate: '2026-01-01', period: { year: 2026, month: 1 }, label: 'January 2026' },
+      { businessDate: '2026-06-30', period: { year: 2026, month: 6 }, label: 'June 2026' },
+      { businessDate: '2026-09-28', period: { year: 2026, month: 9 }, label: 'September 2026' },
+      { businessDate: '2027-03-01', period: { year: 2027, month: 3 }, label: 'March 2027' },
+    ];
+
+    for (const { businessDate, period, label } of cases) {
+      expect(contributionMonthOf(businessDate)).toEqual(period);
+      expect(creditedMonthLabel(businessDate)).toBe(label);
+    }
+  });
+
+  it('says nothing rather than guessing when the date is unusable', () => {
+    // A credited month shown for a date the API will reject is exactly the misleading state the
+    // UI rules forbid, so the honest answer is no month at all.
+    for (const value of ['', '   ', '2026-13-01', '28-09-2026', 'today']) {
+      expect(creditedMonthLabel(value)).toBeUndefined();
+    }
+  });
+});
+
+describe('businessDateToday', () => {
+  it('returns an Asia/Kolkata calendar date the API will accept', () => {
+    const today = businessDateToday();
+
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(
+      validateIncomeFields(form({ memberId: 'a', businessDate: today })).businessDate,
+    ).toBeUndefined();
+  });
+
+  it('reports the India date, not the machine time zone date', () => {
+    // A machine set to UTC would call this instant the 30th; the church's business date is the
+    // 1st, because IST is +05:30 and the service it records belongs to has already started there.
+    // Without this, a contribution recorded after 18:30 UTC would be filed under the wrong day —
+    // and therefore the wrong contribution month at a month boundary.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-30T20:00:00.000Z'));
+
+    try {
+      expect(businessDateToday()).toBe('2026-10-01');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not roll the date backwards, because the offset never becomes negative', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+    try {
+      expect(businessDateToday()).toBe('2026-01-01');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('incomeFieldErrorsFrom', () => {
+  it('puts a server message on the input it belongs to', () => {
+    // The API refuses a contribution for a member that no longer exists, naming the member field.
+    const errors = incomeFieldErrorsFrom(
+      new ApiClientError(400, 'VALIDATION_FAILED', 'Invalid.', 'req-5', [
+        { field: 'memberId', message: 'That member no longer exists.' },
+        { field: 'amount', message: 'The amount must be greater than zero.' },
+      ]),
+    );
+
+    expect(errors.memberId).toBe('That member no longer exists.');
+    expect(errors.amount).toBe('The amount must be greater than zero.');
+  });
+
+  it('ignores a field this form does not own rather than attaching it to the wrong input', () => {
+    // A message about some other screen's field must not appear next to this form's amount box.
+    const errors = incomeFieldErrorsFrom(
+      new ApiClientError(400, 'VALIDATION_FAILED', 'Invalid.', 'req-6', [
+        { field: 'expectedPaise', message: 'The expected amount must be greater than zero.' },
+      ]),
+    );
+
+    expect(errors).toEqual({});
+  });
+
+  it('returns nothing for an error that carried no field issues', () => {
+    expect(incomeFieldErrorsFrom(new Error('other'))).toEqual({});
+    expect(
+      incomeFieldErrorsFrom(new ApiClientError(500, 'INTERNAL_ERROR', 'Failed.', 'req-7')),
+    ).toEqual({});
   });
 });
 
