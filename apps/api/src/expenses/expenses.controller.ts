@@ -15,6 +15,7 @@ import {
   success,
   type ApiListEnvelope,
   type ExpenseCategoryView,
+  type ExpenseReasonView,
   type ExpenseSummary,
 } from '@hyssop/contracts';
 import { CurrentRequestId, CurrentSession } from '../auth/auth.decorators';
@@ -25,9 +26,13 @@ import type { TransactionActor } from '../transactions/transactions.service';
 import {
   CreateExpenseCategoryDto,
   CreateExpenseDto,
+  CreateExpenseReasonDto,
   ExpenseCategoryIdParamDto,
   ExpenseListQueryDto,
+  ExpenseReasonIdParamDto,
+  ExpenseReasonListQueryDto,
   UpdateExpenseCategoryDto,
+  UpdateExpenseReasonDto,
 } from './dto/expense.dto';
 import { ExpensesService } from './expenses.service';
 
@@ -149,6 +154,71 @@ export class ExpensesController {
   ): Promise<{ data: ExpenseCategoryView }> {
     return success(
       await this.expenses.updateCategory(params.id, body, actorOf(session, requestId), {
+        key: readIdempotencyKey(idempotencyKey),
+      }),
+    );
+  }
+
+  /**
+   * The active reasons of one category, for the Record Expense form.
+   *
+   * `categoryId` is required, because a reason belongs to a category and returning every reason
+   * for every category would leave the browser guessing which subset applies to the category the
+   * Admin selected. Only active rows are returned, exactly as the category list is: a deactivated
+   * reason in the dropdown is a dead control the server would refuse.
+   */
+  @Get('reasons')
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  public async listReasons(
+    @Query() query: ExpenseReasonListQueryDto,
+  ): Promise<{ data: readonly ExpenseReasonView[] }> {
+    return success(await this.expenses.listReasons(query.categoryId));
+  }
+
+  /**
+   * Adds a custom reason under a category.
+   *
+   * `isSystem` is not accepted, for the same reason as on a category: the predefined
+   * per-category reasons are a documented product set that only the seed marks. The write is
+   * idempotent so a double submit cannot create two reasons that differ only by trailing
+   * whitespace.
+   */
+  @Post('reasons')
+  @Version('1')
+  @HttpCode(HttpStatus.CREATED)
+  public async createReason(
+    @Body() body: CreateExpenseReasonDto,
+    @Headers(IDEMPOTENCY_KEY_HEADER) idempotencyKey: string | undefined,
+    @CurrentSession() session: AuthenticatedSession,
+    @CurrentRequestId() requestId: string | null,
+  ): Promise<{ data: ExpenseReasonView }> {
+    return success(
+      await this.expenses.createReason(body, actorOf(session, requestId), {
+        key: readIdempotencyKey(idempotencyKey),
+      }),
+    );
+  }
+
+  /**
+   * Renames a reason or activates/deactivates it.
+   *
+   * There is no delete route and no way to move a reason between categories, by design: the row
+   * survives so historical expenses keep the label they were recorded with, and moving it would
+   * strand those expenses under a reason their category no longer owns.
+   */
+  @Patch('reasons/:id')
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  public async updateReason(
+    @Param() params: ExpenseReasonIdParamDto,
+    @Body() body: UpdateExpenseReasonDto,
+    @Headers(IDEMPOTENCY_KEY_HEADER) idempotencyKey: string | undefined,
+    @CurrentSession() session: AuthenticatedSession,
+    @CurrentRequestId() requestId: string | null,
+  ): Promise<{ data: ExpenseReasonView }> {
+    return success(
+      await this.expenses.updateReason(params.id, body, actorOf(session, requestId), {
         key: readIdempotencyKey(idempotencyKey),
       }),
     );

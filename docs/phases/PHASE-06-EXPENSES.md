@@ -2,9 +2,9 @@
 
 ## Document Responsibility
 
-- Owns: expense commands and reads, the initial category set, custom category lifecycle, and the expense missing-receipt state.
+- Owns: expense commands and reads, the initial category set, per-category expense reasons, custom category and reason lifecycle, and the expense missing-receipt state.
 - Does not own: reusable document storage implementation, dashboard aggregation, reports, or requirement definitions.
-- Primary owned requirements: `REQ-EXP-001`–`REQ-EXP-004`, `REQ-DOC-003`.
+- Primary owned requirements: `REQ-EXP-001`–`REQ-EXP-005`, `REQ-DOC-003`.
 - Consumed requirements: `REQ-AUTH-*`, `REQ-FIN-015`–`REQ-FIN-020`, `REQ-DASH-*`, `REQ-REPORT-*`, and `REQ-DOC-001`–`REQ-DOC-009` for association integration.
 - Authority references: `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `05-DATABASE-SPEC.md`, `06-API-SPEC.md`, `07-SECURITY-RULES.md`, `10-TEST-PLAN.md`, and `14-TRACEABILITY-MATRIX.md`.
 - Deliverables: expense create/read/update/void, category management, method/date handling, and **Receipt Missing** state.
@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires Phases 01–05 complete.
+- Status: `COMPLETE`; the quality gate passed and the Git gate is closed with commit `6a2ad41bcf40f6bfffd11b9a98ea1520db0cc479` recorded in `docs/runtime/PHASE-HISTORY.md`.
 - Preconditions: shared transaction, audit, idempotency, and category persistence contracts are available.
 - Handoff rule: category deactivation preserves historical transactions and never hard-deletes them.
 

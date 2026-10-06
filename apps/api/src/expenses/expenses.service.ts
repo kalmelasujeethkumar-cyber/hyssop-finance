@@ -1,17 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import type { ExpenseCategory } from '@prisma/client';
+import type { ExpenseCategory, ExpenseReason } from '@prisma/client';
 import {
   list as listEnvelope,
   TRANSACTION_PAGE_SIZE_DEFAULT,
   TRANSACTION_PAGE_SIZE_MAX,
   type ApiListEnvelope,
   type ExpenseCategoryView,
+  type ExpenseReasonView,
   type ExpenseSummary,
 } from '@hyssop/contracts';
 import { validationFailed } from '../common/errors/domain.errors';
 import { IdempotentCommandRunner, type IdempotencyKey } from '../common/http/idempotency';
 import { startOfBusinessDay } from '../common/time/business-date';
 import { ExpenseCategoryRepository } from '../database/categories/expense-category.repository';
+import { ExpenseReasonRepository } from '../database/reasons/expense-reason.repository';
 import { TransactionRepository } from '../database/transactions/transaction.repository';
 import { toExpenseSummary } from '../transactions/transaction-mapper';
 import {
@@ -24,12 +26,16 @@ import {
 import type {
   CreateExpenseCategoryDto,
   CreateExpenseDto,
+  CreateExpenseReasonDto,
   UpdateExpenseCategoryDto,
+  UpdateExpenseReasonDto,
 } from './dto/expense.dto';
 
 const EXPENSE_ENDPOINT = 'POST /api/v1/expenses';
 const CATEGORY_CREATE_ENDPOINT = 'POST /api/v1/expenses/categories';
 const CATEGORY_UPDATE_ENDPOINT = 'PATCH /api/v1/expenses/categories';
+const REASON_CREATE_ENDPOINT = 'POST /api/v1/expenses/reasons';
+const REASON_UPDATE_ENDPOINT = 'PATCH /api/v1/expenses/reasons';
 
 /**
  * Expense commands, category configuration, and expense reads.
@@ -62,6 +68,7 @@ export class ExpensesService {
   public constructor(
     private readonly transactions: TransactionRepository,
     private readonly categories: ExpenseCategoryRepository,
+    private readonly reasons: ExpenseReasonRepository,
     private readonly idempotency: IdempotentCommandRunner,
   ) {}
 
@@ -86,6 +93,12 @@ export class ExpensesService {
     // left behind. `requireActive` also re-reads the category's status, so a category
     // deactivated between this check and the write can only make the request fail closed.
     await this.categories.requireActive(input.categoryId);
+    // `REQ-EXP-005`, checked against the *already validated* category rather than against
+    // whatever category the request happened to name: a reason that belongs to a different
+    // category is the documented `400` naming `expenseReasonId`, and the check runs before the
+    // write so no partial record is left behind. Re-reading both statuses here also means a
+    // category or reason deactivated in the meantime can only make the request fail closed.
+    await this.reasons.requireActiveForCategory(input.expenseReasonId, input.categoryId);
 
     const occurredAt = startOfBusinessDay(businessDate);
     const description = input.description ?? null;
@@ -102,6 +115,7 @@ export class ExpensesService {
         paymentMethod: input.paymentMethod,
         businessDate: input.businessDate.trim(),
         categoryId: input.categoryId,
+        expenseReasonId: input.expenseReasonId,
         ...(input.description === undefined ? {} : { description: input.description }),
         ...(input.notes === undefined ? {} : { notes: input.notes }),
       },
@@ -117,6 +131,7 @@ export class ExpensesService {
             description,
             notes,
             categoryId: input.categoryId,
+            expenseReasonId: input.expenseReasonId,
           },
           { actorAdminId: actor.adminUserId, requestId: actor.requestId },
         );
@@ -257,6 +272,115 @@ export class ExpensesService {
 
     return result.body;
   }
+
+  /**
+   * The active reasons of one category, for the Record Expense form.
+   *
+   * Scoped to a category because a reason has no meaning without one, and restricted to
+   * `ACTIVE` for the same reason the category list is: offering a deactivated reason in a
+   * dropdown the server then refuses is the dead control the state-honesty rule forbids. An
+   * inactive reason still reaches history through `TransactionExpenseReasonRef`, which carries the
+   * reason's status at read time.
+   *
+   * A plain array rather than a paged envelope, exactly like the category list: this is bounded
+   * configuration behind one select, not a ledger.
+   *
+   * The category is read first so an unknown one is a `404`, matching what adding a reason to it
+   * would answer. Returning an empty array instead would tell the Admin "this category has no
+   * reasons", a conclusion they would act on and which is simply false when the category does not
+   * exist. `findById` rather than `requireActive`, because an inactive category still has reasons
+   * and its history still needs to read them.
+   */
+  public async listReasons(categoryId: string): Promise<readonly ExpenseReasonView[]> {
+    await this.categories.findById(categoryId);
+
+    return (await this.reasons.findActiveForCategory(categoryId)).map(toExpenseReasonView);
+  }
+
+  /**
+   * Adds a custom reason to a category, at most once per idempotency key.
+   *
+   * `categoryId` is part of the request rather than of the route because a reason is always
+   * "a reason under this category", and `isSystem` is not accepted: the predefined per-category
+   * reasons are a documented product set that only the seed marks, so an Admin-created reason is
+   * always custom.
+   */
+  public async createReason(
+    input: CreateExpenseReasonDto,
+    actor: TransactionActor,
+    idempotency: IdempotencyKey,
+  ): Promise<ExpenseReasonView> {
+    const name = input.name.trim();
+
+    const result = await this.idempotency.run<ExpenseReasonView>({
+      adminUserId: actor.adminUserId,
+      endpoint: REASON_CREATE_ENDPOINT,
+      idempotencyKey: idempotency.key,
+      request: { name, categoryId: input.categoryId },
+      run: async (tx) => {
+        const created = await this.reasons.createWithinTransaction(
+          tx,
+          input.categoryId,
+          name,
+          actor.adminUserId,
+        );
+
+        return { status: 201, body: toExpenseReasonView(created) };
+      },
+    });
+
+    return result.body;
+  }
+
+  /**
+   * Renames a reason or activates/deactivates it, at most once per idempotency key.
+   *
+   * Deactivating is not deleting, for the same reason as a category: the row survives and every
+   * historical expense keeps the label it was recorded with. A request that changes nothing is
+   * refused, because an audit event with identical before and after values makes the history
+   * misleading.
+   *
+   * There is deliberately no way to move a reason between categories. Doing so would strand
+   * historical expenses under a reason their category no longer owns, which the reason/category
+   * pairing rule exists to prevent.
+   */
+  public async updateReason(
+    id: string,
+    input: UpdateExpenseReasonDto,
+    actor: TransactionActor,
+    idempotency: IdempotencyKey,
+  ): Promise<ExpenseReasonView> {
+    if (input.name === undefined && input.status === undefined) {
+      throw validationFailed('A reason change must set a new name or a new status.', {
+        field: input.name === undefined ? 'status' : 'name',
+      });
+    }
+
+    const name = input.name?.trim();
+    const status = input.status;
+
+    const result = await this.idempotency.run<ExpenseReasonView>({
+      adminUserId: actor.adminUserId,
+      endpoint: `${REASON_UPDATE_ENDPOINT}/${id}`,
+      idempotencyKey: idempotency.key,
+      request: {
+        ...(name === undefined ? {} : { name }),
+        ...(status === undefined ? {} : { status }),
+      },
+      run: async (tx) => {
+        const updated = await this.reasons.updateWithinTransaction(
+          tx,
+          id,
+          { ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }) },
+          actor.adminUserId,
+        );
+
+        return { status: 200, body: toExpenseReasonView(updated) };
+      },
+    });
+
+    return result.body;
+  }
 }
 
 /**
@@ -270,6 +394,27 @@ export class ExpensesService {
 export function toExpenseCategoryView(row: ExpenseCategory): ExpenseCategoryView {
   return {
     id: row.id,
+    name: row.name,
+    status: row.status,
+    isSystem: row.isSystem,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * The one place a persisted reason becomes an API payload.
+ *
+ * `categoryId` is included because the browser needs it to know which subset of reasons is valid
+ * for the category currently selected, and because a mismatched pair has to be *detectable*
+ * rather than assumed impossible. The current status is returned rather than dropped, so a
+ * historical expense still explains why a reason it was filed under is no longer offered for a
+ * new entry.
+ */
+export function toExpenseReasonView(row: ExpenseReason): ExpenseReasonView {
+  return {
+    id: row.id,
+    categoryId: row.categoryId,
     name: row.name,
     status: row.status,
     isSystem: row.isSystem,

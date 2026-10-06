@@ -96,11 +96,14 @@ All create and mutation endpoints require an idempotency key for safe retries. R
 
 ## Expenses and categories
 
-- `POST /api/v1/expenses` — create an expense with category, amount, method, and business date.
-- `GET /api/v1/expenses` — paginated expense list with filters.
+- `POST /api/v1/expenses` — create an expense with category, reason, amount, method, and business date. The reason must exist, be `ACTIVE`, and belong to the chosen category (`REQ-EXP-005`); a missing, unknown, inactive, or wrong-category reason is rejected with `400 VALIDATION_FAILED` naming `expenseReasonId`.
+- `GET /api/v1/expenses` — paginated expense list with filters. Search matches reference, description, member, category name, and reason (`REQ-EXP-005`); Notes are excluded. Filters include `categoryId`, `status`, `paymentMethod`, date range, amount range, `sort`, and `direction`.
 - `GET /api/v1/expenses/categories` — active categories.
 - `POST /api/v1/expenses/categories` — create a custom category.
 - `PATCH /api/v1/expenses/categories/:id` — rename or deactivate a category; never silently delete history.
+- `GET /api/v1/expenses/reasons?categoryId=` — the active reasons of one category, for a new expense. `categoryId` is required; for an unknown category the answer is `404 NOT_FOUND` rather than an empty list, so a deleted link cannot look like a category with no reasons. Reads are allowed for inactive categories so history stays durable.
+- `POST /api/v1/expenses/reasons` — create a custom reason under the given `categoryId`. `isSystem` is never accepted; only the name is, and it is unique case-insensitively within the category with `409 CONFLICT` on a duplicate.
+- `PATCH /api/v1/expenses/reasons/:id` — rename or deactivate a reason; never silently delete history. A deactivated reason stays readable on its historical expenses (`REQ-EXP-005`).
 
 ## Documents
 
@@ -127,10 +130,37 @@ Allowed types are JPG, JPEG, PNG, WEBP, and PDF. The server validates declared t
 - `GET /api/v1/reports/audit?from=&to=&action=`
 - `GET /api/v1/reports/transactions?period=&type=&status=`
 - `GET /api/v1/reports/:reportId/export.csv?period=` — CSV export with documented columns and escaping.
+- `GET /api/v1/reports/expense-transactions/export.csv?categoryId=&search=&status=&paymentMethod=&from=&to=&minAmount=&maxAmount=&sort=&direction=` — filtered expense CSV export.
 
 Period values are `today`, `thisMonth`, `lastMonth`, `last3Months`, `last6Months`, `thisYear`, `lastYear`, or an explicit `from` and `to` in `YYYY-MM-DD`. Boundaries are inclusive and are defined exactly in `01-REQUIREMENTS.md`. Custom ranges require both dates and reject `from` after `to`.
 
 Report visibility is deterministic: active financial reports exclude `VOIDED` records; Complete Transaction and Audit retain history; Receipt / Document projections distinguish `AVAILABLE`, `REMOVED`, and authorized historical `VOIDED` records. The same projections are consumed by CSV export and print.
+
+### Filtered expense CSV export
+
+This route is not a `ReportId`. It has no JSON counterpart and no entry in the Reports screen picker, because it exports exactly the filtered expenses the Expenses screen is showing rather than a period report. It is declared before `:reportId/export.csv` so the literal segment always wins during routing; otherwise `expense-transactions` would be captured by the generic route, which resolves a *period* and would silently discard the category, search, status, payment-method, and amount filters.
+
+It does not extend the period report query: it accepts no `period`, no `page`, and no `pageSize`. A paged export is an incomplete export, so a request carrying either paging key is rejected with `400 VALIDATION_FAILED` naming that key rather than silently ignored.
+
+`categoryId` is **required**; omitting it returns `400 VALIDATION_FAILED` naming `categoryId`. A church's expenses span every category, and an unbounded export of the whole ledger is not a thing a pastor asks for, so requiring the filter keeps the file a coherent slice and keeps the row limit reachable through a control the Admin owns.
+
+The rows come from the same ledger query and the same forced `transactionType = 'EXPENSE'` filter as `GET /api/v1/expenses`, so the file cannot describe a different set of expenses than the screen it was downloaded from. `status` is a filter rather than a default, exactly as it is for the expense list: with no `status` the export contains `ACTIVE` and `VOIDED` rows alike, and `status=ACTIVE` or `status=VOIDED` narrows it. There is no status column, so the filter is the answer to "which ones".
+
+The row limit is `CSV_EXPORT_MAX_ROWS` (10,000), not the 1,000-row screen cap: a spreadsheet has no scrolling problem. The cap is enforced by refusing, never by truncating — the query reads `CSV_EXPORT_MAX_ROWS + 1` rows and, if more matched, returns `400 VALIDATION_FAILED` on `categoryId` telling the Admin to narrow the filters. No incomplete file is ever produced.
+
+Columns, in this exact order: `Expense ID`, `Expense Date`, `Category`, `Reason`, `Amount`, `Payment Method`, `Notes`, `Receipt URL`.
+
+- `Expense ID` is the human reference such as `HY-EXP-000001`, never the internal UUID.
+- `Expense Date` is `DD-MM-YYYY`. The API and database keep `YYYY-MM-DD`; this is the one place the business date is re-rendered for a human.
+- `Amount` is the exact ungrouped decimal string produced by `formatPaise`, such as `2450.75`. It is never grouped, rounded, or converted to a spreadsheet formula.
+- `Payment Method` is human-readable: `Cash`, `UPI`, `Bank Transfer`.
+- `Receipt URL` is the authenticated relative download path `/api/v1/documents/{id}/download`, never a storage key, never a `file://` path, and never an absolute URL, because the sheet leaves this application.
+
+An absent value is written as an **empty cell**, never as placeholder text. Notes follow the same rule, and so does `Receipt URL`: an expense with no receipt gets an empty cell. The column holds URLs, so a row either has a link or has none, and words in the cell would read to a spreadsheet as a value it might try to open. The `Receipt Missing` wording required by `REQ-DOC-003` is an **interface** obligation and is satisfied by the screens; it does not extend to this export's data columns.
+
+An empty result is a header-only file, not a header plus one blank data row: a blank row would suggest an expense exists with nothing in it.
+
+Every cell is escaped per RFC 4180, and a text cell beginning with `=`, `+`, `@`, tab, or carriage return is prefixed with a single quote so Excel, LibreOffice, and Google Sheets display it literally instead of evaluating it. The guard applies to text cells only, so a generated amount may legitimately keep a leading `-`.
 
 ## Search
 

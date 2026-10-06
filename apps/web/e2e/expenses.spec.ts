@@ -150,6 +150,7 @@ async function recordExpense(
   options: {
     readonly amount: string;
     readonly category: string;
+    readonly reason?: string;
     readonly paymentMethod?: string;
     readonly description: string;
   },
@@ -161,6 +162,20 @@ async function recordExpense(
   // in full. A looser match would silently target the filter panel instead.
   await page.getByLabel('Amount (required)').fill(options.amount);
   await page.getByLabel('Category (required)').selectOption({ label: options.category });
+
+  // Reasons belong to exactly one category and are fetched only after the category is chosen, so
+  // the wait is on the option list itself rather than on a timer: submitting while it is still
+  // the placeholder is refused with "Choose a reason." and no expense is ever recorded. With no
+  // reason named, the first one the category offers is used, because any active reason of the
+  // chosen category is a valid answer and the test's subject is the rest of the journey.
+  const reasonSelect = page.getByLabel('Reason (required)');
+  await expect
+    .poll(() => reasonSelect.locator('option').count(), { message: 'reasons for the category' })
+    .toBeGreaterThan(1);
+  await reasonSelect.selectOption(
+    options.reason === undefined ? { index: 1 } : { label: options.reason },
+  );
+
   await page.getByLabel('Payment method (required)').selectOption(options.paymentMethod ?? 'CASH');
   await page.getByLabel('Business date (required)').fill(currentBusinessDate());
   await page.getByLabel('Description (optional)').fill(options.description);
@@ -509,6 +524,16 @@ test.describe('expense management', () => {
     // the point of adding it inline rather than sending them to another screen.
     await page.getByLabel('Amount (required)').fill('540.50');
     await page.getByLabel('Category (required)').selectOption({ label: categoryName });
+
+    // A brand new category has no reasons of its own, and an expense cannot be recorded without
+    // one, so the inline path has to reach the expense in the same session — a category that
+    // could not immediately hold an expense would not be usable.
+    await page.getByRole('button', { name: 'Add a reason not listed above' }).click();
+    await page.getByLabel('New reason name (required)').fill(`Choir supplies ${uniqueRunTag()}`);
+    await page.getByRole('button', { name: 'Add reason', exact: true }).click();
+    await expect(page.getByLabel('New reason name (required)')).toHaveCount(0);
+    await expect(page.getByLabel('Reason (required)')).not.toHaveValue('');
+
     await page.getByLabel('Payment method (required)').selectOption('UPI');
     await page.getByLabel('Business date (required)').fill(currentBusinessDate());
     await page.getByLabel('Description (optional)').fill(description);
@@ -574,8 +599,16 @@ test.describe('expense management', () => {
       page.getByText(new RegExp(`You are editing revision 1 of ${referenceId}\\.`)),
     ).toBeVisible();
 
-    // `REQ-EXP-004` makes the category the association a correction may change.
+    // `REQ-EXP-004` makes the category the association a correction may change. Changing the
+    // category clears the reason — a reason belongs to one category — so a reason of the new
+    // category has to be chosen before the correction can be saved.
     await page.getByLabel('Category (required)').selectOption({ label: 'Church Maintenance' });
+    await expect
+      .poll(() => page.getByLabel('Reason (required)').locator('option').count(), {
+        message: 'reasons for the new category',
+      })
+      .toBeGreaterThan(1);
+    await page.getByLabel('Reason (required)').selectOption({ index: 1 });
     await page.getByLabel('Amount (required)').fill('1125.40');
     await page.getByRole('button', { name: 'Save correction' }).click();
 

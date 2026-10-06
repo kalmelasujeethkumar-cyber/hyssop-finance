@@ -18,6 +18,7 @@ describe('audited persistence commands', () => {
   let harness: TestHarness;
   let actorAdminId: string;
   let categoryId: string;
+  let reasonId: string;
 
   beforeAll(async () => {
     harness = await createHarness();
@@ -33,6 +34,7 @@ describe('audited persistence commands', () => {
     actorAdminId = admin.id;
     const category = await harness.categories.create('Church Maintenance', actorAdminId);
     categoryId = category.id;
+    reasonId = (await harness.ensureReason(categoryId, actorAdminId)).id;
   });
 
   it('records the previous and new values for a correction and increments the revision', async () => {
@@ -45,6 +47,7 @@ describe('audited persistence commands', () => {
         occurredAt: new Date(),
         description: 'Original amount',
         categoryId,
+        expenseReasonId: reasonId,
       },
       { actorAdminId },
     );
@@ -84,6 +87,7 @@ describe('audited persistence commands', () => {
         businessDate: SEPTEMBER,
         occurredAt: new Date(),
         categoryId,
+        expenseReasonId: reasonId,
       },
       { actorAdminId },
     );
@@ -115,6 +119,7 @@ describe('audited persistence commands', () => {
         businessDate: SEPTEMBER,
         occurredAt: new Date(),
         categoryId,
+        expenseReasonId: reasonId,
       },
       { actorAdminId },
     );
@@ -160,7 +165,7 @@ describe('audited persistence commands', () => {
         request,
       },
       async (tx) => {
-        await createExpenseIn(harness, tx, actorAdminId, categoryId);
+        await createExpenseIn(harness, tx, actorAdminId, categoryId, reasonId);
 
         return { responseStatus: 201, responseBody: { data: { referenceId: 'HY-EXP-000001' } } };
       },
@@ -207,7 +212,7 @@ describe('audited persistence commands', () => {
         request,
       },
       async (tx) => {
-        await createExpenseIn(harness, tx, actorAdminId, categoryId);
+        await createExpenseIn(harness, tx, actorAdminId, categoryId, reasonId);
 
         return { responseStatus: 201, responseBody: { data: {} } };
       },
@@ -256,7 +261,7 @@ describe('audited persistence commands', () => {
           request,
         },
         async (tx) => {
-          await createExpenseIn(harness, tx, actorAdminId, categoryId);
+          await createExpenseIn(harness, tx, actorAdminId, categoryId, reasonId);
 
           throw new Error('simulated command failure');
         },
@@ -274,7 +279,7 @@ describe('audited persistence commands', () => {
         request,
       },
       async (tx) => {
-        await createExpenseIn(harness, tx, actorAdminId, categoryId);
+        await createExpenseIn(harness, tx, actorAdminId, categoryId, reasonId);
 
         return { responseStatus: 201, responseBody: { data: { referenceId: 'HY-EXP-000001' } } };
       },
@@ -296,7 +301,7 @@ describe('audited persistence commands', () => {
             request: { amount: '100.00' },
           },
           async (tx) => {
-            await createExpenseIn(harness, tx, actorAdminId, categoryId);
+            await createExpenseIn(harness, tx, actorAdminId, categoryId, reasonId);
 
             return {
               responseStatus: 201,
@@ -319,6 +324,7 @@ async function createExpenseIn(
   tx: Prisma.TransactionClient,
   actorAdminId: string,
   categoryId: string,
+  expenseReasonId: string,
 ): Promise<void> {
   const referenceId = await harness.references.allocate(tx, 'EXPENSE');
 
@@ -332,6 +338,7 @@ async function createExpenseIn(
       businessDate: new Date('2026-09-10T00:00:00.000Z'),
       occurredAt: new Date(),
       categoryId,
+      expenseReasonId,
       createdByAdminId: actorAdminId,
     },
   });

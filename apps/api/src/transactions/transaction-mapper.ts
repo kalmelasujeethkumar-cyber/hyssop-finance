@@ -50,6 +50,7 @@ export function toTransactionSummary(row: TransactionWithRelations): Transaction
     notes: anonymous ? null : row.notes,
     member: anonymous || row.member === null ? null : row.member,
     category: row.category,
+    expenseReason: row.expenseReason,
     contributionPeriod: row.contributionPeriod,
     voidReason: row.voidReason,
     voidedAt: row.voidedAt === null ? null : row.voidedAt.toISOString(),
@@ -61,32 +62,35 @@ export function toTransactionSummary(row: TransactionWithRelations): Transaction
 }
 
 /**
- * An expense, in the shared transaction shape with the category made non-null.
+ * An expense, in the shared transaction shape with the category and reason made non-null.
  *
  * `ExpenseSummary` is a narrowing of `TransactionSummary`, not a second transaction type, so
- * the projection is the shared one plus the two guarantees `REQ-EXP-004` and `REQ-DOC-003`
- * make about an expense. The category is read from the same relation the ledger already
- * carries, and `hasReceipt` is *derived* from the attached document rows rather than stored,
- * so it cannot drift from reality: an expense with no available document honestly reports
- * `hasReceipt: false` and the browser says **Receipt Missing** instead of showing an empty
- * control that looks like a broken upload.
+ * the projection is the shared one plus the guarantees `REQ-EXP-004`, `REQ-EXP-005`, and
+ * `REQ-DOC-003` make about an expense. The category and reason are read from the same relations
+ * the ledger already carries, and `hasReceipt` is *derived* from the attached document rows
+ * rather than stored, so it cannot drift from reality: an expense with no available document
+ * honestly reports `hasReceipt: false` and the browser says **Receipt Missing** instead of showing
+ * an empty control that looks like a broken upload.
  *
  * `hasReceipt` counts only `AVAILABLE` documents while `documentCount` counts every record. A
  * receipt that was removed under `REQ-DOC-006` keeps its row for the audit trail, but it is no
  * longer a receipt the Admin can open, so reporting `true` would send them to a `410 Gone`.
  */
 export function toExpenseSummary(row: TransactionWithRelations): ExpenseSummary {
-  if (row.transactionType !== 'EXPENSE' || row.category === null) {
-    // The database `CHECK` constraint makes an expense without a category unrepresentable, and
-    // the service refuses an expense on an income route. The guard keeps the *type* honest if
-    // either check is ever bypassed, so the narrow contract cannot be satisfied with a
-    // fabricated value.
-    throw new Error('An expense can only be projected for an expense transaction with a category.');
+  if (row.transactionType !== 'EXPENSE' || row.category === null || row.expenseReason === null) {
+    // The database `CHECK` constraint makes an expense without a category or reason
+    // unrepresentable, and the service refuses an expense on an income route. The guard keeps the
+    // *type* honest if either check is ever bypassed, so the narrow contract cannot be satisfied
+    // with a fabricated value.
+    throw new Error(
+      'An expense can only be projected for an expense transaction with a category and a reason.',
+    );
   }
 
   return {
     ...toTransactionSummary(row),
     category: row.category,
+    expenseReason: row.expenseReason,
     hasReceipt: row.documents.length > 0,
   };
 }

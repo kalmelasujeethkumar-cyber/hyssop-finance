@@ -1,7 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   BUSINESS_DATE_PATTERN,
-  CSV_CONTENT_TYPE,
   REPORT_IDS,
   REPORT_TITLES,
   TRANSACTION_PAGE_SIZE_DEFAULT,
@@ -20,6 +19,7 @@ import {
   type TransactionType,
 } from '@hyssop/contracts';
 import { useApiClient } from '../../app/providers/ApiClientProvider';
+import { saveCsvTextFile } from '../../lib/csv-download';
 import type { DashboardPeriodSelection } from '../dashboard/dashboard-api';
 
 /**
@@ -300,30 +300,14 @@ export function useReport(selection: ReportSelection) {
 /**
  * Saves a CSV the browser already holds.
  *
- * Exported separately from the fetch so a screen, a test, and a future "reuse the last export"
- * action all perform the identical save step, and so the browser-only concerns — creating the
- * blob, clicking, revoking — live in one place.
- *
  * `filename` falls back to the report id. A filename stating only which report it is is honest even
  * without the API's date range; inventing the range would be a claim the browser cannot verify.
+ *
+ * Delegates the browser-only step to the shared saver so the report export and the filtered expense
+ * export cannot drift apart in how a file reaches the disk.
  */
 export function saveCsvFile(text: string, filename: string | undefined, reportId: ReportId): void {
-  const blob = new Blob([text], { type: CSV_CONTENT_TYPE });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-
-  try {
-    anchor.href = url;
-    anchor.download = filename ?? `hyssop-${reportId}.csv`;
-    anchor.rel = 'noopener';
-    document.body.append(anchor);
-    anchor.click();
-  } finally {
-    anchor.remove();
-    // Revoked immediately after the click: the browser has already taken a reference to the blob,
-    // and holding it longer would keep the whole export alive for nothing.
-    URL.revokeObjectURL(url);
-  }
+  saveCsvTextFile(text, filename, `hyssop-${reportId}.csv`);
 }
 
 /**

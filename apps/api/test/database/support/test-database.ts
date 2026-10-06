@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
 import { UNPROVISIONED_PASSWORD_HASH, type AdminProfile } from '@hyssop/contracts';
-import type { AdminUser } from '@prisma/client';
+import type { AdminUser, ExpenseReason } from '@prisma/client';
 import { StructuredLogger } from '../../../src/common/logging/structured-logger';
 import {
   DEFAULT_ARGON2_ITERATIONS,
@@ -46,6 +46,7 @@ import { MemberRepository } from '../../../src/database/members/member.repositor
 import { PrismaService } from '../../../src/database/prisma/prisma.service';
 import { ReconciliationService } from '../../../src/database/reconciliation/reconciliation.service';
 import { ReferenceAllocatorService } from '../../../src/database/references/reference-allocator.service';
+import { ExpenseReasonRepository } from '../../../src/database/reasons/expense-reason.repository';
 import { AppSettingRepository } from '../../../src/database/settings/app-setting.repository';
 import { INITIAL_APP_SETTING_VALUES } from '../../../src/database/settings/app-setting.validation';
 import { TransactionRepository } from '../../../src/database/transactions/transaction.repository';
@@ -59,6 +60,7 @@ const TABLES_TO_TRUNCATE = [
   'transaction_document',
   'financial_transaction',
   'contribution_period',
+  'expense_reason',
   'expense_category',
   'member',
   'app_setting',
@@ -84,12 +86,14 @@ export interface TestHarness {
   readonly members: MemberRepository;
   readonly contributions: ContributionPeriodRepository;
   readonly categories: ExpenseCategoryRepository;
+  readonly reasons: ExpenseReasonRepository;
   readonly transactions: TransactionRepository;
   readonly documents: TransactionDocumentRepository;
   readonly settings: AppSettingRepository;
   readonly idempotency: IdempotencyRecordRepository;
   readonly reconciliation: ReconciliationService;
   reset(): Promise<AdminUser>;
+  ensureReason(categoryId: string, actorAdminId: string, name?: string): Promise<ExpenseReason>;
   close(): Promise<void>;
 }
 
@@ -209,6 +213,7 @@ export async function createHarness(): Promise<TestHarness> {
   const members = new MemberRepository(runtime, references, audit);
   const contributions = new ContributionPeriodRepository(runtime, audit);
   const categories = new ExpenseCategoryRepository(runtime, audit);
+  const reasons = new ExpenseReasonRepository(runtime, audit);
   const transactions = new TransactionRepository(runtime, references, audit);
   const documents = new TransactionDocumentRepository(runtime, references, audit);
   const settings = new AppSettingRepository(runtime, audit);
@@ -228,6 +233,10 @@ export async function createHarness(): Promise<TestHarness> {
    * suite that runs against the same database answered `App setting was not found.` and could
    * not record a member contribution. `skipDuplicates` keeps a reset idempotent and preserves a
    * value a test changed on purpose.
+   *
+   * `expense_reason` is truncated with the rest because `REQ-EXP-005` makes every expense carry
+   * one, so a reason left over from an earlier suite would make the pairing assertions read rows
+   * the test never created. It starts empty for the same reason as the categories below.
    *
    * `expense_category` is deliberately left empty: these suites exercise the repositories
    * directly and assert on exactly the rows they created, so a reset that pre-filled the table
@@ -258,6 +267,24 @@ export async function createHarness(): Promise<TestHarness> {
 
   const admin = await reset();
 
+  /**
+   * An active reason under `categoryId`, created on first use through the real repository.
+   *
+   * `REQ-EXP-005` makes a reason part of every expense, so a suite that files an expense under a
+   * category has to have one. The lookup-then-create shape keeps a repeated call cheap while
+   * still writing through `ExpenseReasonRepository`, so a suite cannot accidentally pass by
+   * inserting a row the application would have refused.
+   */
+  const ensureReason = async (
+    categoryId: string,
+    actorAdminId: string,
+    name = 'Other',
+  ): Promise<ExpenseReason> => {
+    const existing = await reasons.findByNormalizedName(categoryId, name);
+
+    return existing ?? (await reasons.create(categoryId, name, actorAdminId));
+  };
+
   return {
     runtime,
     migration,
@@ -270,12 +297,14 @@ export async function createHarness(): Promise<TestHarness> {
     members,
     contributions,
     categories,
+    reasons,
     transactions,
     documents,
     settings,
     idempotency,
     reconciliation,
     reset,
+    ensureReason,
     close: async () => {
       await runtime.$disconnect();
       await migration.$disconnect();

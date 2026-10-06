@@ -95,9 +95,13 @@ describe('report and search reads against real PostgreSQL', () => {
   async function expense(
     amountPaise: bigint,
     businessDate: Date,
-    categoryId: string | null = electricityId,
+    categoryId: string = electricityId,
     paymentMethod: 'CASH' | 'UPI' | 'BANK_TRANSFER' = 'CASH',
   ): Promise<{ readonly id: string; readonly referenceId: string }> {
+    // `REQ-EXP-005`: an expense always carries a reason, so the fixture resolves one through the
+    // real repository for whichever category the test filed it under.
+    const reason = await harness.ensureReason(categoryId, actorAdminId);
+
     return harness.transactions.create(
       {
         transactionType: 'EXPENSE',
@@ -106,6 +110,7 @@ describe('report and search reads against real PostgreSQL', () => {
         businessDate,
         occurredAt: new Date(),
         categoryId,
+        expenseReasonId: reason.id,
       },
       { actorAdminId },
     );
@@ -232,10 +237,14 @@ describe('report and search reads against real PostgreSQL', () => {
       // The report's `LEFT JOIN` is defensive depth only: `financial_transaction_expense_shape`
       // makes a category-less expense unrepresentable. Proving that is stronger than proving the
       // join, because it shows the rows cannot fail to sum to the total in the first place.
+      //
+      // The reason is cleared with the category on purpose. Dropping only the category trips the
+      // pairing trigger first, because the reason would then belong to a category the expense no
+      // longer names; clearing both isolates `expense_shape`, which is the rule under test here.
       await expect(
         harness.runtime.financialTransaction.update({
           where: { id: orphan.id },
-          data: { categoryId: null, revision: { increment: 1 } },
+          data: { categoryId: null, expenseReasonId: null, revision: { increment: 1 } },
         }),
       ).rejects.toThrow(/financial_transaction_expense_shape/);
 

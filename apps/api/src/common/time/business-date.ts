@@ -58,6 +58,31 @@ export function formatBusinessDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Renders a business date as `DD-MM-YYYY` for a human-facing export.
+ *
+ * `REQ-EXPORT-003` asks for exactly this layout in the expense CSV while `docs/06-API-SPEC.md`
+ * and the database keep `YYYY-MM-DD`. The reordering happens *only* here, at the edge, from the
+ * same stored value, so no API payload, stored date, or screen changes shape and the exported day
+ * is provably the same day the screen shows.
+ *
+ * The components are read with `getUTC*` rather than `getDate()` and friends: a stored
+ * `business_date` is a PostgreSQL `DATE` surfaced as UTC midnight, so using the local-time getters
+ * would render the previous day for any server west of UTC. Zero-padding both components is what
+ * makes `05-10-2026` two-digit throughout rather than `5-10-2026`.
+ */
+export function formatBusinessDateForExport(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+
+  return `${pad(day)}-${pad(month)}-${year}`;
+}
+
+function pad(value: number): string {
+  return value < 10 ? `0${value}` : String(value);
+}
+
 /** Returns the Asia/Kolkata calendar date of an instant as a UTC-midnight `Date`. */
 export function businessDateFromInstant(instant: Date): Date {
   return parseBusinessDate(dateTimeFormatter.format(instant));

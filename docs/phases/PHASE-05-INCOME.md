@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires Phases 01–04 complete.
+- Status: `COMPLETE`; the quality gate passed and the Git gate is closed with commit `c639fa89504ee5be09e17d8bb2206b89139d9ccf` recorded in `docs/runtime/PHASE-HISTORY.md`.
 - Preconditions: member contribution periods and shared transaction/idempotency contracts are available.
 - Handoff rule: anonymous identity protection and exact money are enforced server-side, not only in forms.
 

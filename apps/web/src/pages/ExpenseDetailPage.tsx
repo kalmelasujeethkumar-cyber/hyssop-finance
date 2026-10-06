@@ -21,8 +21,10 @@ import {
 import { TransactionDocumentsPanel } from '../features/documents/TransactionDocumentsPanel';
 import {
   expenseCategoryLabel,
+  expenseReasonLabel,
   isExpenseSummary,
   useExpenseCategories,
+  useExpenseReasons,
 } from '../features/expenses/expense-api';
 import {
   createIdempotencyKey,
@@ -64,6 +66,15 @@ export function ExpenseDetailPage() {
   const { transactionId } = useParams<{ transactionId: string }>();
   const detail = useTransactionDetail(transactionId);
   const categories = useExpenseCategories();
+  // The reason list is scoped to the record's own category, so it is fetched from the record and
+  // not from whatever the correction form has selected. That keeps the label on the summary panel
+  // correct even while the Admin is moving the expense somewhere else. `expenseReason` is `null`
+  // on an income, which is why the category is only read for a record that has one.
+  const reasons = useExpenseReasons(
+    detail.data?.type === 'EXPENSE'
+      ? (detail.data.expenseReason?.categoryId ?? undefined)
+      : undefined,
+  );
   // The confirmation of a successful write lives here rather than inside the edit or void form.
   // Both forms collapse when they succeed, so a confirmation owned by the form would be unmounted
   // at the exact moment it was needed and the Admin would never be told the write worked.
@@ -140,6 +151,7 @@ export function ExpenseDetailPage() {
       <ExpenseSummaryPanel
         record={expense}
         categoryLabel={expenseCategoryLabel(categories.data ?? [], expense.category)}
+        reasonLabel={expenseReasonLabel(reasons.data ?? [], expense.expenseReason)}
       />
 
       {record.status === 'VOIDED' ? (
@@ -175,19 +187,26 @@ function BackToExpensesLink() {
  * deactivated keeps the expenses filed under it, and the Admin needs to be able to tell "this
  * expense is in Repairs" from "this expense is in Repairs and Repairs can no longer be chosen",
  * because the second fact is the reason a new expense cannot be filed there.
+ *
+ * The reason gets the same treatment for the same reason (`REQ-EXP-005`): it is what the money
+ * was actually spent on, and a retired reason still has to stay readable, because an expense that
+ * silently lost its reason would no longer explain itself.
  */
 function ExpenseSummaryPanel({
   record,
   categoryLabel,
+  reasonLabel,
 }: {
   readonly record: ExpenseSummary;
   readonly categoryLabel: string;
+  readonly reasonLabel: string;
 }) {
   return (
     <Panel title="Recorded details">
       <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Detail label="Expense reference" value={record.referenceId} />
         <Detail label="Category" value={categoryLabel} />
+        <Detail label="Reason" value={reasonLabel} />
         <Detail label="Amount" value={formatInr(record.amount)} emphasis />
         <Detail label="Business date" value={formatBusinessDate(record.businessDate)} />
         <Detail label="Payment method" value={PAYMENT_METHOD_LABELS[record.paymentMethod]} />
@@ -308,11 +327,16 @@ function CorrectionForm({
     businessDate: record.businessDate,
     description: record.description ?? '',
     notes: record.notes ?? '',
-    // Seeded with the expense's own category, so saving an unrelated field cannot silently move
-    // the expense to whichever option happens to be first in the list.
+    // Seeded with the expense's own category and reason, so saving an unrelated field cannot
+    // silently move the expense to whichever option happens to be first in the list.
     categoryId: record.category.id,
+    expenseReasonId: record.expenseReason.id,
   });
   const [values, setValues] = useState<CorrectionFormValues>(baseline);
+  // The reasons offered depend on the category currently selected in *this* form, so the query key
+  // follows the selection. That is what makes moving an expense a single coherent choice: the
+  // Admin picks a category and then a reason of that category, never a stale list from the old one.
+  const reasons = useExpenseReasons(values.categoryId);
   const [fieldErrors, setFieldErrors] = useState<CorrectionFieldErrors>({});
   // One key per correction intent: reused by a retry of the same intent and replaced after a
   // success, so a double submit cannot record two corrections.
@@ -329,6 +353,13 @@ function CorrectionForm({
   // category. The server decides whether a move is legal.
   const currentCategoryIsActive = activeCategories.some(
     (category) => category.id === record.category.id,
+  );
+
+  // The same applies to the reason. A retired reason stays visible as the current value so the form
+  // does not appear to have changed the expense just by being opened.
+  const activeReasons = reasons.data ?? [];
+  const currentReasonIsAvailable = activeReasons.some(
+    (reason) => reason.id === record.expenseReason.id,
   );
 
   function update<K extends keyof CorrectionFormValues>(
@@ -361,7 +392,8 @@ function CorrectionForm({
       localErrors.amount !== undefined ||
       localErrors.paymentMethod !== undefined ||
       localErrors.businessDate !== undefined ||
-      localErrors.categoryId !== undefined
+      localErrors.categoryId !== undefined ||
+      localErrors.expenseReasonId !== undefined
     ) {
       setFieldErrors(localErrors);
 
@@ -383,7 +415,7 @@ function CorrectionForm({
           const movedTo =
             corrected === undefined || corrected.category.id === record.category.id
               ? ''
-              : ` The category is now ${corrected.category.name}.`;
+              : ` The category is now ${corrected.category.name}, under the reason ${corrected.expenseReason.name}.`;
 
           onSaved(
             `Correction saved. ${updated.referenceId} is now ${formatInr(updated.amount)}.${movedTo}`,
@@ -451,6 +483,21 @@ function CorrectionForm({
               value={values.categoryId}
               onChange={(event) => {
                 update('categoryId', event.target.value);
+                // The reason is meaningless outside its category, so changing the category clears
+                // the reason instead of leaving a value the API would refuse. Clearing rather than
+                // silently re-picking the first option is the honest expression: the Admin chooses
+                // again, and the server never sees a pair it would reject.
+                setValues((previous) => ({ ...previous, expenseReasonId: '' }));
+                setFieldErrors((previous) => {
+                  if (previous.expenseReasonId === undefined) {
+                    return previous;
+                  }
+
+                  const rest = { ...previous };
+                  delete rest.expenseReasonId;
+
+                  return rest;
+                });
               }}
             >
               {currentCategoryIsActive ? null : (
@@ -461,6 +508,52 @@ function CorrectionForm({
               {activeCategories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField
+            id="edit-expense-reason"
+            label="Reason"
+            required
+            error={fieldErrors.expenseReasonId}
+            hint="A reason always belongs to the category above. Both change together, or neither does."
+          >
+            <select
+              id="edit-expense-reason"
+              name="expenseReasonId"
+              className={controlClassName()}
+              required
+              value={values.expenseReasonId ?? ''}
+              onChange={(event) => {
+                update('expenseReasonId', event.target.value);
+              }}
+            >
+              {/*
+                The empty option is what makes "nothing chosen" representable. Without it a select
+                whose value is `''` silently falls back to whichever option is first, which would
+                let a correction be submitted against a reason the Admin never chose.
+              */}
+              <option value="">
+                {values.expenseReasonId === '' || values.expenseReasonId === undefined
+                  ? 'Choose a reason'
+                  : ''}
+              </option>
+              {/*
+                The expense's own reason is kept as a visible option while the form still points at
+                the expense's own category, so opening the form does not appear to change anything.
+                Once the category moves, the old reason is dropped entirely: it belongs to the
+                previous category and the API would refuse the pairing.
+              */}
+              {values.categoryId === record.category.id && !currentReasonIsAvailable ? (
+                <option value={record.expenseReason.id}>
+                  {record.expenseReason.name} (current reason, no longer available)
+                </option>
+              ) : null}
+              {activeReasons.map((reason) => (
+                <option key={reason.id} value={reason.id}>
+                  {reason.name}
                 </option>
               ))}
             </select>

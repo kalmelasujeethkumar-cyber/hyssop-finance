@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Fictional demo seed.
  *
  * Authority: `docs/13-DEMO-DATA-SPEC.md` (fictional content, several months of
@@ -29,18 +29,20 @@ import {
   type YearMonth,
 } from './seed-dates.ts';
 import {
+  ALL_EXPENSE_CATEGORIES,
   CONTRIBUTION_DAY,
   CORRECTION_EXAMPLE_KEY,
-  CUSTOM_EXPENSE_CATEGORIES,
   DEFAULT_CONTRIBUTION_PAISE,
   INITIAL_EXPENSE_CATEGORIES,
   PARTIAL_CONTRIBUTION_PAISE,
+  PREDEFINED_EXPENSE_REASONS,
   SEED_CONTRIBUTION_PATTERN,
   SEED_EXPENSES,
   SEED_MEMBERS,
   SEED_OTHER_INCOME,
   VOID_EXAMPLE_KEY,
   normalizeCategoryName,
+  normalizeReasonName,
 } from './seed-data.ts';
 import { formatReference, type ReferenceScope } from './seed-references.ts';
 
@@ -86,14 +88,22 @@ async function main(): Promise<void> {
 
   await ensureSettings();
   await ensureCategories();
+  const reasonsByCategory = await ensureExpenseReasons();
   const membersByKey = await ensureMembers();
   const periods = await ensureContributionPeriods(membersByKey, yearMonthOf(context.asOfDate));
-  const report = await ensureTransactions(context, membersByKey, periods);
+  const report = await ensureTransactions(context, membersByKey, periods, reasonsByCategory);
+
+  const reasonCount = Array.from(reasonsByCategory.values()).reduce(
+    (total, reasons) => total + reasons.size,
+    0,
+  );
 
   process.stdout.write(
     [
       'Seed complete. All content is fictional demo data.',
       `Business date used: ${formatBusinessDate(context.asOfDate)} (Asia/Kolkata)`,
+      `Expense categories: ${ALL_EXPENSE_CATEGORIES.length}`,
+      `Expense reasons: ${reasonCount} across ${reasonsByCategory.size} categories`,
       `Members: ${membersByKey.size}`,
       `Contribution periods: ${periods.size}`,
       `Transactions created this run: ${report.created}`,
@@ -160,7 +170,7 @@ async function ensureSettings(): Promise<void> {
 async function ensureCategories(): Promise<Map<string, string>> {
   const byName = new Map<string, string>();
 
-  for (const name of [...INITIAL_EXPENSE_CATEGORIES, ...CUSTOM_EXPENSE_CATEGORIES]) {
+  for (const name of ALL_EXPENSE_CATEGORIES) {
     const normalizedName = normalizeCategoryName(name);
     const category = await prisma.expenseCategory.upsert({
       where: { normalizedName },
@@ -172,6 +182,81 @@ async function ensureCategories(): Promise<Map<string, string>> {
   }
 
   return byName;
+}
+
+/**
+ * Creates the approved predefined reasons, keyed by `categoryName` then reason name.
+ *
+ * Run immediately after `ensureCategories` and before any seeded expense, because
+ * `expense_reason_id` is required for expenses and the seed's own expenses reference these rows.
+ * Upserting on `(categoryId, normalizedName)` makes the seed idempotent in the same way the rest of
+ * it is: a rerun reactivates a reason an Admin had deactivated and refreshes its display name
+ * without ever reassigning or deleting rows, so an expense that already points at a reason keeps
+ * pointing at the same reason after a rerun.
+ *
+ * These are seeded as system reasons. They are marked `isSystem` so the UI can present them as the
+ * approved set, but they are still ordinary rows: an Admin may add reasons alongside them, and
+ * deactivation is a status change rather than a delete, which is what keeps historical expenses
+ * readable.
+ */
+async function ensureExpenseReasons(): Promise<Map<string, Map<string, string>>> {
+  const byCategory = new Map<string, Map<string, string>>();
+
+  for (const [categoryName, reasonNames] of Object.entries(PREDEFINED_EXPENSE_REASONS)) {
+    const categoryId = await categoryIdByName(categoryName);
+    const reasonsByName = new Map<string, string>();
+
+    for (const reasonName of reasonNames) {
+      const normalizedName = normalizeReasonName(reasonName);
+      const reason = await prisma.expenseReason.upsert({
+        where: { categoryId_normalizedName: { categoryId, normalizedName } },
+        create: { categoryId, name: reasonName, normalizedName, isSystem: true },
+        update: { name: reasonName, status: 'ACTIVE' },
+      });
+
+      reasonsByName.set(reasonName, reason.id);
+    }
+
+    byCategory.set(categoryName, reasonsByName);
+  }
+
+  return byCategory;
+}
+
+/** Resolves a category by its display name, failing loudly rather than returning a silent `null`. */
+async function categoryIdByName(categoryName: string): Promise<string> {
+  const category = await prisma.expenseCategory.findUnique({
+    where: { normalizedName: normalizeCategoryName(categoryName) },
+  });
+
+  if (category === null) {
+    throw new Error(`Seed category "${categoryName}" is missing.`);
+  }
+
+  return category.id;
+}
+
+/**
+ * Resolves one seeded expense's reason.
+ *
+ * An unknown name is an error, not an invitation to substitute `Other`. If the approved reason set
+ * and the seeded expenses ever disagree, the fix belongs in this repository's data, and silently
+ * filing demo expenses under `Other` would hide that disagreement from every later reader.
+ */
+function seedReasonId(
+  reasonsByCategory: Map<string, Map<string, string>>,
+  categoryName: string,
+  reasonName: string,
+): string {
+  const reasonId = reasonsByCategory.get(categoryName)?.get(reasonName);
+
+  if (reasonId === undefined) {
+    throw new Error(
+      `Seed reason "${reasonName}" is not an approved reason for category "${categoryName}".`,
+    );
+  }
+
+  return reasonId;
 }
 
 async function ensureMembers(): Promise<Map<string, string>> {
@@ -226,6 +311,7 @@ async function ensureTransactions(
   context: SeedContext,
   membersByKey: Map<string, string>,
   periodIds: Map<string, string>,
+  reasonsByCategory: Map<string, Map<string, string>>,
 ): Promise<{ readonly created: number; readonly skipped: number }> {
   const categories = new Map(
     (await prisma.expenseCategory.findMany()).map((category) => [category.name, category.id]),
@@ -249,6 +335,7 @@ async function ensureTransactions(
       businessDate: businessDateInMonth(year, month, expense.day),
       description: expense.description,
       categoryId,
+      expenseReasonId: seedReasonId(reasonsByCategory, expense.categoryName, expense.reasonName),
       voidReason:
         expense.key === VOID_EXAMPLE_KEY ||
         (expense.voidedMonthOffsets ?? []).includes(expense.monthOffset)
@@ -336,6 +423,8 @@ interface TransactionSeed {
   readonly memberId?: string | null;
   readonly contributionPeriodId?: string | null;
   readonly categoryId?: string;
+  /** Required for expenses; the migration's backfill guarantees every expense row has one. */
+  readonly expenseReasonId?: string;
   readonly voidReason: string | null;
   readonly correctedAmountPaise: bigint | null;
 }
@@ -369,6 +458,8 @@ async function createTransactionOnce(
       memberId: seed.memberId ?? null,
       contributionPeriodId: seed.contributionPeriodId ?? null,
       categoryId: seed.categoryId ?? null,
+      // Part of the natural key, so two expenses that differ only by reason are two expenses.
+      expenseReasonId: seed.expenseReasonId ?? null,
     },
   });
 
@@ -395,6 +486,7 @@ async function createTransactionOnce(
         memberId: seed.memberId ?? null,
         contributionPeriodId: seed.contributionPeriodId ?? null,
         categoryId: seed.categoryId ?? null,
+        expenseReasonId: seed.expenseReasonId ?? null,
         createdByAdminId: context.adminUserId,
       },
     });

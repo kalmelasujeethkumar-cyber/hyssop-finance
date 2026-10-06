@@ -34,6 +34,7 @@ import {
   categoryFixture,
   fakeSession,
   httpServer,
+  reasonFixture,
   transactionFixture,
 } from './support/fake-ledger';
 import { FakeDocumentStorage, FakeDocuments } from './support/fake-documents';
@@ -67,6 +68,7 @@ const OTHER_EXPENSE_ID = 'c2222222-2222-4222-8222-222222222222';
 const UNKNOWN_TRANSACTION_ID = 'c9999999-9999-4999-8999-999999999999';
 const NOT_A_UUID = 'not-a-uuid';
 const CATEGORY_ID = 'd5555555-5555-4555-8555-555555555555';
+const REASON_ID = 'd6666666-6666-4666-8666-666666666666';
 const UNKNOWN_DOCUMENT_ID = 'e0000000-0000-4000-8000-000000000000';
 
 /** A valid PNG: signature, IHDR, then filler. Enough for signature-based detection. */
@@ -115,6 +117,7 @@ describe('Document HTTP contract', () => {
         paymentMethod: 'UPI',
         description: 'September electricity bill',
         categoryId: CATEGORY_ID,
+        expenseReasonId: REASON_ID,
         businessDate: parseBusinessDate('2026-09-05'),
       }),
       transactionFixture({
@@ -124,6 +127,7 @@ describe('Document HTTP contract', () => {
         incomeType: null,
         amountPaise: 9_000n,
         categoryId: CATEGORY_ID,
+        expenseReasonId: REASON_ID,
         businessDate: parseBusinessDate('2026-08-14'),
       }),
     ]);
@@ -133,6 +137,9 @@ describe('Document HTTP contract', () => {
       [],
       [],
       [categoryFixture({ id: CATEGORY_ID, name: 'Electricity', isSystem: true })],
+      // An expense is unreadable without its reason, so the projection resolves one. This suite is
+      // about documents; it supplies the reason only so the transaction routes answer at all.
+      [reasonFixture({ id: REASON_ID, categoryId: CATEGORY_ID, name: 'Electricity Bill' })],
     );
 
     documents = new FakeDocuments(ledger);

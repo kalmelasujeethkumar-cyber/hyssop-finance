@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `COMPLETE` for Prompt 01; Prompt 01B documentation hardening is in progress.
+- Status: `COMPLETE`; Prompts 01 and 01B were completed and are superseded by Phases 01–12, whose quality and Git gates are recorded in `docs/runtime/PHASE-HISTORY.md`.
 - Preconditions: opened workspace, authorized `origin`, no application code required.
 - Handoff rule: the next phase starts only after the documentation gate and user approval.
 

@@ -2,7 +2,7 @@
 
 ## Status and purpose
 
-HYSSOP FINANCE is a working financial-management demo for one church. The demo must use a real, maintainable architecture so it can later be evolved into a production application with explicit validation and approval. It is not a disposable UI prototype, and the current bootstrap is documentation-only.
+HYSSOP FINANCE is a working financial-management demo for one church. The demo must use a real, maintainable architecture so it can later be evolved into a production application with explicit validation and approval. It is not a disposable UI prototype; the repository now contains the implemented application and its runtime evidence.
 
 The persistent source of truth for future OpenCode work is this repository. When instructions conflict, apply the priority order below rather than relying on conversational memory.
 
@@ -183,6 +183,6 @@ Stop and ask the user when any of the following occurs:
 
 When blocked, update `docs/runtime/ISSUES.md` with status `BLOCKED`, current phase, problem, evidence, attempts, why continuing is unsafe, and the exact user action or information required. Then stop.
 
-## Current prompt boundary
+## Current phase boundary
 
-Prompt 01B is documentation-only. It hardens document responsibility, stable requirement and test identifiers, traceability, phase ownership, and the canonical financial calculation contract. It must not create React/NestJS feature code, install the full stack, run database migrations, authenticate, deploy, or begin Phase 01. After the documentation checkpoint and quality gate, stop for user review.
+Phases 01–12 are implemented and their quality and Git gates are recorded. The Prompt 01B documentation boundary is complete and superseded. Phase 12 passed its complete local quality gate; the required demo deployment is recorded `BLOCKED — DEPLOYMENT NOT AUTHORIZED` (`ISSUE-051`) until the user authorizes a target. Do not begin new feature work without a locked requirement and explicit user approval.

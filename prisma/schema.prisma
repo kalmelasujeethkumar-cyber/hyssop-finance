@@ -57,6 +57,14 @@ enum CategoryStatus {
   INACTIVE
 }
 
+/// A reason is activated or deactivated exactly like a category. It is a separate enum rather
+/// than a reuse of `CategoryStatus` so the reason vocabulary can never be widened by a category
+/// decision, and so `docs/05-DATABASE-SPEC.md` describes one lifecycle per table.
+enum ExpenseReasonStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum DocumentStatus {
   AVAILABLE
   REMOVED
@@ -72,6 +80,8 @@ enum AuditAction {
   MEMBER_UPDATED
   CATEGORY_CREATED
   CATEGORY_UPDATED
+  REASON_CREATED
+  REASON_UPDATED
   SETTING_UPDATED
   LOGIN_SUCCEEDED
   LOGIN_FAILED
@@ -189,9 +199,40 @@ model ExpenseCategory {
   updatedAt      DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   transactions FinancialTransaction[]
+  reasons        ExpenseReason[]
 
   @@unique([normalizedName], map: "expense_category_normalized_name_key")
   @@map("expense_category")
+}
+
+/// Why the money was spent, within one expense category.
+///
+/// Authority: `docs/01-REQUIREMENTS.md` `REQ-EXP-005` and `docs/05-DATABASE-SPEC.md`. A reason
+/// is *owned by a category*, so `Food > Groceries` and `Cleaning > Equipment` are different rows
+/// even though the word repeats. That is why uniqueness is the pair `(category_id,
+/// normalized_name)` and not `normalized_name` alone: the approved predefined set deliberately
+/// repeats labels such as `Other`, `Electrical Repair`, `Drink[ing] Water`, and `Plumbing Work`
+/// across categories, and a global unique index could not hold the approved product set.
+///
+/// A reason is deactivated, never deleted, so an expense keeps the label it was recorded with and
+/// a correction can still read the reason it is replacing.
+model ExpenseReason {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  categoryId     String              @map("category_id") @db.Uuid
+  name           String              @db.VarChar(80)
+  normalizedName String              @map("normalized_name") @db.VarChar(80)
+  status         ExpenseReasonStatus @default(ACTIVE)
+  /// True for the approved predefined reasons seeded per category; false for Admin-created ones.
+  isSystem       Boolean             @default(false) @map("is_system")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  category     ExpenseCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  transactions FinancialTransaction[]
+
+  @@unique([categoryId, normalizedName], map: "expense_reason_category_normalized_name_key")
+  @@index([categoryId, status], map: "expense_reason_category_status_idx")
+  @@map("expense_reason")
 }
 
 /// The single canonical income and expense record. Type-specific shape, void
@@ -211,6 +252,9 @@ model FinancialTransaction {
   contributionPeriodId String?           @map("contribution_period_id") @db.Uuid
   incomeType           IncomeType?       @map("income_type")
   categoryId           String?           @map("category_id") @db.Uuid
+  /// `REQ-EXP-005`: an expense must name one reason from its category. Null only during the
+  /// additive migration, before the backfill; the `expense_shape` CHECK enforces it afterwards.
+  expenseReasonId      String?           @map("expense_reason_id") @db.Uuid
   notes                String?           @db.Text
   voidedAt             DateTime?         @map("voided_at") @db.Timestamptz(6)
   voidedByAdminId      String?           @map("voided_by_admin_id") @db.Uuid
@@ -223,6 +267,7 @@ model FinancialTransaction {
   member             Member?               @relation(fields: [memberId], references: [id], onDelete: Restrict)
   contributionPeriod ContributionPeriod?   @relation(fields: [contributionPeriodId], references: [id], onDelete: Restrict)
   category           ExpenseCategory?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  expenseReason      ExpenseReason?        @relation(fields: [expenseReasonId], references: [id], onDelete: Restrict)
   createdByAdmin     AdminUser             @relation("TransactionCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
   voidedByAdmin      AdminUser?            @relation("TransactionVoidedBy", fields: [voidedByAdminId], references: [id], onDelete: Restrict)
   documents          TransactionDocument[]
@@ -232,6 +277,7 @@ model FinancialTransaction {
   @@index([paymentMethod, businessDate, status], map: "financial_transaction_method_date_status_idx")
   @@index([memberId, businessDate, status], map: "financial_transaction_member_date_status_idx")
   @@index([categoryId, businessDate, status], map: "financial_transaction_category_date_status_idx")
+  @@index([expenseReasonId, businessDate, status], map: "financial_transaction_reason_date_status_idx")
   @@index([incomeType, businessDate, status], map: "financial_transaction_income_date_status_idx")
   @@map("financial_transaction")
 }

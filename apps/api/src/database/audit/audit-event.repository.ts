@@ -8,6 +8,7 @@ export const AUDIT_ENTITY_TYPES = {
   member: 'member',
   contributionPeriod: 'contribution_period',
   expenseCategory: 'expense_category',
+  expenseReason: 'expense_reason',
   transactionDocument: 'transaction_document',
   appSetting: 'app_setting',
   session: 'session',

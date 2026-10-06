@@ -55,7 +55,7 @@ The API should keep domain rules in modules rather than controllers:
 - **Members**: member identity, human-readable IDs, search, edit history, and member reads.
 - **Contributions**: monthly expectations and derived paid/partial/unpaid status.
 - **Income**: contribution, offering, donation, and anonymous donation commands and reads.
-- **Expenses**: expense commands, categories, custom categories, and void behavior.
+- **Expenses**: expense commands, categories, per-category reasons, custom category and reason lifecycle, and void behavior.
 - **Transactions**: shared transaction invariants, correction commands, references, and recent activity.
 - **Documents**: upload validation, storage adapter, association, controlled access, download, and removal audit.
 - **Dashboard**: period-aware aggregates and visualizations data.

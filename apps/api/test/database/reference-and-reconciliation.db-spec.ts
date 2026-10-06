@@ -25,6 +25,7 @@ describe('reference allocation and derived financial layer', () => {
   let harness: TestHarness;
   let actorAdminId: string;
   let categoryId: string;
+  let reasonId: string;
 
   beforeAll(async () => {
     harness = await createHarness();
@@ -40,6 +41,9 @@ describe('reference allocation and derived financial layer', () => {
     actorAdminId = admin.id;
     const category = await harness.categories.create('Electricity', actorAdminId);
     categoryId = category.id;
+    // `REQ-EXP-005`: every expense in this suite is filed with a reason, so the shared fixture
+    // category owns one from the start and the individual tests can reuse it.
+    reasonId = (await harness.ensureReason(categoryId, actorAdminId)).id;
   });
 
   describe('human-readable references (REQ-MEM-002, REQ-FIN-011, REQ-DOC-008)', () => {
@@ -68,6 +72,7 @@ describe('reference allocation and derived financial layer', () => {
           businessDate: SEPTEMBER,
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: reasonId,
         },
         { actorAdminId },
       );
@@ -79,6 +84,7 @@ describe('reference allocation and derived financial layer', () => {
           businessDate: SEPTEMBER,
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: reasonId,
         },
         { actorAdminId },
       );
@@ -103,6 +109,7 @@ describe('reference allocation and derived financial layer', () => {
           businessDate: SEPTEMBER,
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: reasonId,
         },
         { actorAdminId },
       );
@@ -143,6 +150,7 @@ describe('reference allocation and derived financial layer', () => {
             businessDate: SEPTEMBER,
             occurredAt: new Date(),
             categoryId,
+            expenseReasonId: reasonId,
           },
           { actorAdminId },
         ),
@@ -185,6 +193,7 @@ describe('reference allocation and derived financial layer', () => {
           businessDate: SEPTEMBER,
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: reasonId,
         },
         { actorAdminId },
       );
@@ -286,6 +295,7 @@ describe('reference allocation and derived financial layer', () => {
           businessDate: SEPTEMBER,
           occurredAt: new Date(),
           categoryId: second.id,
+          expenseReasonId: (await harness.ensureReason(second.id, actorAdminId)).id,
         },
         { actorAdminId },
       );
@@ -398,6 +408,7 @@ describe('reference allocation and derived financial layer', () => {
           occurredAt: new Date(),
           description: 'Persisted across a restart',
           categoryId,
+          expenseReasonId: reasonId,
         },
         { actorAdminId },
       );

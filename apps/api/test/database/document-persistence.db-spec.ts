@@ -66,6 +66,8 @@ describe('document persistence', () => {
   });
 
   async function createExpense(businessDate: Date, amountPaise = 45_000n): Promise<string> {
+    const reason = await harness.ensureReason(categoryId, actorAdminId);
+
     const created = await harness.transactions.create(
       {
         transactionType: 'EXPENSE',
@@ -74,6 +76,7 @@ describe('document persistence', () => {
         businessDate,
         occurredAt: new Date(),
         categoryId,
+        expenseReasonId: reason.id,
       },
       { actorAdminId },
     );

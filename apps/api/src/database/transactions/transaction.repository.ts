@@ -43,6 +43,17 @@ export interface CorrectableTransactionFields {
   readonly notes?: string | null;
   readonly memberId?: string | null;
   readonly categoryId?: string | null;
+  /**
+   * `REQ-EXP-005`: correctable in its own right, exactly as `categoryId` is.
+   *
+   * It is a first-class correctable field rather than something derived from the category, because
+   * "we paid for the water bill" and "we paid the electrician" are the same expense with a
+   * different answer, and an Admin who picked the wrong one needs to fix it without voiding.
+   * The database treats the pair as validated together: `toCorrectableData` requires that any
+   * change to one supplies the other, so a correction can never leave a reason that belongs to a
+   * different category than the expense's.
+   */
+  readonly expenseReasonId?: string | null;
 }
 
 export interface CreateTransactionInput {
@@ -59,6 +70,7 @@ export interface CreateTransactionInput {
   readonly memberId?: string | null;
   readonly contributionPeriodId?: string | null;
   readonly categoryId?: string | null;
+  readonly expenseReasonId?: string | null;
 }
 
 export interface CorrectTransactionInput extends CorrectableTransactionFields {
@@ -79,6 +91,7 @@ const CORRECTABLE_FIELDS: readonly (keyof CorrectableTransactionFields)[] = [
   'notes',
   'memberId',
   'categoryId',
+  'expenseReasonId',
 ];
 
 /**
@@ -122,8 +135,8 @@ export interface TransactionQueryFilters {
   readonly minAmountPaise?: bigint;
   readonly maxAmountPaise?: bigint;
   /**
-   * Bounded free text over the reference, the description, and the named member or
-   * category, as `REQ-SEARCH-002` allows. It never reaches `notes`, which is how an
+   * Bounded free text over the reference, the description, and the named member, category,
+   * or reason, as `REQ-SEARCH-002` allows. It never reaches `notes`, which is how an
    * anonymous donation's private note cannot be turned into a search result.
    */
   readonly search?: string;
@@ -161,6 +174,7 @@ export type TransactionWithRelations = Prisma.FinancialTransactionGetPayload<{
 const TRANSACTION_LIST_INCLUDE = {
   member: { select: { id: true, referenceId: true, name: true } },
   category: { select: { id: true, name: true, status: true } },
+  expenseReason: { select: { id: true, name: true, categoryId: true, status: true } },
   contributionPeriod: { select: { id: true, year: true, month: true } },
   documents: {
     where: { status: 'AVAILABLE' },
@@ -615,6 +629,7 @@ export class TransactionRepository {
     const memberId = input.memberId ?? null;
     const contributionPeriodId = input.contributionPeriodId ?? null;
     const categoryId = input.categoryId ?? null;
+    const expenseReasonId = input.expenseReasonId ?? null;
 
     if (input.transactionType === 'INCOME') {
       if (incomeType === null) {
@@ -628,10 +643,30 @@ export class TransactionRepository {
           field: 'categoryId',
         });
       }
+
+      // Checked here as well as by the database constraint, so an income row carrying a reason is a
+      // documented `400` naming the field rather than a `CHECK` violation the Admin would read as
+      // a server fault. A reason answers "what was this expense for", which has no meaning for
+      // income, and the `financial_transaction_income_no_reason` rule enforces the same thing at
+      // the database.
+      if (expenseReasonId !== null) {
+        throw validationFailed('An income transaction cannot have an expense reason.', {
+          field: 'expenseReasonId',
+        });
+      }
     } else {
       if (categoryId === null) {
         throw validationFailed('An expense transaction requires a category.', {
           field: 'categoryId',
+        });
+      }
+
+      // `REQ-EXP-005`. The database `expense_shape` CHECK requires it too, so this is the friendly
+      // version of the same rule rather than a second rule: an expense whose reason was omitted is
+      // refused with a field-level `400` instead of a constraint error.
+      if (expenseReasonId === null) {
+        throw validationFailed('An expense transaction requires a reason.', {
+          field: 'expenseReasonId',
         });
       }
 
@@ -683,6 +718,7 @@ export class TransactionRepository {
       memberId,
       contributionPeriodId,
       categoryId,
+      expenseReasonId,
       createdByAdminId: actorAdminId,
     };
   }
@@ -709,7 +745,8 @@ export class TransactionRepository {
         field === 'description' ||
         field === 'notes' ||
         field === 'memberId' ||
-        field === 'categoryId'
+        field === 'categoryId' ||
+        field === 'expenseReasonId'
       ) {
         const value = input[field];
 
@@ -746,6 +783,11 @@ export class TransactionRepository {
       notes: transaction.notes,
       incomeType: transaction.incomeType,
       categoryId: transaction.categoryId,
+      // Stored as the id, not the label, exactly as `categoryId` is: the snapshot is a record of
+      // what the row referenced when the event was written, so re-reading the label later and
+      // storing it would make the audit trail describe the *current* name of a category or reason
+      // rather than the one in force at the time.
+      expenseReasonId: transaction.expenseReasonId,
       memberId: transaction.memberId,
       contributionPeriodId: transaction.contributionPeriodId,
       voidReason: transaction.voidReason,
@@ -820,6 +862,10 @@ function toPrismaWhere(filters: TransactionQueryFilters): Prisma.FinancialTransa
       { member: { is: { name: { contains: filters.search, mode: 'insensitive' } } } },
       { member: { is: { referenceId: { contains: filters.search, mode: 'insensitive' } } } },
       { category: { is: { name: { contains: filters.search, mode: 'insensitive' } } } },
+      // `REQ-SEARCH-002` covers "the named category or reason". The reason is searchable on its
+      // label only, and never on `notes`: an identity written into a private note must stay
+      // unfindable, which is the same rule that keeps `notes` out of the other clauses.
+      { expenseReason: { is: { name: { contains: filters.search, mode: 'insensitive' } } } },
     ];
   }
 

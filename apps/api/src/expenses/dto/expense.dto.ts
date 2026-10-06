@@ -3,10 +3,13 @@ import { IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class
 import {
   CATEGORY_STATUSES,
   EXPENSE_CATEGORY_NAME_MAX_LENGTH,
+  EXPENSE_REASON_NAME_MAX_LENGTH,
+  EXPENSE_REASON_STATUSES,
   PAYMENT_METHODS,
   TRANSACTION_DESCRIPTION_MAX_LENGTH,
   TRANSACTION_NOTES_MAX_LENGTH,
   type CategoryStatus,
+  type ExpenseReasonStatus,
   type PaymentMethod,
 } from '@hyssop/contracts';
 import {
@@ -31,6 +34,8 @@ const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 const CATEGORY_UUID_MESSAGE = 'A category identifier must be a UUID.';
+
+const REASON_UUID_MESSAGE = 'A reason identifier must be a UUID.';
 
 /**
  * `GET /api/v1/expenses`.
@@ -84,6 +89,20 @@ export class CreateExpenseDto {
   @IsString()
   @Matches(UUID_PATTERN, { message: CATEGORY_UUID_MESSAGE })
   public categoryId!: string;
+
+  /**
+   * `REQ-EXP-005`: one reason from the selected category's own reasons.
+   *
+   * Required for the same reason `categoryId` is, and validated as a UUID for the same reason.
+   * Whether the reason is *active* and whether it *belongs to this category* are data questions
+   * rather than shape questions, so they are answered by `requireActiveForCategory` in the
+   * service as documented `400`s naming this field -- not by a foreign-key failure or by the
+   * database trigger firing after the write.
+   */
+  @trimmed()
+  @IsString()
+  @Matches(UUID_PATTERN, { message: REASON_UUID_MESSAGE })
+  public expenseReasonId!: string;
 
   @IsOptional()
   @trimmed()
@@ -146,5 +165,78 @@ export class UpdateExpenseCategoryDto {
 export class ExpenseCategoryIdParamDto {
   @IsString()
   @Matches(UUID_PATTERN, { message: CATEGORY_UUID_MESSAGE })
+  public id!: string;
+}
+
+/**
+ * `GET /api/v1/expenses/reasons?categoryId=...`.
+ *
+ * `categoryId` is required rather than optional because a reason has no meaning on its own: it
+ * belongs to a category, and returning every reason for every category would make the client guess
+ * which subset belongs to the category the Admin actually selected.
+ *
+ * There is no status filter here, exactly as `GET /expenses/categories` has none: the dropdown in
+ * the create form may only offer active rows, and returning inactive rows alongside them would be
+ * a dead control.
+ */
+export class ExpenseReasonListQueryDto {
+  @trimmed()
+  @IsString()
+  @Matches(UUID_PATTERN, { message: CATEGORY_UUID_MESSAGE })
+  public categoryId!: string;
+}
+
+/**
+ * `POST /api/v1/expenses/reasons`.
+ *
+ * `REQ-EXP-005`: a reason is a plain name plus the category that owns it. `isSystem` is not
+ * accepted, for the same reason as on a category: the predefined per-category reasons are a
+ * documented product set (`REQ-EXP-001` scope extended to reasons) that only the seed marks, so an
+ * Admin-created reason is always custom.
+ */
+export class CreateExpenseReasonDto {
+  @trimmed()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(EXPENSE_REASON_NAME_MAX_LENGTH)
+  public name!: string;
+
+  @trimmed()
+  @IsString()
+  @Matches(UUID_PATTERN, { message: CATEGORY_UUID_MESSAGE })
+  public categoryId!: string;
+}
+
+/**
+ * `PATCH /api/v1/expenses/reasons/:id`.
+ *
+ * A reason is renamed or deactivated, never deleted, and never moved between categories: moving
+ * it would strand historical expenses under a reason their category no longer owns, which the
+ * reason/category pairing rule would then refuse. Both changes are optional and the service
+ * requires at least one, because an audit event with identical before and after values would make
+ * the history misleading.
+ */
+export class UpdateExpenseReasonDto {
+  @IsOptional()
+  @trimmed()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(EXPENSE_REASON_NAME_MAX_LENGTH)
+  public name?: string;
+
+  @IsOptional()
+  @IsIn(EXPENSE_REASON_STATUSES)
+  public status?: ExpenseReasonStatus;
+}
+
+/**
+ * The `:id` path parameter of the reason routes.
+ *
+ * The same UUID rule as the category routes, so one identifier cannot be accepted on one route
+ * and rejected on another.
+ */
+export class ExpenseReasonIdParamDto {
+  @IsString()
+  @Matches(UUID_PATTERN, { message: REASON_UUID_MESSAGE })
   public id!: string;
 }

@@ -93,6 +93,10 @@ describe('dashboard projection against real PostgreSQL', () => {
     categoryId: string = electricityId,
     paymentMethod: 'CASH' | 'UPI' | 'BANK_TRANSFER' = 'CASH',
   ): Promise<{ readonly id: string; readonly referenceId: string }> {
+    // `REQ-EXP-005`: the reason is part of the expense, so the helper resolves one for whichever
+    // category the test filed it under rather than letting a fixture drift out of date.
+    const reason = await harness.ensureReason(categoryId, actorAdminId);
+
     return harness.transactions.create(
       {
         transactionType: 'EXPENSE',
@@ -101,6 +105,7 @@ describe('dashboard projection against real PostgreSQL', () => {
         businessDate,
         occurredAt: new Date(),
         categoryId,
+        expenseReasonId: reason.id,
       },
       { actorAdminId },
     );

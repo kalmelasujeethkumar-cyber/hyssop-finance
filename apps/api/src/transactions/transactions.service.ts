@@ -19,6 +19,7 @@ import { formatPaise, parsePaise } from '../common/money/paise';
 import { parseBusinessDate } from '../common/time/business-date';
 import { AuditEventRepository, AUDIT_ENTITY_TYPES } from '../database/audit/audit-event.repository';
 import { ExpenseCategoryRepository } from '../database/categories/expense-category.repository';
+import { ExpenseReasonRepository } from '../database/reasons/expense-reason.repository';
 import { MemberRepository } from '../database/members/member.repository';
 import {
   TransactionRepository,
@@ -106,6 +107,7 @@ export class TransactionsService {
     private readonly audit: AuditEventRepository,
     private readonly members: MemberRepository,
     private readonly categories: ExpenseCategoryRepository,
+    private readonly reasons: ExpenseReasonRepository,
     private readonly idempotency: IdempotentCommandRunner,
   ) {}
 
@@ -181,6 +183,7 @@ export class TransactionsService {
         ...(input.notes === undefined ? {} : { notes: input.notes }),
         ...(input.memberId === undefined ? {} : { memberId: input.memberId }),
         ...(input.categoryId === undefined ? {} : { categoryId: input.categoryId }),
+        ...(input.expenseReasonId === undefined ? {} : { expenseReasonId: input.expenseReasonId }),
       },
       run: async (tx) => {
         const updated = await this.transactions.correctWithinTransaction(
@@ -341,6 +344,7 @@ export class TransactionsService {
     readonly notes?: string;
     readonly memberId?: string | null;
     readonly categoryId?: string | null;
+    readonly expenseReasonId?: string | null;
   }> {
     const changes: {
       amountPaise?: bigint;
@@ -350,6 +354,7 @@ export class TransactionsService {
       notes?: string;
       memberId?: string | null;
       categoryId?: string | null;
+      expenseReasonId?: string | null;
     } = {};
 
     if (input.amount !== undefined) {
@@ -411,6 +416,15 @@ export class TransactionsService {
       });
     }
 
+    // The mirror rule for the reason, and refused the same way. A reason answers "what was this
+    // expense for"; income has no such answer, and the `financial_transaction_income_no_reason`
+    // CHECK enforces the same thing at the database.
+    if (input.expenseReasonId !== undefined) {
+      throw validationFailed('An income transaction cannot have an expense reason.', {
+        field: 'expenseReasonId',
+      });
+    }
+
     const anonymous = current.incomeType !== null && isAnonymousIncomeType(current.incomeType);
 
     if (anonymous) {
@@ -458,20 +472,53 @@ export class TransactionsService {
    */
   private async applyExpenseCorrectionRules(
     input: CorrectTransactionDto,
-    changes: { memberId?: string | null; categoryId?: string | null },
+    changes: {
+      memberId?: string | null;
+      categoryId?: string | null;
+      expenseReasonId?: string | null;
+    },
   ): Promise<void> {
     if (input.memberId !== undefined) {
       throw validationFailed('An expense cannot identify a member.', { field: 'memberId' });
     }
 
-    if (input.categoryId !== undefined) {
-      if (input.categoryId === null) {
-        throw validationFailed('An expense requires a category.', { field: 'categoryId' });
-      }
-
-      await this.categories.requireActive(input.categoryId);
-      changes.categoryId = input.categoryId;
+    if (input.categoryId !== undefined && input.categoryId === null) {
+      throw validationFailed('An expense requires a category.', { field: 'categoryId' });
     }
+
+    if (input.expenseReasonId !== undefined && input.expenseReasonId === null) {
+      throw validationFailed('An expense requires a reason.', { field: 'expenseReasonId' });
+    }
+
+    // `REQ-EXP-005` is a statement about the *pair*, so the two fields are corrected together or
+    // not at all. Moving an expense to a different category while keeping a reason that belongs
+    // to the old one would be refused by the database pairing trigger after the write; changing
+    // only the reason would fail the same way. Requiring both here turns that into a documented
+    // `400` naming both fields, before anything is written.
+    if ((input.categoryId === undefined) !== (input.expenseReasonId === undefined)) {
+      throw validationFailed('A category and a reason must be corrected together.', {
+        field: input.categoryId === undefined ? 'categoryId' : 'expenseReasonId',
+      });
+    }
+
+    if (input.categoryId === undefined || input.expenseReasonId === undefined) {
+      return;
+    }
+
+    // Both targets are validated before either is accepted, so a correction cannot half-apply.
+    // `requireActive` re-reads the category's status and `requireActiveForCategory` the reason's,
+    // which means a category or reason deactivated between the reads can only make the request
+    // fail closed, never write a pairing the database would reject. A correction that resends the
+    // pair the expense already holds then falls through to the repository's own "must change at
+    // least one field" check, so it is still refused rather than recorded as a no-op audit event.
+    const categoryId = input.categoryId;
+    const expenseReasonId = input.expenseReasonId;
+
+    await this.categories.requireActive(categoryId);
+    await this.reasons.requireActiveForCategory(expenseReasonId, categoryId);
+
+    changes.categoryId = categoryId;
+    changes.expenseReasonId = expenseReasonId;
   }
 }
 

@@ -1,10 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderRoute } from '../../test/render';
 import { ApiClientError } from '../../lib/api-client';
 import {
   ACTIVE_EXPENSE_CATEGORIES,
+  ACTIVE_EXPENSE_REASONS,
+  DEFAULT_EXPENSE_CSV,
   EXPENSE_ONE,
   EXPENSE_ONE_AUDIT,
   EXPENSE_RETIRED_CATEGORY,
@@ -86,7 +88,14 @@ async function openRecordForm(user: ReturnType<typeof userEvent.setup>) {
   expect(screen.getByRole('button', { name: 'Cancel recording expense' })).toBeInTheDocument();
 }
 
-/** Chooses a category in the record form, waiting for the API's categories to arrive. */
+/**
+ * Chooses a category and then a reason of that category, waiting for the API to answer both.
+ *
+ * The two are one step for the Admin, so the tests that record an expense should not have to know
+ * that the reason list is fetched *after* a category is chosen. Doing both here is also what keeps
+ * every recording test valid: an expense with a category but no reason is refused by the API, so a
+ * helper that stopped at the category would leave them all failing for one shared reason.
+ */
 async function chooseCategory(
   user: ReturnType<typeof userEvent.setup>,
   categoryId: string,
@@ -95,6 +104,13 @@ async function chooseCategory(
 
   await within(picker).findByRole('option', { name: 'Electricity' });
   await user.selectOptions(picker, categoryId);
+
+  const reasonPicker = screen.getByLabelText('Reason (required)');
+  const reason = ACTIVE_EXPENSE_REASONS.find((row) => row.categoryId === categoryId);
+
+  expect(reason).toBeDefined();
+  await within(reasonPicker).findByRole('option', { name: reason?.name ?? '' });
+  await user.selectOptions(reasonPicker, reason?.id ?? '');
 }
 
 async function openCorrectionForm(user: ReturnType<typeof userEvent.setup>) {
@@ -252,6 +268,59 @@ describe('searching and filtering expenses', () => {
       expect(screen.getByTestId('result-count')).toHaveTextContent('1 record found');
     });
     expect(lastCallTo(client, 'GET', '/expenses?')?.path).toContain('search=Choir');
+  });
+
+  it('searches by reason name, because REQ-SEARCH-002 requires it', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    const reasonName = ACTIVE_EXPENSE_REASONS[0]?.name ?? '';
+
+    await screen.findByRole('table');
+    // Wait for the rows themselves, not just the table element: a table can exist before its body
+    // has any data, and counting zero rows would make the "fewer rows came back" assertion pass
+    // for the wrong reason.
+    await waitFor(() => {
+      expect(desktopTable().querySelectorAll('tbody tr').length).toBeGreaterThan(0);
+    });
+    const unfilteredRows = desktopTable().querySelectorAll('tbody tr').length;
+
+    await user.type(screen.getByLabelText('Search expenses'), reasonName);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    // The term must reach the API as one search parameter. If the browser sent it to a field the
+    // API does not search, the request would succeed and return everything, which is a silent
+    // "no filtering" rather than a visible failure. The parameter is decoded rather than compared
+    // as text, because a space is legal on the wire as either `+` or `%20` and the test is about
+    // the criterion reaching the API, not about one encoder.
+    await waitFor(() => {
+      const path = lastCallTo(client, 'GET', '/expenses?')?.path ?? '';
+      const query = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+
+      expect(query.get('search')).toBe(reasonName);
+    });
+
+    // The reason name has to narrow the list, not merely reach the API. Matching every row would
+    // look successful while filtering nothing, so the assertions are that fewer rows came back and
+    // that the label is visible on the ones that did.
+    await waitFor(() => {
+      expect(desktopTable().querySelectorAll('tbody tr').length).toBeLessThan(unfilteredRows);
+    });
+
+    const matchedRows = desktopTable().querySelectorAll('tbody tr').length;
+    expect(matchedRows).toBeGreaterThan(0);
+    expect(within(desktopTable()).getAllByText(reasonName)).toHaveLength(matchedRows);
+  });
+
+  it('shows the reason beside the category, on the row and on the mobile card', async () => {
+    renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    // The row states what the expense was for, not only which bucket it fell into. More than one
+    // fixture shares the reason, so this cannot pass on a single lucky match.
+    expect(
+      within(desktopTable()).getAllByText(ACTIVE_EXPENSE_REASONS[0]?.name ?? ''),
+    ).not.toHaveLength(0);
   });
 
   it('narrows by category, offering only the categories a new expense may use', async () => {
@@ -490,6 +559,9 @@ describe('recording an expense', () => {
 
     expect(call?.body).toEqual({
       categoryId: ACTIVE_EXPENSE_CATEGORIES[0]?.id,
+      expenseReasonId: ACTIVE_EXPENSE_REASONS.find(
+        (row) => row.categoryId === ACTIVE_EXPENSE_CATEGORIES[0]?.id,
+      )?.id,
       amount: '2450.75',
       paymentMethod: 'BANK_TRANSFER',
       businessDate: businessDate.value,
@@ -686,6 +758,119 @@ describe('recording an expense', () => {
     expect(callsTo(client, 'POST', '/expenses/categories')).toHaveLength(0);
   });
 
+  it('offers no Add Reason before a category exists, because the route requires one', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+
+    // `POST /expenses/reasons` takes a `categoryId`. Offering the control here would produce a
+    // request the API documents as invalid, which is a dead control rather than a helpful one.
+    expect(
+      screen.queryByRole('button', { name: 'Add a reason not listed above' }),
+    ).not.toBeInTheDocument();
+    expect(callsTo(client, 'POST', '/expenses/reasons')).toHaveLength(0);
+  });
+
+  it('adds a custom reason to the chosen category and selects it', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await user.selectOptions(
+      screen.getByLabelText('Category (required)'),
+      ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+    );
+    await screen.findByLabelText('Reason (required)');
+    await user.click(screen.getByRole('button', { name: 'Add a reason not listed above' }));
+    await user.type(screen.getByLabelText('New reason name (required)'), 'Generator fuel');
+    await user.click(screen.getByRole('button', { name: 'Add reason' }));
+
+    // The reason belongs to the category that was chosen, and is selected immediately, so the
+    // Admin never has to hunt for a name they just typed.
+    const picker = screen.getByLabelText('Reason (required)');
+    const option = await within(picker).findByRole('option', { name: 'Generator fuel' });
+
+    // The selected value must be the option that was just created. Asserting the picker is
+    // non-empty would pass even if it had fallen back to some other reason.
+    expect(picker).toHaveValue((option as HTMLOptionElement).value);
+    expect(lastExactCallTo(client, 'POST', '/expenses/reasons')?.body).toEqual({
+      categoryId: ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+      name: 'Generator fuel',
+    });
+    expect(lastExactCallTo(client, 'POST', '/expenses/reasons')?.idempotencyKey).toBeTruthy();
+  });
+
+  it('refuses a reason name already used in the same category, and keeps the typed name', async () => {
+    // Uniqueness is per category, so this is a conflict rather than a name that is simply taken.
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await user.selectOptions(
+      screen.getByLabelText('Category (required)'),
+      ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+    );
+    await screen.findByLabelText('Reason (required)');
+    await user.click(screen.getByRole('button', { name: 'Add a reason not listed above' }));
+    await user.type(
+      screen.getByLabelText('New reason name (required)'),
+      ACTIVE_EXPENSE_REASONS[0]?.name.toLowerCase() ?? '',
+    );
+    await user.click(screen.getByRole('button', { name: 'Add reason' }));
+
+    expect(await screen.findByText('That reason name is already in use here.')).toBeInTheDocument();
+    // The name survives so the Admin can correct it rather than losing what they typed.
+    expect(screen.getByLabelText('New reason name (required)')).toHaveValue(
+      ACTIVE_EXPENSE_REASONS[0]?.name.toLowerCase() ?? '',
+    );
+    expect(callsTo(client, 'POST', '/expenses/reasons')).toHaveLength(1);
+  });
+
+  it('refuses a blank reason name without a request', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await user.selectOptions(
+      screen.getByLabelText('Category (required)'),
+      ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+    );
+    await screen.findByLabelText('Reason (required)');
+    await user.click(screen.getByRole('button', { name: 'Add a reason not listed above' }));
+    await user.click(screen.getByRole('button', { name: 'Add reason' }));
+
+    expect(await screen.findByText('Enter a reason name.')).toBeInTheDocument();
+    expect(callsTo(client, 'POST', '/expenses/reasons')).toHaveLength(0);
+  });
+
+  it('records the chosen reason with the expense, not just the category', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseCategory(user, ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+
+    await screen.findByText(/was recorded as HY-EXP-/);
+
+    // The category alone is not enough: `REQ-EXP-005` requires the pairing to travel together, or
+    // the server has to reject an expense the interface considered complete.
+    const body = lastExactCallTo(client, 'POST', '/expenses')?.body as {
+      categoryId: string;
+      expenseReasonId: string;
+    };
+    const reason = ACTIVE_EXPENSE_REASONS.find((row) => row.categoryId === body.categoryId);
+
+    expect(body.expenseReasonId).toBe(reason?.id ?? '');
+  });
+
   it('cancels the form without recording anything', async () => {
     const user = userEvent.setup({ delay: null });
     const client = renderExpenses(stubApiClient());
@@ -726,11 +911,34 @@ describe('one expense record', () => {
     expect(screen.getByText('₹2,450.75')).toBeInTheDocument();
   });
 
+  it('shows the reason the expense was recorded under', async () => {
+    renderExpenses(stubApiClient(), `/expenses/${EXPENSE_ONE.id}`);
+
+    await screen.findByText('Recorded details');
+
+    // An expense answers "what was this for", which the category alone cannot. If the reason were
+    // missing from the detail view the Admin would have to open the correction form to find out.
+    expect(screen.getByText(EXPENSE_ONE.expenseReason.name)).toBeInTheDocument();
+  });
+
   it('marks a deactivated category as inactive on the record that still has it', async () => {
     renderExpenses(stubApiClient(), `/expenses/${EXPENSE_RETIRED_CATEGORY.id}`);
 
     await screen.findByText('Recorded details');
     expect(screen.getByText('Retired category (inactive)')).toBeInTheDocument();
+  });
+
+  it('keeps an inactive reason readable and says it is inactive', async () => {
+    renderExpenses(stubApiClient(), `/expenses/${EXPENSE_RETIRED_CATEGORY.id}`);
+
+    await screen.findByText('Recorded details');
+
+    // `docs/05-DATABASE-SPEC.md` preserves inactive reasons on historical expenses. The migration's
+    // backfill produces exactly this shape for a retired category, so blanking it here would hide
+    // real historical rows and make the record unreadable.
+    expect(
+      screen.getByText(`${EXPENSE_RETIRED_CATEGORY.expenseReason.name} (inactive)`),
+    ).toBeVisible();
   });
 
   it('shows Receipt Missing for an expense with no receipt', async () => {
@@ -881,24 +1089,82 @@ describe('correcting an expense', () => {
     expect(client.transactionById(EXPENSE_ONE.id)?.category?.id).toBe(EXPENSE_ONE.category.id);
   });
 
-  it('moves the expense to a different category, which is the one association it allows', async () => {
+  it('moves the expense to a different category and reason, which is the one association it allows', async () => {
     const user = userEvent.setup({ delay: null });
     const client = renderExpenses(stubApiClient(), `/expenses/${EXPENSE_ONE.id}`);
+    const nextCategory = ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '';
+    const nextReason = ACTIVE_EXPENSE_REASONS.find((row) => row.categoryId === nextCategory);
 
     await screen.findByText('Recorded details');
     await openCorrectionForm(user);
+
+    await user.selectOptions(screen.getByLabelText('Category (required)'), nextCategory);
+
+    // Changing the category clears the reason, because a reason means nothing outside its own
+    // category. The Admin is therefore asked for a reason of the *new* category rather than the
+    // old one being carried over.
+    expect(screen.getByLabelText<HTMLSelectElement>('Reason (required)').value).toBe('');
+
+    const reasonPicker = screen.getByLabelText('Reason (required)');
+
+    await within(reasonPicker).findByRole('option', { name: nextReason?.name ?? '' });
+    await user.selectOptions(reasonPicker, nextReason?.id ?? '');
+    await user.click(screen.getByRole('button', { name: 'Save correction' }));
+
+    expect(await screen.findByText(/The category is now Repairs/)).toBeInTheDocument();
+
+    const body = lastCallTo(client, 'PATCH', '/transactions')?.body as {
+      categoryId: string;
+      expenseReasonId: string;
+    };
+
+    // The pair travels together. Sending the category alone is what the API refuses, so the
+    // browser must never produce it.
+    expect(body.categoryId).toBe(nextCategory);
+    expect(body.expenseReasonId).toBe(nextReason?.id);
+    const movedTransaction = client.transactionById(EXPENSE_ONE.id);
+
+    expect(movedTransaction?.category?.name).toBe('Repairs');
+    expect(movedTransaction?.expenseReason?.id).toBe(nextReason?.id);
+  });
+
+  it('offers only the reasons of the currently selected category', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderExpenses(stubApiClient(), `/expenses/${EXPENSE_ONE.id}`);
+
+    await screen.findByText('Recorded details');
+    await openCorrectionForm(user);
+
+    const currentReason = ACTIVE_EXPENSE_REASONS.filter(
+      (row) => row.categoryId === EXPENSE_ONE.expenseReason.categoryId,
+    );
+
+    const beforeMove = screen.getByLabelText('Reason (required)');
+
+    await within(beforeMove).findByRole('option', { name: currentReason[0]?.name ?? '' });
+    // One option per active reason plus the empty placeholder that makes "not chosen yet"
+    // representable — and nothing else, so no reason from another category can be picked.
+    expect(within(beforeMove).getAllByRole('option')).toHaveLength(currentReason.length + 1);
 
     await user.selectOptions(
       screen.getByLabelText('Category (required)'),
       ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '',
     );
-    await user.click(screen.getByRole('button', { name: 'Save correction' }));
 
-    expect(await screen.findByText(/The category is now Repairs/)).toBeInTheDocument();
+    const afterMove = screen.getByLabelText('Reason (required)');
+    const movedReasons = ACTIVE_EXPENSE_REASONS.filter(
+      (row) => row.categoryId === ACTIVE_EXPENSE_CATEGORIES[1]?.id,
+    );
+
+    await within(afterMove).findByRole('option', { name: movedReasons[0]?.name ?? '' });
+    // No reason from the previous category survives the move. Offering one would be a dead
+    // control: the server would refuse the pairing the moment it was submitted.
     expect(
-      (lastCallTo(client, 'PATCH', '/transactions')?.body as { categoryId: string }).categoryId,
-    ).toBe(ACTIVE_EXPENSE_CATEGORIES[1]?.id);
-    expect(client.transactionById(EXPENSE_ONE.id)?.category?.name).toBe('Repairs');
+      within(afterMove)
+        .getAllByRole('option')
+        .map((option) => option.textContent)
+        .filter((label) => label !== 'Choose a reason'),
+    ).toEqual(movedReasons.map((reason) => reason.name));
   });
 
   it('offers only the active categories as a move target', async () => {
@@ -1131,5 +1397,147 @@ describe('expense navigation', () => {
 
     expect(await screen.findByText('Recorded details')).toBeInTheDocument();
     expect(screen.getByText('₹750.00')).toBeInTheDocument();
+  });
+});
+
+describe('the filtered expense CSV export', () => {
+  beforeEach(() => {
+    // jsdom implements neither object URLs nor a real anchor download, and those browser steps are
+    // part of what the export does, so they are observed through the API the browser provides.
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:stub'), revokeObjectURL: vi.fn() }),
+    );
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+  });
+
+  it('offers no download without a category, and says why instead of failing on click', async () => {
+    renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+
+    // `GET /reports/expense-transactions/export.csv` requires a category, so a control enabled
+    // here would be a dead control that the API refuses. The copy states the requirement instead.
+    expect(screen.getByRole('button', { name: 'Download filtered expenses (CSV)' })).toBeDisabled();
+    expect(
+      screen.getByText('Choose a category to download; the export is per category.'),
+    ).toBeVisible();
+  });
+
+  it('downloads the filtered rows, sending the same criteria the table was built from', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(
+      stubApiClient({ expenses: { csvFilename: 'hyssop-expenses-2026-09-18.csv' } }),
+    );
+
+    await screen.findByRole('table');
+    await user.selectOptions(
+      screen.getByLabelText('Category'),
+      ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '',
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Download filtered expenses (CSV)' }),
+    );
+
+    expect(
+      await screen.findByText('Saved hyssop-expenses-2026-09-18.csv to your downloads.', {
+        exact: false,
+      }),
+    ).toBeVisible();
+
+    const csvPath =
+      lastCallTo(client, 'GET', '/reports/expense-transactions/export.csv')?.path ?? '';
+    const csvQuery = new URLSearchParams(csvPath.slice(csvPath.indexOf('?') + 1));
+
+    // The export is per category and follows the active filter. If the browser sent the JSON list
+    // path instead, or dropped the category, the file would silently contain different rows from
+    // the ones on screen.
+    expect(csvPath).toContain('/reports/expense-transactions/export.csv');
+    expect(csvQuery.get('categoryId')).toBe(ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '');
+    // The export is not paginated, so sending `page` or `pageSize` would cap a large export at one
+    // page of rows and contradict the promised 10,000-row limit.
+    expect(csvQuery.get('page')).toBeNull();
+    expect(csvQuery.get('pageSize')).toBeNull();
+  });
+
+  it('saves the exact CSV bytes the API returned, without reformatting the amount', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient({ expenses: { csv: DEFAULT_EXPENSE_CSV } }));
+
+    await screen.findByRole('table');
+    await user.selectOptions(
+      screen.getByLabelText('Category'),
+      ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Download filtered expenses (CSV)' }),
+    );
+
+    await waitFor(() => {
+      expect(client.textCalls[0]?.text).toBe(DEFAULT_EXPENSE_CSV);
+    });
+    // `2450.75` must survive the trip ungrouped and unrounded; a client-side "format the money
+    // nicely" step would add thousands separators the API contract forbids.
+    expect(DEFAULT_EXPENSE_CSV).toContain('2450.75');
+    // The browser must not "helpfully" fill the empty Receipt URL cell with the words the detail
+    // screen shows. `Receipt Missing` is a `REQ-DOC-003` interface obligation; the export's
+    // Receipt URL column is data, and a row with no receipt has no URL to write.
+    const saved = client.textCalls[0]?.text ?? '';
+    expect(saved).toContain('HY-EXP-000002,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,');
+    expect(saved).not.toContain('Receipt Missing');
+  });
+
+  it('reports a refusal to export rather than saving a truncated file', async () => {
+    const user = userEvent.setup({ delay: null });
+    // The API refuses above `CSV_EXPORT_MAX_ROWS` with a `VALIDATION_FAILED` naming the limit and
+    // what to do about it, so the stub refuses the same way rather than inventing an error code.
+    const tooManyRows = new ApiClientError(
+      400,
+      'VALIDATION_FAILED',
+      'More than 10,000 expenses match these filters. Narrow the filters and try again.',
+      '0f9c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b',
+      [{ field: 'categoryId', message: 'Narrow the filters and try again.' }],
+    );
+
+    renderExpenses(stubApiClient({ expenses: { csvFails: tooManyRows } }));
+
+    await screen.findByRole('table');
+    await user.selectOptions(
+      screen.getByLabelText('Category'),
+      ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Download filtered expenses (CSV)' }),
+    );
+
+    // The failure has to reach the Admin as a stated refusal. Silently downloading 10,000 of
+    // 10,001 rows would pass every structural check and lose a row of the ledger.
+    expect(
+      await screen.findByText(
+        'More than 10,000 expenses match these filters. Narrow the filters and try again.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Saved .* to your downloads/)).not.toBeInTheDocument();
+  });
+
+  it('explains an empty filtered result instead of offering a file with no rows', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    // A category plus a term that matches nothing in it. The category matters because the export
+    // route requires one, so this is the only state where an empty export could be offered.
+    await user.selectOptions(
+      screen.getByLabelText('Category'),
+      ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+    );
+    await user.type(screen.getByLabelText('Search expenses'), 'no-such-expense');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    // A category with nothing in it must say so. Leaving the download enabled would produce a
+    // header-only file, which looks like a successful export of the ledger.
+    expect(await screen.findByText(/Nothing matches these filters/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Download filtered expenses (CSV)' })).toBeDisabled();
   });
 });

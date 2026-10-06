@@ -2,34 +2,41 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BUSINESS_DATE_FORMAT_MESSAGE,
   EXPENSE_CATEGORY_NAME_MAX_LENGTH,
+  EXPENSE_REASON_NAME_MAX_LENGTH,
   MONEY_FORMAT_MESSAGE,
   PAYMENT_METHODS,
   TRANSACTION_DESCRIPTION_MAX_LENGTH,
   TRANSACTION_NOTES_MAX_LENGTH,
   isPaymentMethod,
   type ExpenseCategoryView,
+  type ExpenseReasonView,
   type ExpenseSummary,
   type PaymentMethod,
   type TransactionSummary,
 } from '@hyssop/contracts';
 import { useApiClient } from '../../app/providers/ApiClientProvider';
 import { ApiTransportError } from '../../lib/api-client';
+import { saveCsvTextFile } from '../../lib/csv-download';
 import { useSession } from '../auth/SessionProvider';
 import { invalidateTransactionDependents } from '../transactions/transaction-api';
 
 /**
  * Expense form and category data access.
  *
- * Authority: `docs/01-REQUIREMENTS.md` `REQ-EXP-001` to `REQ-EXP-004` and
+ * Authority: `docs/01-REQUIREMENTS.md` `REQ-EXP-001` to `REQ-EXP-005` and
  * `docs/phases/PHASE-06-EXPENSES.md`. An expense is created through `POST /api/v1/expenses`;
  * the list, detail, correction, void, and audit behaviour is the shared transaction contract in
  * `../transactions/transaction-api` and is deliberately not reimplemented per expense.
  *
- * The two rules that are genuinely expense-specific are enforced here as well as by the API:
+ * The three rules that are genuinely expense-specific are enforced here as well as by the API:
  *
  * - A category is required. `REQ-EXP-004` states an expense must reference exactly one category,
  *   and the browser cannot offer "no category" at all, so the empty state is not a valid
  *   selection to recover from.
+ * - A reason is required, and it must belong to the chosen category. `REQ-EXP-005` makes the reason
+ *   the second axis of classification, so the picker is scoped to the selected category and is
+ *   cleared whenever the category changes. Keeping a reason that belonged to the previous category
+ *   would be offering a value the server refuses, which is a dead control.
  * - The category picker is built from `GET /api/v1/expenses/categories`, which the API
  *   documents as the *active* categories. That is why a deactivated category disappears from the
  *   dropdown instead of appearing greyed out and then being refused: a control that submits a
@@ -41,7 +48,10 @@ import { invalidateTransactionDependents } from '../transactions/transaction-api
  */
 
 export const EXPENSE_CATEGORIES_QUERY_KEY = ['expense-categories'] as const;
+export const EXPENSE_REASONS_QUERY_KEY = ['expense-reasons'] as const;
 export const EXPENSE_CATEGORIES_PATH = '/expenses/categories';
+export const EXPENSE_REASONS_PATH = '/expenses/reasons';
+export const EXPENSE_EXPORT_PATH = '/reports/expense-transactions/export.csv';
 
 export const EXPENSE_LIST_DEFAULTS = {
   page: 1,
@@ -52,6 +62,7 @@ export const EXPENSE_LIST_DEFAULTS = {
 
 export interface ExpenseFormValues {
   readonly categoryId: string;
+  readonly expenseReasonId: string;
   readonly amount: string;
   readonly paymentMethod: PaymentMethod;
   readonly businessDate: string;
@@ -61,6 +72,7 @@ export interface ExpenseFormValues {
 
 export const EMPTY_EXPENSE_FORM: ExpenseFormValues = {
   categoryId: '',
+  expenseReasonId: '',
   amount: '',
   paymentMethod: 'CASH',
   businessDate: '',
@@ -70,6 +82,7 @@ export const EMPTY_EXPENSE_FORM: ExpenseFormValues = {
 
 export interface ExpenseFieldErrors {
   readonly categoryId?: string;
+  readonly expenseReasonId?: string;
   readonly amount?: string;
   readonly paymentMethod?: string;
   readonly businessDate?: string;
@@ -92,6 +105,7 @@ const ZERO_AMOUNTS: readonly string[] = ['0', '0.0', '0.00'];
 export function validateExpenseFields(values: ExpenseFormValues): ExpenseFieldErrors {
   const errors: {
     categoryId?: string;
+    expenseReasonId?: string;
     amount?: string;
     paymentMethod?: string;
     businessDate?: string;
@@ -101,6 +115,12 @@ export function validateExpenseFields(values: ExpenseFormValues): ExpenseFieldEr
 
   if (values.categoryId.trim() === '') {
     errors.categoryId = 'Choose a category.';
+  }
+
+  if (values.expenseReasonId.trim() === '') {
+    // Reported against the reason, not the category, so the message lands next to the control the
+    // Admin has to act on. Choosing a category is a separate, already-satisfied action.
+    errors.expenseReasonId = 'Choose a reason.';
   }
 
   const amount = values.amount.trim();
@@ -147,6 +167,7 @@ export function hasExpenseFieldErrors(errors: ExpenseFieldErrors): boolean {
  */
 export function expenseRequestBody(values: ExpenseFormValues): {
   categoryId: string;
+  expenseReasonId: string;
   amount: string;
   paymentMethod: PaymentMethod;
   businessDate: string;
@@ -158,6 +179,7 @@ export function expenseRequestBody(values: ExpenseFormValues): {
 
   return {
     categoryId: values.categoryId.trim(),
+    expenseReasonId: values.expenseReasonId.trim(),
     amount: values.amount.trim(),
     paymentMethod: values.paymentMethod,
     businessDate: values.businessDate.trim(),
@@ -234,6 +256,94 @@ export function validateCategoryName(name: string): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Validates a custom reason name.
+ *
+ * Same rules as `validateCategoryName`, taken from the shared
+ * `EXPENSE_REASON_NAME_MAX_LENGTH`, so the two custom-name dialogs on this screen cannot drift
+ * apart or disagree with the API's own limit.
+ */
+export function validateReasonName(name: string): string | undefined {
+  if (name.trim() === '') {
+    return 'Enter a reason name.';
+  }
+
+  if (name.trim().length > EXPENSE_REASON_NAME_MAX_LENGTH) {
+    return `Name must be ${EXPENSE_REASON_NAME_MAX_LENGTH} characters or fewer.`;
+  }
+
+  return undefined;
+}
+
+/**
+ * Finds a reason by id within a category's reasons, for seeding the picker and the edit form.
+ *
+ * Scoped by category on purpose. An id is unique on its own, but the picker only ever holds one
+ * category's reasons, so a lookup that ignored the category could surface a reason belonging to a
+ * category the form is not currently set to -- which is precisely the mismatch the API refuses.
+ */
+export function findExpenseReason(
+  reasons: readonly ExpenseReasonView[],
+  categoryId: string | undefined,
+  reasonId: string | undefined,
+): ExpenseReasonView | undefined {
+  if (categoryId === undefined || reasonId === undefined) {
+    return undefined;
+  }
+
+  return reasons.find((reason) => reason.id === reasonId && reason.categoryId === categoryId);
+}
+
+/**
+ * The label to show for an expense's reason, including the deactivated case.
+ *
+ * Same reasoning as `expenseCategoryLabel`: a historical expense whose reason has been deactivated
+ * must still name the reason it was actually filed under, with an explicit note, because an Admin
+ * reconciling a receipt needs to see that this is a retained label and not a stale one. The
+ * reason's `name` is not edited by deactivation, so showing it plainly is truthful.
+ */
+export function expenseReasonLabel(
+  reasons: readonly ExpenseReasonView[],
+  reason: ExpenseSummary['expenseReason'],
+): string {
+  const known = findExpenseReason(reasons, reason.categoryId, reason.id);
+
+  if (reason.status === 'INACTIVE' || known?.status === 'INACTIVE') {
+    return `${reason.name} (inactive)`;
+  }
+
+  return reason.name;
+}
+
+/**
+ * The active reasons, as the documented plain data array.
+ *
+ * `enabled: false` when no category is chosen rather than firing a request that the API documents as
+ * invalid: `GET /api/v1/expenses/reasons` requires `categoryId`, so the only honest states before a
+ * category exists are "not asked yet" and "asked and answered". `retry: false` and a one-minute
+ * `staleTime` match `useExpenseCategories`, and the key includes the category so switching
+ * categories cannot briefly paint the previous category's reasons under the new one.
+ */
+export function useExpenseReasons(categoryId: string | undefined) {
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: [...EXPENSE_REASONS_QUERY_KEY, categoryId ?? ''],
+    queryFn: ({ signal }) =>
+      client.get<readonly ExpenseReasonView[]>(
+        // `URLSearchParams` rather than string concatenation: the category id is a UUID and needs
+        // no escaping, but this is the one place a value is interpolated into a query string, and
+        // the encoder is the correct answer for whatever that value turns out to be.
+        `${EXPENSE_REASONS_PATH}?${new URLSearchParams({ categoryId: categoryId ?? '' }).toString()}`,
+        { signal },
+      ),
+    enabled: categoryId !== undefined && categoryId !== '',
+    retry: false,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
 }
 
 /**
@@ -317,6 +427,138 @@ export function useCreateExpenseCategory() {
       // Only the category list changes here. A new category has no transactions yet, so the
       // expense list, the detail, and the audit trail are all still correct.
       void queryClient.invalidateQueries({ queryKey: EXPENSE_CATEGORIES_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * A custom reason created from the expense screen, scoped to the category currently chosen.
+ *
+ * Mirrors `useCreateExpenseCategory`. The category id travels with the request rather than being
+ * inferred server-side, because a reason is meaningless without its category and the server
+ * creates the reason inside the category the form is actually showing. On success the reason list
+ * is invalidated so the newly created reason is immediately selectable, and it is returned to the
+ * caller so the form can select it without a second round trip.
+ */
+export function useCreateExpenseReason() {
+  const client = useApiClient();
+  const { withCsrf } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: {
+      readonly categoryId: string;
+      readonly name: string;
+      readonly idempotencyKey: string;
+    }) => {
+      if (input.idempotencyKey === '') {
+        return Promise.reject(new ApiTransportError('No idempotency key was prepared.'));
+      }
+
+      if (input.categoryId.trim() === '') {
+        return Promise.reject(new ApiTransportError('Choose a category before adding a reason.'));
+      }
+
+      return withCsrf((csrfToken) =>
+        client.post<ExpenseReasonView>(
+          EXPENSE_REASONS_PATH,
+          { categoryId: input.categoryId.trim(), name: input.name.trim() },
+          { csrfToken, idempotencyKey: input.idempotencyKey },
+        ),
+      );
+    },
+    onSuccess: (created) => {
+      // A new reason has no transactions yet, so only the reason list is stale.
+      void queryClient.invalidateQueries({ queryKey: EXPENSE_REASONS_QUERY_KEY });
+      return created;
+    },
+  });
+}
+
+/**
+ * The filters that drive the expense CSV download.
+ *
+ * Deliberately the same shape the list screen sends to `GET /api/v1/transactions`, so the file and
+ * the table describe the same rows. `categoryId` is required by the export route, which is why the
+ * download control is only offered once a category is chosen -- an export with no category would
+ * be a whole-ledger download, a different action with different authorization and volume
+ * consequences, and it is not what this button claims to do.
+ */
+export interface ExpenseExportFilters {
+  readonly categoryId: string;
+  readonly search?: string;
+  readonly status?: string;
+  readonly paymentMethod?: string;
+  readonly from?: string;
+  readonly to?: string;
+  readonly minAmount?: string;
+  readonly maxAmount?: string;
+  readonly sort?: string;
+  readonly direction?: string;
+}
+
+/**
+ * Builds the export query, omitting empty optional filters.
+ *
+ * Sending `search=` or `from=` as empty strings would be a request the API has to interpret, and
+ * an empty `from` is not the same as no lower bound. Omitting the key entirely is the only form
+ * that is unambiguous.
+ */
+export function expenseExportQuery(filters: ExpenseExportFilters): Record<string, string> {
+  const query: Record<string, string> = { categoryId: filters.categoryId };
+
+  for (const key of [
+    'search',
+    'status',
+    'paymentMethod',
+    'from',
+    'to',
+    'minAmount',
+    'maxAmount',
+    'sort',
+    'direction',
+  ] as const) {
+    const value = filters[key]?.trim();
+
+    if (value !== undefined && value !== '') {
+      query[key] = value;
+    }
+  }
+
+  return query;
+}
+
+/**
+ * Downloads the filtered expense CSV.
+ *
+ * Uses `client.getText` rather than a plain `<a href>` or `window.open` because the route is behind
+ * the session cookie and returns `text/csv` as an attachment. Navigating to it directly would dump
+ * a raw CSV (or a raw error body) into a tab instead of a download, and an expired session would
+ * produce a page the UI cannot explain. `getText` already maps a failed request back to the
+ * documented JSON error envelope, so the refusal and the session expiry arrive as real messages
+ * beside the button rather than as a browser dialog.
+ *
+ * A `>10,000`-row result is refused by the API against `CSV_EXPORT_MAX_ROWS`, so this cannot silently
+ * produce a truncated file; the message is surfaced verbatim.
+ */
+export function useDownloadExpenseCsv() {
+  const client = useApiClient();
+
+  return useMutation({
+    mutationFn: async (filters: ExpenseExportFilters) => {
+      if (filters.categoryId.trim() === '') {
+        throw new ApiTransportError('Choose a category before downloading expenses.');
+      }
+
+      const query = expenseExportQuery(filters);
+      const search = new URLSearchParams(query).toString();
+      const download = await client.getText(
+        search === '' ? EXPENSE_EXPORT_PATH : `${EXPENSE_EXPORT_PATH}?${search}`,
+      );
+
+      saveCsvTextFile(download.text, download.filename, 'expense-transactions.csv');
+
+      return download.filename ?? 'expense-transactions.csv';
     },
   });
 }

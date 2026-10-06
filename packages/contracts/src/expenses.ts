@@ -11,7 +11,7 @@
  * screen cannot render an expense with no category or with an income type.
  */
 
-import type { CategoryStatus, TransactionSummary } from './transactions';
+import type { CategoryStatus, ExpenseReasonStatus, TransactionSummary } from './transactions';
 
 /**
  * One expense transaction.
@@ -25,6 +25,16 @@ import type { CategoryStatus, TransactionSummary } from './transactions';
  */
 export interface ExpenseSummary extends TransactionSummary {
   readonly category: NonNullable<TransactionSummary['category']>;
+  /**
+   * The reason this expense was recorded, non-null for the same reason `category` is.
+   *
+   * `REQ-EXP-005` requires one reason from the expense's own category, and the database
+   * `expense_shape` CHECK plus the reason/category pairing trigger enforce the same rule, so an
+   * expense without a reason is not representable. The reason's *current* status travels with it
+   * so a historical expense filed under a since-deactivated reason keeps its label and the UI can
+   * explain why that reason is no longer offered for a new entry.
+   */
+  readonly expenseReason: NonNullable<TransactionSummary['expenseReason']>;
   /**
    * The attachment state for this expense.
    *
@@ -73,6 +83,30 @@ export interface ExpenseCategoryView {
 
 /** `docs/05-DATABASE-SPEC.md`: a category name is unique case-insensitively and bounded. */
 export const EXPENSE_CATEGORY_NAME_MAX_LENGTH = 80;
+
+/**
+ * One expense reason.
+ *
+ * `categoryId` is present because a reason *belongs to* a category (`REQ-EXP-005`). The browser
+ * needs it to offer only the reasons valid for the category currently selected, and the CSV needs
+ * the category name rather than an id, so the id is not cosmetic.
+ *
+ * `isSystem` distinguishes the approved predefined reasons, which only the seed may create, from
+ * the Admin's own. It mirrors `ExpenseCategoryView.isSystem` for the same reason: a predefined
+ * reason is a documented product set while a custom one is configuration.
+ */
+export interface ExpenseReasonView {
+  readonly id: string;
+  readonly categoryId: string;
+  readonly name: string;
+  readonly status: ExpenseReasonStatus;
+  readonly isSystem: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** `docs/05-DATABASE-SPEC.md`: a reason name is unique per category and bounded. */
+export const EXPENSE_REASON_NAME_MAX_LENGTH = 80;
 
 /** The filters `GET /api/v1/expenses` supports, matching the income list filters. */
 export interface ExpenseListFilters {

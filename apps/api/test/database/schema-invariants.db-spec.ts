@@ -37,6 +37,21 @@ describe('database invariants', () => {
     return category.id;
   }
 
+  /**
+   * The reason an expense is filed under.
+   *
+   * `REQ-EXP-005` made the reason part of every expense, so an invariant suite that files one has
+   * to file it the way the application would: with a reason created through the real repository
+   * under the same category.
+   */
+  async function seedReason(
+    categoryId: string,
+    actorAdminId: string,
+    name = 'Other',
+  ): Promise<string> {
+    return (await harness.ensureReason(categoryId, actorAdminId, name)).id;
+  }
+
   describe('money representation (TEST-FIN-001)', () => {
     it('stores an amount as exact integer paise and reads it back unchanged', async () => {
       const actorAdminId = await seedActor();
@@ -51,6 +66,7 @@ describe('database invariants', () => {
           occurredAt: new Date('2026-09-01T05:00:00.000Z'),
           description: 'Exact paise',
           categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
         },
         { actorAdminId },
       );
@@ -81,6 +97,7 @@ describe('database invariants', () => {
             businessDate: new Date('2026-09-01T00:00:00.000Z'),
             occurredAt: new Date(),
             categoryId,
+            expenseReasonId: await seedReason(categoryId, actorAdminId),
             createdByAdminId: actorAdminId,
           },
         }),
@@ -102,6 +119,9 @@ describe('database invariants', () => {
             businessDate: new Date('2026-09-01T00:00:00.000Z'),
             occurredAt: new Date(),
             categoryId,
+            // An income row can never carry a reason either, so this write breaks two rules at
+            // once and must still be refused as a missing income type.
+            expenseReasonId: await seedReason(categoryId, actorAdminId),
           },
           { actorAdminId },
         ),
@@ -201,6 +221,7 @@ describe('database invariants', () => {
           businessDate: new Date('2026-09-02T00:00:00.000Z'),
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
         },
         { actorAdminId },
       );
@@ -230,6 +251,7 @@ describe('database invariants', () => {
           businessDate: new Date('2026-09-02T00:00:00.000Z'),
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
         },
         { actorAdminId },
       );
@@ -260,6 +282,7 @@ describe('database invariants', () => {
           businessDate: new Date('2026-09-02T00:00:00.000Z'),
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
         },
         { actorAdminId },
       );
@@ -284,6 +307,7 @@ describe('database invariants', () => {
           businessDate: new Date('2026-09-02T00:00:00.000Z'),
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
         },
         { actorAdminId },
       );
@@ -514,6 +538,7 @@ describe('database invariants', () => {
           businessDate: new Date('2026-09-05T00:00:00.000Z'),
           occurredAt: new Date(),
           categoryId: category.id,
+          expenseReasonId: await seedReason(category.id, actorAdminId),
         },
         { actorAdminId },
       );
@@ -534,6 +559,248 @@ describe('database invariants', () => {
     });
   });
 
+  describe('expense reason invariants (EXP-005, REQ-EXP-005)', () => {
+    it('refuses a raw write that files an expense under a category without a reason', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+
+      // The service refuses this before it reaches the database, so the check is made through the
+      // client directly. Without the constraint, a write from anywhere else could store an expense
+      // that answers no question about what it was for.
+      await expect(
+        harness.runtime.financialTransaction.create({
+          data: {
+            referenceId: 'HY-EXP-999998',
+            transactionType: 'EXPENSE',
+            amountPaise: 1_000n,
+            paymentMethod: 'CASH',
+            businessDate: new Date('2026-09-01T00:00:00.000Z'),
+            occurredAt: new Date(),
+            categoryId,
+            createdByAdminId: actorAdminId,
+          },
+        }),
+      ).rejects.toThrow(/financial_transaction_expense_shape/);
+
+      expect(await harness.runtime.financialTransaction.count()).toBe(0);
+    });
+
+    it('refuses a raw write that pairs a reason with the wrong category', async () => {
+      const actorAdminId = await seedActor();
+      const electricity = await seedCategory('Electricity');
+      const repairs = await seedCategory('Repairs');
+      const repairsReason = await seedReason(repairs, actorAdminId, 'Building Repair');
+
+      // The repository checks this before writing, so it is proved here through the client: the
+      // cross-table rule is a trigger because a row-level constraint cannot see the reason's own
+      // category.
+      await expect(
+        harness.runtime.financialTransaction.create({
+          data: {
+            referenceId: 'HY-EXP-999997',
+            transactionType: 'EXPENSE',
+            amountPaise: 1_000n,
+            paymentMethod: 'CASH',
+            businessDate: new Date('2026-09-01T00:00:00.000Z'),
+            occurredAt: new Date(),
+            categoryId: electricity,
+            expenseReasonId: repairsReason,
+            createdByAdminId: actorAdminId,
+          },
+        }),
+      ).rejects.toThrow(/HY_EXP_REASON_CATEGORY_MISMATCH/);
+
+      expect(await harness.runtime.financialTransaction.count()).toBe(0);
+    });
+
+    it('refuses to strip the reason from a stored expense', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+      const created = await harness.transactions.create(
+        {
+          transactionType: 'EXPENSE',
+          amountPaise: 2_500n,
+          paymentMethod: 'UPI',
+          businessDate: new Date('2026-09-06T00:00:00.000Z'),
+          occurredAt: new Date(),
+          categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
+        },
+        { actorAdminId },
+      );
+
+      await expect(
+        harness.runtime.financialTransaction.update({
+          where: { id: created.id },
+          data: { expenseReasonId: null, revision: { increment: 1 } },
+        }),
+      ).rejects.toThrow(/financial_transaction_expense_shape/);
+    });
+
+    it('refuses to give an income row a reason', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+      const income = await harness.transactions.create(
+        {
+          transactionType: 'INCOME',
+          amountPaise: 5_000n,
+          paymentMethod: 'CASH',
+          businessDate: new Date('2026-09-06T00:00:00.000Z'),
+          occurredAt: new Date(),
+          incomeType: 'OFFERING',
+        },
+        { actorAdminId },
+      );
+
+      await expect(
+        harness.runtime.financialTransaction.update({
+          where: { id: income.id },
+          data: {
+            expenseReasonId: await seedReason(categoryId, actorAdminId),
+            revision: { increment: 1 },
+          },
+        }),
+      ).rejects.toThrow(/financial_transaction_income_no_reason/);
+    });
+
+    it('freezes the reason of a voided expense', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+      const other = await seedCategory('Food');
+      const created = await harness.transactions.create(
+        {
+          transactionType: 'EXPENSE',
+          amountPaise: 3_000n,
+          paymentMethod: 'CASH',
+          businessDate: new Date('2026-09-07T00:00:00.000Z'),
+          occurredAt: new Date(),
+          categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
+        },
+        { actorAdminId },
+      );
+      await harness.transactions.voidTransaction(created.id, 'Entered in error', { actorAdminId });
+
+      // A voided record is preserved evidence of what happened. Rewriting what it was for would
+      // change what the preserved record claims, so the reason is frozen exactly like the category.
+      await expect(
+        harness.runtime.financialTransaction.update({
+          where: { id: created.id },
+          data: {
+            categoryId: other,
+            expenseReasonId: await seedReason(other, actorAdminId, 'Groceries'),
+            revision: { increment: 1 },
+          },
+        }),
+      ).rejects.toThrow(/HY_FIN_VOIDED_TRANSACTION_IMMUTABLE/);
+    });
+
+    it('refuses a reason whose normalized name is not lower-cased and trimmed', async () => {
+      const categoryId = await seedCategory();
+
+      await expect(
+        harness.runtime.expenseReason.create({
+          data: { categoryId, name: 'Fuel', normalizedName: 'Fuel', isSystem: false },
+        }),
+      ).rejects.toThrow(/expense_reason_normalized_name_is_normalized/);
+    });
+
+    it('refuses a reason name that differs only by case or padding within one category', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+      await seedReason(categoryId, actorAdminId, 'Fuel');
+
+      await expect(
+        harness.runtime.expenseReason.create({
+          data: { categoryId, name: '  FUEL ', normalizedName: '  fuel ', isSystem: false },
+        }),
+      ).rejects.toThrow();
+
+      expect(await harness.runtime.expenseReason.count()).toBe(1);
+    });
+
+    it('allows the same reason name under two different categories', async () => {
+      const actorAdminId = await seedActor();
+      const electricity = await seedCategory('Electricity');
+      const repairs = await seedCategory('Repairs');
+
+      // The approved predefined set deliberately repeats `Electrical Repair` and `Other` across
+      // categories, so uniqueness is per category rather than global.
+      await harness.ensureReason(electricity, actorAdminId, 'Electrical Repair');
+      await harness.ensureReason(repairs, actorAdminId, 'Electrical Repair');
+
+      expect(await harness.runtime.expenseReason.count()).toBe(2);
+    });
+
+    it('refuses a blank reason name', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+
+      await expect(harness.reasons.create(categoryId, '   ', actorAdminId)).rejects.toThrow(
+        /reason name is required/,
+      );
+    });
+
+    it('refuses to delete a category that a reason still belongs to', async () => {
+      const actorAdminId = await seedActor();
+      const category = await harness.categories.create('Transport', actorAdminId);
+      await harness.ensureReason(category.id, actorAdminId, 'Fuel');
+
+      await expect(
+        harness.runtime.expenseCategory.delete({ where: { id: category.id } }),
+      ).rejects.toThrow(/Foreign key constraint violated/);
+    });
+
+    it('records reason creation and rename against the reason itself, not a transaction', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+      const reason = await harness.reasons.create(categoryId, 'Fuel', actorAdminId);
+
+      const created = await harness.runtime.auditEvent.findFirst({
+        where: { entityId: reason.id, action: 'REASON_CREATED' },
+      });
+      expect(created?.entityType).toBe('expense_reason');
+      expect(created?.after).toMatchObject({ name: 'Fuel', categoryId });
+
+      await harness.reasons.update(reason.id, { name: 'Fuel and Mileage' }, actorAdminId);
+
+      const updated = await harness.runtime.auditEvent.findFirst({
+        where: { entityId: reason.id, action: 'REASON_UPDATED' },
+        orderBy: { occurredAt: 'desc' },
+      });
+      expect(updated?.entityType).toBe('expense_reason');
+      expect(updated?.before).toMatchObject({ name: 'Fuel' });
+      expect(updated?.after).toMatchObject({ name: 'Fuel and Mileage' });
+    });
+
+    it('accepts the audit action values the reason lifecycle writes', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+      const reason = await harness.reasons.create(categoryId, 'Fuel', actorAdminId);
+
+      // The enum is extended by a forward-only `ALTER TYPE`. If the migration had added the values
+      // to Prisma but not to PostgreSQL, this insert would fail with an invalid enum label, so this
+      // proves the two agree rather than assuming they do.
+      await harness.migration.auditEvent.create({
+        data: {
+          entityType: 'expense_reason',
+          entityId: reason.id,
+          action: 'REASON_UPDATED',
+          occurredAt: new Date(),
+          actorAdminId,
+          after: { name: 'Fuel' },
+        },
+      });
+
+      const stored = await harness.migration.auditEvent.findFirst({
+        where: { entityId: reason.id, action: 'REASON_UPDATED' },
+      });
+
+      expect(stored?.action).toBe('REASON_UPDATED');
+      expect(stored?.entityType).toBe('expense_reason');
+    });
+  });
+
   describe('document metadata invariants (DOC-001, REQ-DOC-009)', () => {
     it('retains metadata after removal and records the reason and the actor', async () => {
       const actorAdminId = await seedActor();
@@ -546,6 +813,7 @@ describe('database invariants', () => {
           businessDate: new Date('2026-09-03T00:00:00.000Z'),
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
         },
         { actorAdminId },
       );
@@ -593,6 +861,7 @@ describe('database invariants', () => {
           businessDate: new Date('2026-09-03T00:00:00.000Z'),
           occurredAt: new Date(),
           categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
         },
         { actorAdminId },
       );

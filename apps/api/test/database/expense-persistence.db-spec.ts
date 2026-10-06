@@ -41,6 +41,16 @@ describe('expense persistence', () => {
     return harness.categories.create(name, actorAdminId);
   }
 
+  /**
+   * The reason every expense in this suite is filed under.
+   *
+   * `REQ-EXP-005` makes a reason part of an expense, so each category gets an `Other` reason
+   * through the real repository rather than through a raw insert.
+   */
+  async function reasonFor(categoryId: string) {
+    return harness.ensureReason(categoryId, actorAdminId);
+  }
+
   /** The names of the categories that are currently offered, in the order the picker lists them. */
   async function activeCategoryNames(): Promise<string[]> {
     return (await harness.categories.findActive()).map((row) => row.name);
@@ -48,6 +58,8 @@ describe('expense persistence', () => {
 
   /** An expense filed under `categoryId`, created through the shared ledger repository. */
   async function createExpense(categoryId: string, amountPaise = 25_000n) {
+    const reason = await reasonFor(categoryId);
+
     return harness.transactions.create(
       {
         transactionType: 'EXPENSE',
@@ -56,6 +68,7 @@ describe('expense persistence', () => {
         businessDate: SEPTEMBER,
         occurredAt: new Date(),
         categoryId,
+        expenseReasonId: reason.id,
       },
       { actorAdminId },
     );
@@ -79,6 +92,8 @@ describe('expense persistence', () => {
     });
 
     it('refuses an expense with no category before anything is written', async () => {
+      const electricity = await createCategory('Electricity');
+
       await expect(
         harness.transactions.create(
           {
@@ -88,10 +103,56 @@ describe('expense persistence', () => {
             businessDate: SEPTEMBER,
             occurredAt: new Date(),
             categoryId: null,
+            expenseReasonId: (await reasonFor(electricity.id)).id,
           },
           { actorAdminId },
         ),
       ).rejects.toThrow(/requires a category/);
+
+      expect(await harness.transactions.countMatching({ transactionType: 'EXPENSE' })).toBe(0);
+    });
+
+    it('refuses an expense with a category but no reason, and says which field to fix', async () => {
+      const electricity = await createCategory('Electricity');
+
+      // `REQ-EXP-005`: "what was this expense for" is part of the record, not an optional
+      // annotation, so the pair is refused rather than stored as a half-filled expense.
+      await expect(
+        harness.transactions.create(
+          {
+            transactionType: 'EXPENSE',
+            amountPaise: 25_000n,
+            paymentMethod: 'CASH',
+            businessDate: SEPTEMBER,
+            occurredAt: new Date(),
+            categoryId: electricity.id,
+          },
+          { actorAdminId },
+        ),
+      ).rejects.toThrow(/requires a reason/);
+
+      expect(await harness.transactions.countMatching({ transactionType: 'EXPENSE' })).toBe(0);
+    });
+
+    it('refuses a reason that belongs to a different category', async () => {
+      const electricity = await createCategory('Electricity');
+      const repairs = await createCategory('Repairs');
+      const repairsReason = await reasonFor(repairs.id);
+
+      await expect(
+        harness.transactions.create(
+          {
+            transactionType: 'EXPENSE',
+            amountPaise: 25_000n,
+            paymentMethod: 'CASH',
+            businessDate: SEPTEMBER,
+            occurredAt: new Date(),
+            categoryId: electricity.id,
+            expenseReasonId: repairsReason.id,
+          },
+          { actorAdminId },
+        ),
+      ).rejects.toThrow(/HY_EXP_REASON_CATEGORY_MISMATCH/);
 
       expect(await harness.transactions.countMatching({ transactionType: 'EXPENSE' })).toBe(0);
     });
@@ -119,33 +180,130 @@ describe('expense persistence', () => {
       expect(await harness.transactions.countMatching({ transactionType: 'EXPENSE' })).toBe(0);
     });
 
-    it('keeps the category and the amount when one of them is corrected', async () => {
+    it('stores the reason with the record and returns it with the read', async () => {
+      const electricity = await createCategory('Electricity');
+      const reason = await reasonFor(electricity.id);
+
+      const created = await createExpense(electricity.id);
+
+      expect(created.expenseReasonId).toBe(reason.id);
+
+      const stored = await harness.transactions.findById(created.id);
+      expect(stored.expenseReasonId).toBe(reason.id);
+
+      const listed = await harness.transactions.list(
+        { transactionType: 'EXPENSE' },
+        { limit: 10, offset: 0, sort: 'businessDate', direction: 'desc' },
+      );
+      expect(listed.find((entry) => entry.id === created.id)?.expenseReason).toMatchObject({
+        id: reason.id,
+        name: 'Other',
+        categoryId: electricity.id,
+        status: 'ACTIVE',
+      });
+    });
+
+    it('refuses a deactivated reason for a new expense but keeps it readable on the record', async () => {
+      const electricity = await createCategory('Electricity');
+      const reason = await reasonFor(electricity.id);
+      const created = await createExpense(electricity.id);
+
+      await harness.reasons.update(reason.id, { status: 'INACTIVE' }, actorAdminId);
+
+      // The guard the service calls before writing. Retiring a reason stops it being chosen for a
+      // new expense while leaving the reason that historical expenses already reference intact.
+      await expect(
+        harness.reasons.requireActiveForCategory(reason.id, electricity.id),
+      ).rejects.toThrow(/active reason/);
+      // And it leaves the picker: `findActiveForCategory` is what feeds the selector.
+      expect(await harness.reasons.findActiveForCategory(electricity.id)).toEqual([]);
+      expect(await harness.reasons.findForCategory(electricity.id)).toHaveLength(1);
+
+      // Deactivation stops new entries using the reason; it must not rewrite what the expense
+      // that already used it says it was for.
+      const listed = await harness.transactions.list(
+        { transactionType: 'EXPENSE' },
+        { limit: 10, offset: 0, sort: 'businessDate', direction: 'desc' },
+      );
+      const row = listed.find((entry) => entry.id === created.id);
+      expect(row?.expenseReason).toMatchObject({
+        id: reason.id,
+        name: 'Other',
+        status: 'INACTIVE',
+      });
+    });
+
+    it('keeps the category, the reason and the amount when one of them is corrected', async () => {
       const electricity = await createCategory('Electricity');
       const repairs = await createCategory('Repairs');
+      const repairsReason = await harness.ensureReason(repairs.id, actorAdminId, 'Building Repair');
       const created = await createExpense(electricity.id);
 
       const corrected = await harness.transactions.correct(
         created.id,
-        { categoryId: repairs.id, amountPaise: 3_000n, expectedRevision: created.revision },
+        {
+          categoryId: repairs.id,
+          expenseReasonId: repairsReason.id,
+          amountPaise: 3_000n,
+          expectedRevision: created.revision,
+        },
         { actorAdminId },
       );
 
       expect(corrected.categoryId).toBe(repairs.id);
+      expect(corrected.expenseReasonId).toBe(repairsReason.id);
       expect(corrected.amountPaise).toBe(3_000n);
 
       const stored = await harness.transactions.findById(created.id);
       expect(stored.categoryId).toBe(repairs.id);
+      expect(stored.expenseReasonId).toBe(repairsReason.id);
       expect(stored.amountPaise).toBe(3_000n);
+    });
+
+    it('refuses a correction that moves only the category or only the reason', async () => {
+      const electricity = await createCategory('Electricity');
+      const repairs = await createCategory('Repairs');
+      const created = await createExpense(electricity.id);
+      const originalReasonId = created.expenseReasonId;
+
+      // `REQ-EXP-005` is a statement about the pair. The HTTP layer turns half a pair into a
+      // documented `400`; this is the deeper guarantee, proved through the repository so it holds
+      // for any caller: a reason that still belongs to the previous category cannot be left behind.
+      await expect(
+        harness.transactions.correct(
+          created.id,
+          { categoryId: repairs.id, expectedRevision: created.revision },
+          { actorAdminId },
+        ),
+      ).rejects.toThrow(/HY_EXP_REASON_CATEGORY_MISMATCH/);
+
+      await expect(
+        harness.transactions.correct(
+          created.id,
+          { expenseReasonId: (await reasonFor(repairs.id)).id, expectedRevision: created.revision },
+          { actorAdminId },
+        ),
+      ).rejects.toThrow(/HY_EXP_REASON_CATEGORY_MISMATCH/);
+
+      const stored = await harness.transactions.findById(created.id);
+      expect(stored.categoryId).toBe(electricity.id);
+      expect(stored.expenseReasonId).toBe(originalReasonId);
     });
 
     it('records the category change in the audit trail with both values', async () => {
       const electricity = await createCategory('Electricity');
       const repairs = await createCategory('Repairs');
       const created = await createExpense(electricity.id);
+      const originalReasonId = created.expenseReasonId;
+      const repairsReason = await harness.ensureReason(repairs.id, actorAdminId, 'Building Repair');
 
       await harness.transactions.correct(
         created.id,
-        { categoryId: repairs.id, expectedRevision: created.revision },
+        {
+          categoryId: repairs.id,
+          expenseReasonId: repairsReason.id,
+          expectedRevision: created.revision,
+        },
         { actorAdminId },
       );
 
@@ -153,8 +311,14 @@ describe('expense persistence', () => {
         where: { entityId: created.id, action: 'TRANSACTION_UPDATED' },
       });
 
-      expect(event?.before).toMatchObject({ categoryId: electricity.id });
-      expect(event?.after).toMatchObject({ categoryId: repairs.id });
+      expect(event?.before).toMatchObject({
+        categoryId: electricity.id,
+        expenseReasonId: originalReasonId,
+      });
+      expect(event?.after).toMatchObject({
+        categoryId: repairs.id,
+        expenseReasonId: repairsReason.id,
+      });
     });
   });
 
@@ -332,21 +496,29 @@ describe('expense persistence', () => {
       expect(kept.status).toBe('ACTIVE');
     });
 
-    it('refuses to move a voided expense to another category', async () => {
+    it('refuses to move a voided expense to another category and reason', async () => {
       const electricity = await createCategory('Electricity');
       const repairs = await createCategory('Repairs');
       const created = await createExpense(electricity.id);
+      const originalReasonId = created.expenseReasonId;
       await harness.transactions.voidTransaction(created.id, 'Duplicate entry', { actorAdminId });
 
       await expect(
         harness.transactions.correct(
           created.id,
-          { categoryId: repairs.id, expectedRevision: created.revision + 1 },
+          {
+            categoryId: repairs.id,
+            expenseReasonId: (await reasonFor(repairs.id)).id,
+            expectedRevision: created.revision + 1,
+          },
           { actorAdminId },
         ),
       ).rejects.toThrow(/cannot be edited/);
 
-      expect((await harness.transactions.findById(created.id)).categoryId).toBe(electricity.id);
+      const stored = await harness.transactions.findById(created.id);
+      expect(stored.categoryId).toBe(electricity.id);
+      // A voided record is frozen, and the reason is now one of the fields it freezes.
+      expect(stored.expenseReasonId).toBe(originalReasonId);
     });
   });
 });

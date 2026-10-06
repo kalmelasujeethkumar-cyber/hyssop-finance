@@ -1,22 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import {
   EXPENSE_CATEGORY_NAME_MAX_LENGTH,
+  EXPENSE_REASON_NAME_MAX_LENGTH,
   RECEIPT_MISSING_LABEL,
   TRANSACTION_DESCRIPTION_MAX_LENGTH,
   TRANSACTION_NOTES_MAX_LENGTH,
   type ExpenseCategoryView,
   type TransactionSummary,
 } from '@hyssop/contracts';
-import { ACTIVE_EXPENSE_CATEGORIES, EXPENSE_ONE } from '../../test/stub-client';
+import {
+  ACTIVE_EXPENSE_CATEGORIES,
+  ACTIVE_EXPENSE_REASONS,
+  EXPENSE_ONE,
+} from '../../test/stub-client';
 import {
   EMPTY_EXPENSE_FORM,
   expenseCategoryLabel,
+  expenseReasonLabel,
   expenseRequestBody,
   findExpenseCategory,
+  findExpenseReason,
   hasExpenseFieldErrors,
   isExpenseSummary,
   validateCategoryName,
   validateExpenseFields,
+  validateReasonName,
   type ExpenseFormValues,
 } from './expense-api';
 import {
@@ -38,11 +46,15 @@ import {
  */
 
 const CATEGORY_ID = ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '';
+/** The reason that belongs to `CATEGORY_ID`, so a default form is internally consistent. */
+const REASON_ID =
+  ACTIVE_EXPENSE_REASONS.find((reason) => reason.categoryId === CATEGORY_ID)?.id ?? '';
 
 function form(overrides: Partial<ExpenseFormValues> = {}): ExpenseFormValues {
   return {
     ...EMPTY_EXPENSE_FORM,
     categoryId: CATEGORY_ID,
+    expenseReasonId: REASON_ID,
     amount: '500',
     businessDate: '2026-09-28',
     ...overrides,
@@ -128,12 +140,47 @@ describe('validateExpenseFields', () => {
       ),
     ).toEqual({});
   });
+
+  it('requires a reason, because a category alone does not say what the money was spent on', () => {
+    // `REQ-EXP-005`. The reason is not optional detail: "Electricity" does not distinguish a
+    // monthly bill from a rewiring job, and the whole point of the set is that the ledger answers
+    // "what did we spend on fuel" without someone reading descriptions.
+    const errors = validateExpenseFields(form({ expenseReasonId: '' }));
+
+    expect(errors.expenseReasonId).toBe('Choose a reason.');
+    expect(hasExpenseFieldErrors(errors)).toBe(true);
+  });
+
+  it('treats a whitespace-only reason as missing', () => {
+    expect(validateExpenseFields(form({ expenseReasonId: '   ' })).expenseReasonId).toBeDefined();
+  });
+});
+
+describe('validateReasonName', () => {
+  it('accepts a real reason name', () => {
+    expect(validateReasonName('Diesel Generator')).toBeUndefined();
+  });
+
+  it('requires a name', () => {
+    expect(validateReasonName('')).toBe('Enter a reason name.');
+    expect(validateReasonName('   ')).toBe('Enter a reason name.');
+  });
+
+  it('bounds the name at the documented length', () => {
+    // Asserted against the shared constant rather than a copied number, so a change to the
+    // contract cannot leave this test passing against a length the API now refuses.
+    expect(validateReasonName('x'.repeat(EXPENSE_REASON_NAME_MAX_LENGTH))).toBeUndefined();
+    expect(validateReasonName('x'.repeat(EXPENSE_REASON_NAME_MAX_LENGTH + 1))).toBe(
+      `Name must be ${EXPENSE_REASON_NAME_MAX_LENGTH} characters or fewer.`,
+    );
+  });
 });
 
 describe('expenseRequestBody', () => {
-  it('sends the category, amount, method, and business date', () => {
+  it('sends the category, reason, amount, method, and business date', () => {
     expect(expenseRequestBody(form())).toEqual({
       categoryId: CATEGORY_ID,
+      expenseReasonId: REASON_ID,
       amount: '500',
       paymentMethod: 'CASH',
       businessDate: '2026-09-28',
@@ -151,9 +198,17 @@ describe('expenseRequestBody', () => {
 
   it('trims whitespace and omits blank optional text', () => {
     expect(
-      expenseRequestBody(form({ categoryId: ` ${CATEGORY_ID} `, description: '  ', notes: '   ' })),
+      expenseRequestBody(
+        form({
+          categoryId: ` ${CATEGORY_ID} `,
+          expenseReasonId: ` ${REASON_ID} `,
+          description: '  ',
+          notes: '   ',
+        }),
+      ),
     ).toEqual({
       categoryId: CATEGORY_ID,
+      expenseReasonId: REASON_ID,
       amount: '500',
       paymentMethod: 'CASH',
       businessDate: '2026-09-28',
@@ -165,6 +220,7 @@ describe('expenseRequestBody', () => {
       expenseRequestBody(form({ description: '  September bill ', notes: ' Paid by transfer ' })),
     ).toEqual({
       categoryId: CATEGORY_ID,
+      expenseReasonId: REASON_ID,
       amount: '500',
       paymentMethod: 'CASH',
       businessDate: '2026-09-28',
@@ -236,6 +292,60 @@ describe('the category helpers', () => {
     );
     expect(validateCategoryName('Books')).toBeUndefined();
     expect(validateCategoryName('x'.repeat(EXPENSE_CATEGORY_NAME_MAX_LENGTH))).toBeUndefined();
+  });
+});
+
+describe('the reason helpers', () => {
+  it('finds a reason by id within its own category', () => {
+    // The lookup takes the pair, not the id alone. A reason id is globally unique today, but a
+    // picker seeded from one category's list must not be able to resolve a reason from another.
+    expect(findExpenseReason(ACTIVE_EXPENSE_REASONS, CATEGORY_ID, REASON_ID)?.name).toBe(
+      'Electricity Bill',
+    );
+    expect(findExpenseReason(ACTIVE_EXPENSE_REASONS, CATEGORY_ID, undefined)).toBeUndefined();
+    expect(findExpenseReason(ACTIVE_EXPENSE_REASONS, CATEGORY_ID, 'no-such-id')).toBeUndefined();
+
+    const otherCategory = ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '';
+
+    expect(findExpenseReason(ACTIVE_EXPENSE_REASONS, otherCategory, REASON_ID)).toBeUndefined();
+  });
+
+  it('labels an active reason with its plain name', () => {
+    expect(
+      expenseReasonLabel(ACTIVE_EXPENSE_REASONS, {
+        id: REASON_ID,
+        categoryId: CATEGORY_ID,
+        name: 'Electricity Bill',
+        status: 'ACTIVE',
+      }),
+    ).toBe('Electricity Bill');
+  });
+
+  it('keeps the name and explains the deactivated state on a historical expense', () => {
+    // The reason list is active-only, so a retired reason is not in it. The expense still has to
+    // show what the money was spent on, and that the reason can no longer be chosen.
+    const label = expenseReasonLabel([], {
+      id: '77777777-7777-4777-8777-777777777777',
+      categoryId: CATEGORY_ID,
+      name: 'Repair Work',
+      status: 'INACTIVE',
+    });
+
+    expect(label).toBe('Repair Work (inactive)');
+  });
+
+  it('never substitutes a reason the expense did not use', () => {
+    // A retired reason must not be quietly replaced by whatever is active now. That would let the
+    // ledger claim a year-old expense was for something it was not.
+    const label = expenseReasonLabel(ACTIVE_EXPENSE_REASONS, {
+      id: 'retired',
+      categoryId: CATEGORY_ID,
+      name: 'Repair Work',
+      status: 'INACTIVE',
+    });
+
+    expect(label).toBe('Repair Work (inactive)');
+    expect(label).not.toContain('Electricity Bill');
   });
 });
 

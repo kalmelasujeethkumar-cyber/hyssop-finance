@@ -32,6 +32,7 @@ The system must support the following financial record behavior:
 - **REQ-EXP-001** — Expenses support these initial categories: Electricity, Water, Church Maintenance, Repairs, Church Programs, Food, Decoration, Equipment, Cleaning, Transport, Charity / Help, and Other.
 - **REQ-EXP-002** — Admin-created custom expense categories are supported.
 - **REQ-EXP-004** — An expense requires exactly one existing active expense category. A missing, unknown, or inactive category is rejected instead of being saved without a category.
+- **REQ-EXP-005** — An expense records exactly one existing expense reason that belongs to its own expense category. A new expense requires an active reason, so a missing, unknown, inactive, or wrong-category reason is rejected instead of being saved without a reason. On an existing expense the reason and the category change together or neither does; a category correction always carries a reason of the new category.
 - **REQ-INCOME-002** — Payment methods are Cash, UPI, and Bank Transfer.
 - **REQ-EXP-003** — The same three payment methods apply to expense entries.
 - **REQ-FIN-001** — Financial records carry transaction date, business date, description, amount, and relevant associations.
@@ -190,6 +191,7 @@ Canonical labels are **Period movement** for the selected-period income and expe
 - **REQ-REPORT-004** — User-facing dates use familiar Indian formats such as `25 Sep 2026` or `25/09/2026`, and times use 12-hour format such as `02:45 PM`, always in `Asia/Kolkata`.
 - **REQ-EXPORT-001** — CSV exports contain useful financial fields and a useful document reference or link where applicable.
 - **REQ-EXPORT-002** — Local document links are identified as valid only while the local application is accessible.
+- **REQ-EXPORT-003** — A filtered expense export contains the whole filtered set in a fixed, documented column order, and never contains a partial file. The export requires a category filter, accepts no pagination, refuses rather than truncating above a documented row limit, and writes an absent value as an empty cell rather than as placeholder text. In the expense export an expense with no receipt has an empty `Receipt URL` cell: the column holds URLs, so a row either has a link or has none. `REQ-DOC-003`'s **Receipt Missing** wording remains an interface obligation for the screens and does not extend to this export's data columns.
 
 Active financial reports exclude voided records. The Complete Transaction and Audit reports retain history, and the Receipt / Document report distinguishes available, removed, and voided history according to the database and API contracts. All tabular reports support CSV; receipts support view and print.
 

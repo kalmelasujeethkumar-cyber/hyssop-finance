@@ -31,14 +31,15 @@ import {
 } from '../dashboard/period.resolver';
 import {
   AuditReportQueryDto,
+  ExpenseTransactionsExportQueryDto,
   ReportIdParamDto,
   ReportQueryDto,
   SearchQueryDto,
   TransactionReportQueryDto,
 } from './dto/report.dto';
 import { csvFilename } from './csv';
-import { reportToCsv } from './report-csv';
-import { ReportsService, type ReportPage } from './reports.service';
+import { expenseTransactionsToCsv, reportToCsv } from './report-csv';
+import { ReportsService, toExpenseCsvFilters, type ReportPage } from './reports.service';
 
 /**
  * The report routes of `docs/06-API-SPEC.md` "Dashboard and reports".
@@ -165,6 +166,43 @@ export class ReportsController {
         { page: query.page ?? 1, pageSize: query.pageSize ?? TRANSACTION_PAGE_SIZE_DEFAULT },
       ),
     );
+  }
+
+  /**
+   * `GET /api/v1/reports/expense-transactions/export.csv`.
+   *
+   * Declared **before** `:reportId/export.csv` so the literal segment always wins during routing.
+   * It must come first because `expense-transactions` would otherwise be captured by the generic
+   * route, which resolves a *period* and hands the query to `ReportQueryDto` -- silently dropping
+   * the category, search, status, payment-method, and amount filters this export is defined by.
+   *
+   * It is not a `ReportId` and deliberately so: `REPORT_IDS` drives the Reports screen's picker, so
+   * adding an id there would offer an entry with no JSON route and no panel. This export belongs to
+   * the Expenses screen and has no report of its own.
+   *
+   * The rows come from the same ledger query the expense list uses, so the file cannot describe a
+   * different set of expenses than the screen it was downloaded from. Above `CSV_EXPORT_MAX_ROWS`
+   * matching rows the service refuses with a documented error rather than writing a partial file,
+   * so an incomplete CSV is never produced.
+   */
+  @Get('expense-transactions/export.csv')
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit('export')
+  public async exportExpenseTransactions(
+    @Query() query: ExpenseTransactionsExportQueryDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    const csv = expenseTransactionsToCsv(
+      await this.reports.expenseTransactionsCsv(toExpenseCsvFilters(query)),
+    );
+
+    response.setHeader('Content-Type', CSV_CONTENT_TYPE);
+    response.setHeader(
+      'Content-Disposition',
+      `${CSV_CONTENT_DISPOSITION}; filename="expense-transactions.csv"`,
+    );
+    response.send(csv);
   }
 
   /**

@@ -61,6 +61,17 @@ export const CATEGORY_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 
 export type CategoryStatus = (typeof CATEGORY_STATUSES)[number];
 
+/** `REQ-EXP-005`: a reason has the same two-state lifecycle as a category, as its own enum. */
+export const EXPENSE_REASON_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
+
+export type ExpenseReasonStatus = (typeof EXPENSE_REASON_STATUSES)[number];
+
+export function isExpenseReasonStatus(value: unknown): value is ExpenseReasonStatus {
+  return (
+    typeof value === 'string' && (EXPENSE_REASON_STATUSES as readonly string[]).includes(value)
+  );
+}
+
 /** The documented attachment states (`AVAILABLE`, `REMOVED`, plus authorized `VOIDED`). */
 export const DOCUMENT_STATES = ['AVAILABLE', 'REMOVED', 'VOIDED'] as const;
 
@@ -143,6 +154,29 @@ export interface TransactionCategoryRef {
   readonly status: CategoryStatus;
 }
 
+/**
+ * The expense reason named on a transaction, active or historically inactive.
+ *
+ * Structurally identical to `TransactionCategoryRef` on purpose: both are an immutable reference to
+ * a row that may since have been deactivated, and both keep their label on a historical record.
+ * The separate type exists because the fields mean different things to the reader -- a category
+ * says *where* the money went, a reason says *what for* -- and because `categoryId` is carried so
+ * a reason can be checked against the category it belongs to.
+ */
+export interface TransactionExpenseReasonRef {
+  readonly id: string;
+  readonly name: string;
+  /** The owning category, so a mismatched pair is detectable rather than assumed impossible. */
+  readonly categoryId: string;
+  /**
+   * The reason's status at read time.
+   *
+   * Preserved for the same reason as `TransactionCategoryRef.status`: an expense filed under a
+   * since-deactivated reason keeps the label it was recorded with.
+   */
+  readonly status: ExpenseReasonStatus;
+}
+
 /** The member-month a member contribution was recorded against. */
 export interface TransactionContributionPeriodRef {
   readonly id: string;
@@ -173,6 +207,8 @@ export interface TransactionSummary {
   readonly notes: string | null;
   readonly member: TransactionContributor | null;
   readonly category: TransactionCategoryRef | null;
+  /** Set only for expenses, per `REQ-EXP-005`. */
+  readonly expenseReason: TransactionExpenseReasonRef | null;
   readonly contributionPeriod: TransactionContributionPeriodRef | null;
   /** Non-null exactly when `status` is `VOIDED`. */
   readonly voidReason: string | null;

@@ -27,6 +27,7 @@ blob-report/
 .playwright/
 .vitest/
 *.lcov
+apps/api/.jest-audit-verbose.txt
 
 *.log
 logs/

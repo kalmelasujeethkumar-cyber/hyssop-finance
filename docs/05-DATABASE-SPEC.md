@@ -39,6 +39,7 @@ Phone numbers are normalized to national digits after removing spaces, hyphens, 
 | `member` | Member identity and contact data | Has contribution periods, transactions, audit references |
 | `contribution_period` | Expected monthly amount for a member | Unique per member, month, and year |
 | `expense_category` | Initial and custom expense categories | Used by expense transactions; categories are deactivated rather than hard-deleted when no longer available for new entries |
+| `expense_reason` | Predefined and custom reasons for one expense category | A reason always belongs to exactly one category and is required on expense transactions |
 | `financial_transaction` | Canonical income and expense record | Optional member, optional category, optional contribution period, many documents and audit events |
 | `transaction_document` | Metadata and storage reference for an uploaded file | Belongs to one transaction; never stores raw bytes |
 | `audit_event` | Append-only record of important actions | References actor and entity by UUID and reference ID |
@@ -53,6 +54,7 @@ Phone numbers are normalized to national digits after removing spaces, hyphens, 
 - `payment_method`: `CASH`, `UPI`, `BANK_TRANSFER`
 - `transaction_status`: `ACTIVE`, `VOIDED`
 - `category_status`: `ACTIVE`, `INACTIVE`
+- `reason_status`: `ACTIVE`, `INACTIVE`
 - `document_status`: `AVAILABLE`, `REMOVED`
 - `audit_action`: an extensible, versioned list of documented action codes including `TRANSACTION_CREATED`, `TRANSACTION_UPDATED`, `TRANSACTION_VOIDED`, `DOCUMENT_UPLOADED`, `DOCUMENT_REMOVED`, `MEMBER_CREATED`, `MEMBER_UPDATED`, `CATEGORY_CREATED`, `CATEGORY_UPDATED`, `SETTING_UPDATED`, `LOGIN_SUCCEEDED`, `LOGIN_FAILED`, and `LOGOUT`
 
@@ -73,6 +75,7 @@ Required columns:
 - `contribution_period_id UUID NULL REFERENCES contribution_period(id) ON DELETE RESTRICT`
 - `income_type income_type NULL`
 - `category_id UUID NULL REFERENCES expense_category(id) ON DELETE RESTRICT`
+- `expense_reason_id UUID NULL REFERENCES expense_reason(id) ON DELETE RESTRICT`
 - `notes TEXT NULL`
 - `voided_at TIMESTAMPTZ NULL`
 - `voided_by_admin_id UUID NULL REFERENCES admin_user(id) ON DELETE RESTRICT`
@@ -84,8 +87,8 @@ Required columns:
 
 Database checks must enforce the type-specific shape:
 
-- `INCOME` requires `income_type` and forbids `category_id`.
-- `EXPENSE` requires `category_id` and forbids `income_type` and `contribution_period_id`.
+- `INCOME` requires `income_type` and forbids `category_id` and `expense_reason_id`.
+- `EXPENSE` requires `category_id` and `expense_reason_id` and forbids `income_type` and `contribution_period_id`. The reason must belong to the transaction's own category, and both the category and the reason must be `ACTIVE` for a new expense; the category/reason pair is enforced by application validation and a PostgreSQL constraint trigger, because a row-level CHECK constraint cannot reference another table.
 - `MEMBER_CONTRIBUTION` requires both `member_id` and a `contribution_period_id` whose member, month, and year match the transaction. This cross-table rule is enforced by application validation and a PostgreSQL constraint trigger, because a row-level CHECK constraint cannot reference another table.
 - `ANONYMOUS_DONATION` forbids `member_id` and `contribution_period_id`, and its description must never be used to record a donor identity. Use a neutral server-owned value such as `Anonymous Donation`; identity-bearing free text is rejected at the API boundary.
 - `OFFERING` and `DONATION` may have an optional `member_id` but never a contribution period.
@@ -110,6 +113,12 @@ Do not persist a mutable `paid_amount` as the source of truth. If a cached proje
 
 `expense_category` contains `id`, `name`, `normalized_name`, `status`, `is_system`, `created_at`, and `updated_at`. The initial category set is seeded with `is_system = true`; custom categories are Admin-created with `is_system = false`. Names are unique case-insensitively. A category may be renamed or set to `INACTIVE` without deleting its history; new expenses may reference only an `ACTIVE` category. The API exposes active categories for new entries and preserves inactive categories on historical transactions.
 
+## Expense reasons
+
+`expense_reason` contains `id`, `category_id UUID NOT NULL REFERENCES expense_category(id) ON DELETE RESTRICT`, `name`, `normalized_name`, `status`, `is_system`, `created_at`, and `updated_at`. A reason always belongs to exactly one category, and `(category_id, normalized_name)` is unique case-insensitively, so the same display name may exist under two categories but never twice in one. The approved predefined reasons are seeded with `is_system = true`; additional reasons are Admin-created with `is_system = false`, and only the name is accepted on create (the category is taken from the request, never invented).
+
+Every expense carries one reason from its own category (`expense_reason_id` on `financial_transaction`), enforced by the unique-scope shape and the `HY_EXP_REASON_CATEGORY_MISMATCH` trigger. A reason may be renamed or set to `INACTIVE` without deleting its history; new expenses may use only an `ACTIVE` reason of an `ACTIVE` category, while historical expenses keep their original reason readable even after the reason or its category is deactivated. Deactivation is never a hard delete, and the `Other` reason per category guarantees a deactivated category can still be corrected with a surviving reason.
+
 ## Demo settings
 
 `app_setting` stores validated, non-secret demo configuration. The initial key set is `DEFAULT_MONTHLY_CONTRIBUTION_PAISE`, `ENABLED_PAYMENT_METHODS`, `CURRENCY`, and `BUSINESS_TIMEZONE`. The default contribution is positive integer paise; enabled methods are a validated subset of `CASH`, `UPI`, and `BANK_TRANSFER` with at least one method enabled; `CURRENCY` is fixed to `INR` and `BUSINESS_TIMEZONE` is fixed to `Asia/Kolkata` in this demo. Disabling a method affects new transaction entry only and never changes historical records, balances, edits, or void operations. Settings writes are validated, audited, and do not alter historical financial records.
@@ -121,7 +130,7 @@ Do not persist a mutable `paid_amount` as the source of truth. If a cached proje
 - Void reason is trimmed and must be non-empty after validation.
 - Voiding is idempotent only for the same request key and target; a second void attempt with a different reason must be rejected clearly.
 - Updates increment `revision` and write an audit event containing the changed field names, previous values, new values, actor, action, and timestamp.
-- Transaction identity, reference, type, creator, and creation timestamp are immutable. Amount, payment method, business date, description, notes, and type-specific associations may be changed only through the validated correction command; each change increments `revision` and must preserve the before/after audit record. Status and void fields change only through the void command.
+- Transaction identity, reference, type, creator, and creation timestamp are immutable. Amount, payment method, business date, description, notes, and type-specific associations may be changed only through the validated correction command; for an expense the category and its reason are corrected together, never one without the other. Each change increments `revision` and must preserve the before/after audit record. Status and void fields change only through the void command.
 - Member `reference_id`, creation time, and financial-history links are immutable. Member edits use a `revision` optimistic-lock value and increment it atomically; a stale update is rejected.
 - All financial aggregation queries filter `status = 'ACTIVE'`.
 
@@ -167,7 +176,7 @@ Audit rows are append-only. Application roles have no update or delete permissio
 
 `admin_user` contains `id`, `identifier VARCHAR(64) NOT NULL UNIQUE`, `display_name`, `password_hash TEXT NOT NULL`, `last_login_at TIMESTAMPTZ NULL`, `created_at`, and `updated_at`. The identifier is stored lower-cased and constrained to equal its own lower-case form, so `Admin` and `admin` can never become two accounts. There is exactly one Admin in the demo; the unique identifier is what makes an accidental second account impossible.
 
-`password_hash` holds an Argon2id PHC string. A value beginning with `!` is the **unusable-credential sentinel**: it means the account exists as a financial actor but no password has been provisioned, so verification always fails. The sentinel exists so the fictional seed can create the actor row that transactions reference without ever embedding a credential. The Admin bootstrap replaces the sentinel with a real Argon2id hash and is the only supported way to provision the password in a project `_dev` or `_test` database, because it refuses every other database by name. When a production credential is lost rather than never created, `npm run admin:recover:production` is the only command that may replace the credential of an Admin that already exists: it accepts production databases only, refuses any `_dev` or `_test` database, requires an exact recovery confirmation token, and resolves exactly one Admin or changes nothing, refusing to choose between several. It renames nothing but the identifier it is given, and because that leaves the row's `id` untouched, audit events and financial records that reference the Admin are unaffected. The credential replacement and the revocation of that Admin's live sessions commit in one transaction, so no session created under the previous credential survives. Neither the identifier nor any password value is ever written to an audit event, log, or document.
+`password_hash` holds an Argon2id PHC string. A value beginning with `!` is the **unusable-credential sentinel**: it means the account exists as a financial actor but no password has been provisioned, so verification always fails. The sentinel exists so the fictional seed can create the actor row that transactions reference without ever embedding a credential. The Admin bootstrap replaces the sentinel with a real Argon2id hash and is the only supported way to provision the password in a project `_dev` or `_test` database, because it refuses every other database by name. A hosted production database is provisioned by `npm run admin:provision:production`, which is the exact mirror image of that restriction: it refuses any `_dev` or `_test` database, requires an exact production confirmation token, and creates only the requested identifier, so neither command can reach the other's database and neither guard is relaxed. When a production credential is lost rather than never created, `npm run admin:recover:production` is the only command that may replace the credential of an Admin that already exists: it keeps the same production-only restriction, requires its own exact recovery confirmation token, and resolves exactly one Admin or changes nothing, refusing to choose between several. It renames nothing but the identifier it is given, and because that leaves the row's `id` untouched, audit events and financial records that reference the Admin are unaffected. The credential replacement and the revocation of that Admin's live sessions commit in one transaction, so no session created under the previous credential survives. Neither the identifier nor any password value is ever written to an audit event, log, or document.
 
 `admin_session` contains `id`, `admin_user_id UUID NOT NULL REFERENCES admin_user(id) ON DELETE CASCADE`, `token_hash CHAR(64) NOT NULL UNIQUE`, `csrf_token_hash CHAR(64) NOT NULL`, `ip_hash VARCHAR(128) NULL`, `created_at TIMESTAMPTZ NOT NULL`, `last_seen_at TIMESTAMPTZ NOT NULL`, `expires_at TIMESTAMPTZ NOT NULL`, `revoked_at TIMESTAMPTZ NULL`, and `revoked_reason VARCHAR(32) NULL` constrained to `LOGOUT`, `EXPIRED`, or `REPLACED`, with `CHECK (expires_at > created_at)`. The opaque session token is generated with a cryptographic random source, delivered only in an HTTP-only cookie, and stored only as a SHA-256 hash, so a database read cannot reconstruct a usable session. The post-authentication CSRF secret is likewise stored only as a hash and is rotated by updating the row. Session rows are not audit history: an expired or revoked session is rejected on read and may be deleted later by maintenance, while the `LOGIN_SUCCEEDED` and `LOGOUT` events remain permanently in `audit_event`.
 
@@ -197,7 +206,7 @@ Dashboard aggregates must use index-friendly filters and must not load full tran
 - Prisma migrations are reviewed before application.
 - Migrations must be additive or explicitly reversible, and destructive changes require a documented backup and recovery plan.
 - Demo seeding is idempotent and uses only fictional data defined in `13-DEMO-DATA-SPEC.md`.
-- Seeding never provisions a credential. The Admin bootstrap reads a password from the environment, hashes it with Argon2id, and is run before the actor-bearing demo seed is activated; the seed may create the actor row with the unusable-credential sentinel but never a usable password.
+- Seeding never provisions a credential. The Admin bootstrap reads a password from the environment, hashes it with Argon2id, and is run before the actor-bearing demo seed is activated; the seed may create the actor row with the unusable-credential sentinel but never a usable password. The production provisioner reads its password from the process environment only and deliberately does not read the git-ignored `.env`, so a development value can never be provisioned to production by accident, and a credential is never placed in a runtime service variable because the running API does not read one.
 - A migration that makes a column unique must be applicable to a database that already holds more than one row of that table. The authentication migration therefore backfills the oldest `admin_user` row with the identifier `admin` and gives any further row a deterministic `admin-legacy-<id prefix>` identifier; every backfilled row receives the unusable-credential sentinel, so no extra row becomes a usable credential and the unique constraint can be created either way.
 - A failed migration on a transactional PostgreSQL database leaves no partial schema. Recovery is `prisma migrate resolve --rolled-back <migration>` followed by a re-run, and it must be applied to the disposable `_test` database rather than by editing migration history.
 - No user-facing reset-demo-database feature is allowed.

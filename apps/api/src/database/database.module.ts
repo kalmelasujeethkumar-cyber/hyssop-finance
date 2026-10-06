@@ -11,6 +11,7 @@ import { IdempotencyRecordRepository } from './idempotency/idempotency-record.re
 import { MemberRepository } from './members/member.repository';
 import { ReconciliationService } from './reconciliation/reconciliation.service';
 import { ReferenceAllocatorService } from './references/reference-allocator.service';
+import { ExpenseReasonRepository } from './reasons/expense-reason.repository';
 import { AppSettingRepository } from './settings/app-setting.repository';
 import { TransactionRepository } from './transactions/transaction.repository';
 
@@ -37,6 +38,7 @@ import { TransactionRepository } from './transactions/transaction.repository';
     MemberRepository,
     ContributionPeriodRepository,
     ExpenseCategoryRepository,
+    ExpenseReasonRepository,
     TransactionRepository,
     TransactionDocumentRepository,
     AppSettingRepository,
@@ -53,6 +55,7 @@ import { TransactionRepository } from './transactions/transaction.repository';
     MemberRepository,
     ContributionPeriodRepository,
     ExpenseCategoryRepository,
+    ExpenseReasonRepository,
     TransactionRepository,
     TransactionDocumentRepository,
     AppSettingRepository,

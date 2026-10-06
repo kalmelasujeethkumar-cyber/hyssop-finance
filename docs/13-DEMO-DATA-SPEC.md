@@ -20,6 +20,7 @@ Seed data should span several months relative to an injected demo clock. The see
 - Offerings, Donations, and Anonymous Donations.
 - Cash, UPI, and Bank Transfer income and expenses.
 - All initial expense categories at least once, plus custom categories.
+- The approved predefined expense-reason catalog (`REQ-EXP-005`): 79 reasons under 14 categories, so every seeded category offers real reasons for a new expense and every seeded expense carries a reason of its own category.
 - Expenses with and without receipts; missing evidence must display **Receipt Missing**.
 - Multiple documents on at least one transaction using allowed formats.
 - A corrected transaction with an audit event showing previous and new values.

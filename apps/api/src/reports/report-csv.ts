@@ -1,9 +1,12 @@
 import {
+  EXPENSE_TRANSACTION_CSV_COLUMNS,
+  PAYMENT_METHOD_LABELS,
   REPORT_CSV_COLUMNS,
   type AuditReport,
   type BreakdownReport,
   type CompleteTransactionReport,
   type DocumentReport,
+  type ExpenseTransactionCsvRow,
   type FinancialSummaryReport,
   type MemberContributionReport,
   type PaymentMethodReport,
@@ -77,6 +80,56 @@ export function reportToCsv(report: ReportId, data: unknown): string {
       throw new Error(`Unsupported report: ${String(exhaustive)}`);
     }
   }
+}
+
+/**
+ * The expense transactions CSV.
+ *
+ * Its own entry point rather than a twelfth `reportToCsv` case, because the approved column set is
+ * specified for this export and is not the period-report shape: there is no total row, no share, no
+ * percentage, and no period. Routing it through `reportToCsv` would mean inventing a fake `ReportId`
+ * and a fake projection to carry it, and the report picker reads `REPORT_IDS`, so the export would
+ * appear on the Reports screen as a dead entry.
+ *
+ * The cell-by-cell text/number split is the interesting part, and it is not uniform across the
+ * eight columns:
+ *
+ * - `referenceId`, `categoryName`, `reasonName`, and `notes` are Admin-facing text and are guarded,
+ *   because a category or a note may legitimately start with `=` or `+` and a spreadsheet would
+ *   execute it.
+ * - `expenseDate` and `amount` are bare values. A date is generated and cannot be a formula; an
+ *   amount is `formatPaise` output that must keep its sign -- although an expense amount is always
+ *   positive, guarding it would still be wrong in principle, and `csv.ts` documents that the guard
+ *   is for untrusted text only.
+ * - `paymentMethod` and `receiptUrl` are bare generated values. The payment label comes from the
+ *   contract's own `PAYMENT_METHOD_LABELS`, not from stored Admin text, so it cannot be a formula;
+ *   the receipt path is built by the service from a UUID and a fixed route prefix.
+ *
+ * The only column that is both generated and worth quoting is `receiptUrl`, and it is quoted
+ * defensively via `escapeCsvText` with `text: true` so a future path change cannot introduce a
+ * column break.
+ *
+ * An expense with no receipt writes a **blank** cell, not a placeholder word. The cell is a URL
+ * column: a row either has a receipt link or has none, and `Receipt Missing` in a URL column is a
+ * string that looks like a value a spreadsheet could try to open. The interface is required to
+ * *say* **Receipt Missing** in words (`REQ-DOC-003`), and it does; that requirement is about what a
+ * person reads on screen, and deliberately does not extend to the export's data columns. This
+ * matches how every other genuinely absent value in these exports is written — through `ABSENT`.
+ */
+export function expenseTransactionsToCsv(rows: readonly ExpenseTransactionCsvRow[]): string {
+  return buildCsv(
+    EXPENSE_TRANSACTION_CSV_COLUMNS,
+    rows.map((row): Cell[] => [
+      { value: row.referenceId, text: true },
+      row.expenseDate,
+      { value: row.categoryName, text: true },
+      { value: row.reasonName, text: true },
+      row.amount,
+      PAYMENT_METHOD_LABELS[row.paymentMethod],
+      { value: row.notes ?? ABSENT, text: true },
+      { value: row.receiptUrl ?? ABSENT, text: true },
+    ]),
+  );
 }
 
 /** The blank value for a genuinely absent field, distinct from an empty Admin-entered string. */

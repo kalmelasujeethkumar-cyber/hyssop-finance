@@ -160,6 +160,8 @@ export const AUDIT_REPORT_ACTIONS = [
   'MEMBER_UPDATED',
   'CATEGORY_CREATED',
   'CATEGORY_UPDATED',
+  'REASON_CREATED',
+  'REASON_UPDATED',
   'SETTING_UPDATED',
   'CONTRIBUTION_PERIOD_SET',
   'LOGIN_SUCCEEDED',
@@ -652,6 +654,71 @@ export const REPORT_CSV_COLUMNS: Readonly<Record<ReportId, readonly string[]>> =
 
 /** The largest number of rows one CSV export may contain. */
 export const CSV_EXPORT_MAX_ROWS = 10_000;
+
+/**
+ * The column contract of the expense transactions CSV.
+ *
+ * Declared separately from {@link REPORT_CSV_COLUMNS} rather than as a twelfth `ReportId`, and the
+ * separation is deliberate. `REPORT_IDS` is what the report picker offers, so adding an id there
+ * would put an entry on the Reports screen for a report that has no JSON route and no panel --
+ * exactly the dead control `docs/03-UI-UX-RULES.md` forbids. This export is reached from the
+ * Expenses screen, applies that screen's filters, and has no on-screen report of its own, so it
+ * owns its own columns rather than borrowing the period-report machinery.
+ *
+ * The order is part of the contract and is asserted directly by a CSV test. Each column answers
+ * one question a pastor reconciling a month of spending would ask: which entry, when, where, why,
+ * how much, how paid, what else was noted, and can I see the receipt.
+ */
+export const EXPENSE_TRANSACTION_CSV_COLUMNS: readonly string[] = [
+  'Expense ID',
+  'Expense Date',
+  'Category',
+  'Reason',
+  'Amount',
+  'Payment Method',
+  'Notes',
+  'Receipt URL',
+];
+
+/**
+ * One row of the expense transactions CSV, already formatted.
+ *
+ * Formatting happens in the service, not in the writer, for the same reason the report rows are
+ * pre-formatted: an exported amount must be provably the stored amount, so the money string is
+ * produced by `formatPaise` on the server and never recomputed downstream.
+ *
+ * `expenseDate` is the one place the documented business date is re-rendered for a human: the API
+ * and the database keep `YYYY-MM-DD` and the screen shows the same, but `REQ-EXPORT-003` asks for
+ * `DD-MM-YYYY` in an exported expense sheet. `businessDate` carries the ISO value alongside it so
+ * the reader of the contract can see both are the same day and neither is re-derived.
+ */
+export interface ExpenseTransactionCsvRow {
+  /** The human reference such as `HY-EXP-000001`, never the internal UUID. */
+  readonly referenceId: string;
+  /** `DD-MM-YYYY`, as the approved export format requires. */
+  readonly expenseDate: string;
+  /** The category's name at read time. */
+  readonly categoryName: string;
+  /** The reason's name at read time. */
+  readonly reasonName: string;
+  /** Exact INR decimal string such as `"5000.00"`. Never a number. */
+  readonly amount: string;
+  readonly paymentMethod: PaymentMethod;
+  /** Absent notes export as an empty cell, which is the honest value. */
+  readonly notes: string | null;
+  /**
+   * The authenticated relative download path, or `null` when no receipt is available.
+   *
+   * Never a storage key, never a `file://` path, and never an absolute URL: an exported sheet
+   * leaves this application, so a path that outlived it would be misleading rather than useful.
+   *
+   * A `null` here exports as an **empty cell**, not as placeholder text. The column holds URLs, so
+   * a row either has a link or has none, and words in the cell would read as a value a spreadsheet
+   * might try to open. `REQ-DOC-003` still requires the *interface* to say **Receipt Missing** in
+   * words; that is a screen obligation and does not extend to this export's data columns.
+   */
+  readonly receiptUrl: string | null;
+}
 
 /** The largest free-text search term the API accepts, in characters. */
 export const SEARCH_QUERY_MAX_LENGTH = 120;

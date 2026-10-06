@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import {
   CSRF_TOKEN_HEADER,
   EXPENSE_CATEGORY_NAME_MAX_LENGTH,
+  EXPENSE_REASON_NAME_MAX_LENGTH,
   IDEMPOTENCY_KEY_HEADER,
   IDEMPOTENCY_KEY_MAX_LENGTH,
   TRANSACTION_PAGE_SIZE_MAX,
@@ -12,6 +13,7 @@ import {
   type ApiListEnvelope,
   type ApiSuccessEnvelope,
   type ExpenseCategoryView,
+  type ExpenseReasonView,
   type ExpenseSummary,
   type TransactionSummary,
 } from '@hyssop/contracts';
@@ -27,6 +29,7 @@ import { MemberRepository } from '../src/database/members/member.repository';
 import { ContributionPeriodRepository } from '../src/database/contributions/contribution-period.repository';
 import { AppSettingRepository } from '../src/database/settings/app-setting.repository';
 import { ExpenseCategoryRepository } from '../src/database/categories/expense-category.repository';
+import { ExpenseReasonRepository } from '../src/database/reasons/expense-reason.repository';
 import { TransactionRepository } from '../src/database/transactions/transaction.repository';
 import {
   applyTestProcessEnvironment,
@@ -41,16 +44,19 @@ import {
   FakeLedger,
   FakeMembers,
   FakePeriods,
+  FakeReasons,
   FakeSettings,
   FakeTransactions,
   categoryFixture,
   fakeSession,
   httpServer,
+  reasonFixture,
   TEST_ACTOR_ADMIN_ID as ADMIN_ID,
   transactionFixture,
   type FakeCategory,
   type FakeMember,
   type FakePeriod,
+  type FakeReason,
 } from './support/fake-ledger';
 
 /**
@@ -79,6 +85,25 @@ const CSRF_TOKEN = 'csrf-token-for-expense-routes';
 const CATEGORY_ID = '55555555-5555-4555-8555-555555555555';
 const OTHER_CATEGORY_ID = '88888888-8888-4888-8888-888888888888';
 const INACTIVE_CATEGORY_ID = '77777777-7777-4777-8777-777777777777';
+
+/**
+ * One reason per category, plus the mismatch and inactive cases.
+ *
+ * `OTHER_CATEGORY_REASON_ID` deliberately shares its *name* with a reason under another category.
+ * That is legal and is the point: `REQ-EXP-005` scopes uniqueness to the pair, so a double that
+ * compared names globally would reject data the database accepts.
+ */
+const CATEGORY_REASON_ID = 'a1111111-1111-4111-8111-111111111111';
+const OTHER_CATEGORY_REASON_ID = 'a2222222-2222-4222-8222-222222222222';
+const INACTIVE_REASON_ID = 'a3333333-3333-4333-8333-333333333333';
+/** Belongs to `CATEGORY_ID`, so it is valid for `OTHER_CATEGORY_ID` only as a refusal case. */
+const WRONG_CATEGORY_REASON_ID = 'a4444444-4444-4444-8444-444444444444';
+/** Active, but under the retired category — usable only once that category is active again. */
+const RETIRED_CATEGORY_REASON_ID = 'a6666666-6666-4666-8666-666666666666';
+/** Retired later in a test, while its category stays active — so only the status makes it invalid. */
+const INACTIVE_REASON_UNDER_ACTIVE_CATEGORY_ID = 'a7777777-7777-4777-8777-777777777777';
+const UNKNOWN_REASON_ID = 'a5555555-5555-4555-8555-555555555555';
+const NOT_A_UUID_REASON = 'Groceries';
 const UNKNOWN_CATEGORY_ID = '99999999-9999-4999-8999-999999999999';
 const UNKNOWN_TRANSACTION_ID = '66666666-6666-4666-8666-666666666666';
 const MEMBER_ID = '11111111-1111-4111-8111-111111111111';
@@ -105,11 +130,13 @@ describe('Expense and category HTTP contract', () => {
   let ledger: FakeLedger;
   let transactions: FakeTransactions;
   let categories: FakeCategories;
+  let reasons: FakeReasons;
   let idempotency: FakeIdempotency;
 
   let members: readonly FakeMember[];
   let periodRows: FakePeriod[];
   let categoryRows: FakeCategory[];
+  let reasonRows: FakeReason[];
 
   beforeEach(async () => {
     // Rebuilt per test on purpose: the fakes mutate the rows they are handed, so a shared
@@ -124,6 +151,39 @@ describe('Expense and category HTTP contract', () => {
       categoryFixture({ id: CATEGORY_ID, name: 'Electricity', isSystem: true }),
       categoryFixture({ id: OTHER_CATEGORY_ID, name: 'Repairs' }),
       categoryFixture({ id: INACTIVE_CATEGORY_ID, name: 'Retired category', status: 'INACTIVE' }),
+    ];
+
+    // Rebuilt per test for the same reason the categories are: the doubles mutate their rows, so a
+    // shared array would let one test's reason rename or deactivation leak into the next.
+    reasonRows = [
+      reasonFixture({
+        id: CATEGORY_REASON_ID,
+        categoryId: CATEGORY_ID,
+        name: 'Electricity Bill',
+        isSystem: true,
+      }),
+      reasonFixture({ id: OTHER_CATEGORY_REASON_ID, categoryId: OTHER_CATEGORY_ID, name: 'Other' }),
+      reasonFixture({
+        id: INACTIVE_REASON_ID,
+        categoryId: INACTIVE_CATEGORY_ID,
+        name: 'Other',
+        status: 'INACTIVE',
+      }),
+      reasonFixture({
+        id: WRONG_CATEGORY_REASON_ID,
+        categoryId: CATEGORY_ID,
+        name: 'Groceries',
+      }),
+      reasonFixture({
+        id: RETIRED_CATEGORY_REASON_ID,
+        categoryId: INACTIVE_CATEGORY_ID,
+        name: 'Repair Work',
+      }),
+      reasonFixture({
+        id: INACTIVE_REASON_UNDER_ACTIVE_CATEGORY_ID,
+        categoryId: OTHER_CATEGORY_ID,
+        name: 'Fuel',
+      }),
     ];
 
     ledger = new FakeLedger([
@@ -145,6 +205,7 @@ describe('Expense and category HTTP contract', () => {
         businessDate: parseBusinessDate('2026-09-05'),
         description: 'September electricity bill',
         categoryId: CATEGORY_ID,
+        expenseReasonId: CATEGORY_REASON_ID,
       }),
       transactionFixture({
         id: REPAIRS,
@@ -157,6 +218,7 @@ describe('Expense and category HTTP contract', () => {
         description: 'Bell rope and brackets',
         notes: 'Bought from the hardware shop on main street',
         categoryId: OTHER_CATEGORY_ID,
+        expenseReasonId: OTHER_CATEGORY_REASON_ID,
       }),
       transactionFixture({
         id: RETIRED_CATEGORY_EXPENSE,
@@ -166,7 +228,10 @@ describe('Expense and category HTTP contract', () => {
         amountPaise: 8_000n,
         businessDate: parseBusinessDate('2026-07-11'),
         description: 'Recorded under a category that was later retired',
+        // A historical expense keeps its reason even when both are inactive. That is the reason
+        // deactivation replaces deletion: the record must stay readable and explainable.
         categoryId: INACTIVE_CATEGORY_ID,
+        expenseReasonId: INACTIVE_REASON_ID,
       }),
       transactionFixture({
         id: VOIDED_EXPENSE,
@@ -177,6 +242,7 @@ describe('Expense and category HTTP contract', () => {
         businessDate: parseBusinessDate('2026-09-06'),
         description: 'Duplicate fuel entry',
         categoryId: OTHER_CATEGORY_ID,
+        expenseReasonId: OTHER_CATEGORY_REASON_ID,
         status: 'VOIDED',
         voidReason: 'Recorded twice by mistake',
         voidedAt: new Date('2026-09-07T06:00:00.000Z'),
@@ -191,14 +257,18 @@ describe('Expense and category HTTP contract', () => {
         businessDate: parseBusinessDate('2026-09-08'),
         description: 'Generator service with a bill attached',
         categoryId: OTHER_CATEGORY_ID,
+        expenseReasonId: OTHER_CATEGORY_REASON_ID,
         // Phase 07 owns attaching documents. This fixture proves the projection is *derived*
         // from the document rows rather than hard-coded, without implementing any upload.
         documentCount: 1,
       }),
     ]);
 
-    transactions = new FakeTransactions(ledger, members, periodRows, categoryRows);
+    transactions = new FakeTransactions(ledger, members, periodRows, categoryRows, reasonRows);
     categories = new FakeCategories(categoryRows);
+    // The reason double is handed the category double because the repository reads the category
+    // inside the same write, so the read has to be reproducible here too.
+    reasons = new FakeReasons(reasonRows, categories);
     idempotency = new FakeIdempotency();
 
     restoreEnvironment = applyTestProcessEnvironment();
@@ -222,6 +292,8 @@ describe('Expense and category HTTP contract', () => {
       )
       .overrideProvider(ExpenseCategoryRepository)
       .useValue(categories)
+      .overrideProvider(ExpenseReasonRepository)
+      .useValue(reasons)
       .overrideProvider(IdempotencyRecordRepository)
       .useValue(idempotency)
       .overrideProvider(SessionService)
@@ -271,6 +343,17 @@ describe('Expense and category HTTP contract', () => {
     return authed().post('/api/v1/expenses/categories').set(IDEMPOTENCY_KEY_HEADER, key).send(body);
   }
 
+  function createReason(key: string, body: Record<string, unknown>) {
+    return authed().post('/api/v1/expenses/reasons').set(IDEMPOTENCY_KEY_HEADER, key).send(body);
+  }
+
+  function updateReason(key: string, id: string, body: Record<string, unknown>) {
+    return authed()
+      .patch(`/api/v1/expenses/reasons/${id}`)
+      .set(IDEMPOTENCY_KEY_HEADER, key)
+      .send(body);
+  }
+
   function updateCategory(key: string, id: string, body: Record<string, unknown>) {
     return authed()
       .patch(`/api/v1/expenses/categories/${id}`)
@@ -291,13 +374,20 @@ describe('Expense and category HTTP contract', () => {
       .send(body);
   }
 
-  /** A valid expense body, with per-test overrides. */
+  /**
+   * A valid expense body, with per-test overrides.
+   *
+   * The reason is part of the default, not something each test opts into: an expense without one is
+   * unrepresentable in the database, so a default that omitted it would make every refusal test in
+   * this file pass for the wrong reason.
+   */
   function expenseBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       amount: '450.00',
       paymentMethod: 'UPI',
       businessDate: '2026-09-05',
       categoryId: CATEGORY_ID,
+      expenseReasonId: CATEGORY_REASON_ID,
       ...overrides,
     };
   }
@@ -1022,7 +1112,7 @@ describe('Expense and category HTTP contract', () => {
 
       const response = await createExpense(
         'expense-after-deactivation',
-        expenseBody({ categoryId: OTHER_CATEGORY_ID }),
+        expenseBody({ categoryId: OTHER_CATEGORY_ID, expenseReasonId: OTHER_CATEGORY_REASON_ID }),
       );
 
       expectApiError(response, 400, 'VALIDATION_FAILED', 'categoryId');
@@ -1038,7 +1128,10 @@ describe('Expense and category HTTP contract', () => {
 
       const accepted = await createExpense(
         'expense-after-reactivation',
-        expenseBody({ categoryId: INACTIVE_CATEGORY_ID }),
+        expenseBody({
+          categoryId: INACTIVE_CATEGORY_ID,
+          expenseReasonId: RETIRED_CATEGORY_REASON_ID,
+        }),
       );
 
       expect(accepted.status).toBe(201);
@@ -1167,9 +1260,12 @@ describe('Expense and category HTTP contract', () => {
       expectApiError(response, 400, 'VALIDATION_FAILED', 'id');
     });
 
-    it('moves an expense to a different active category', async () => {
+    it('moves an expense to a different active category and reason together', async () => {
+      // `REQ-EXP-005` is a rule about the pair, so the correction carries both. Moving only the
+      // category would leave a reason from the old category, which the pairing trigger refuses.
       const response = await correctTransaction('expense-correct-category', REPAIRS, '1', {
         categoryId: CATEGORY_ID,
+        expenseReasonId: CATEGORY_REASON_ID,
       });
 
       expect(response.status).toBe(200);
@@ -1177,7 +1273,49 @@ describe('Expense and category HTTP contract', () => {
       const corrected = dataOf<TransactionSummary>(response.body);
 
       expect(corrected.category?.id).toBe(CATEGORY_ID);
+      expect(corrected.expenseReason?.id).toBe(CATEGORY_REASON_ID);
       expect(corrected.revision).toBe(2);
+    });
+
+    it('refuses to move the category without the reason', async () => {
+      // The documented `400` that arrives before anything is written, rather than a half-applied
+      // correction the database would reject.
+      const response = await correctTransaction('expense-correct-category-only', REPAIRS, '1', {
+        categoryId: CATEGORY_ID,
+      });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+      expect(ledger.row(REPAIRS)?.categoryId).toBe(OTHER_CATEGORY_ID);
+      expect(ledger.row(REPAIRS)?.revision).toBe(1);
+    });
+
+    it('refuses a reason that belongs to another category', async () => {
+      // The pair is sent together, so the failure is the pairing rather than the "must be corrected
+      // together" rule, which is covered separately above.
+      const response = await correctTransaction('expense-correct-foreign-reason', REPAIRS, '1', {
+        categoryId: OTHER_CATEGORY_ID,
+        expenseReasonId: WRONG_CATEGORY_REASON_ID,
+      });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+      expect(ledger.row(REPAIRS)?.expenseReasonId).toBe(OTHER_CATEGORY_REASON_ID);
+    });
+
+    it('refuses a reason that has been deactivated', async () => {
+      // An *active* reason under an active category that has been retired: only the status makes
+      // this invalid, so a double that ignored status would accept it.
+      await updateReason('reason-retire-for-correction', INACTIVE_REASON_UNDER_ACTIVE_CATEGORY_ID, {
+        status: 'INACTIVE',
+      });
+
+      const response = await correctTransaction('expense-correct-inactive-reason', REPAIRS, '1', {
+        categoryId: OTHER_CATEGORY_ID,
+        expenseReasonId: INACTIVE_REASON_UNDER_ACTIVE_CATEGORY_ID,
+      });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+      expect(ledger.row(REPAIRS)?.expenseReasonId).toBe(OTHER_CATEGORY_REASON_ID);
+      expect(ledger.row(REPAIRS)?.revision).toBe(1);
     });
 
     it('refuses to clear the category, because an expense must always have exactly one', async () => {
@@ -1190,9 +1328,18 @@ describe('Expense and category HTTP contract', () => {
       expectApiError(response, 400, 'VALIDATION_FAILED', 'categoryId');
     });
 
+    it('refuses to clear the reason, because an expense must always have exactly one', async () => {
+      const response = await correctTransaction('expense-correct-clear-reason', REPAIRS, '1', {
+        expenseReasonId: null,
+      });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+    });
+
     it('refuses to move an expense to a deactivated category', async () => {
       const response = await correctTransaction('expense-correct-inactive-category', REPAIRS, '1', {
         categoryId: INACTIVE_CATEGORY_ID,
+        expenseReasonId: RETIRED_CATEGORY_REASON_ID,
       });
 
       expectApiError(response, 400, 'VALIDATION_FAILED', 'categoryId');
@@ -1372,6 +1519,630 @@ describe('Expense and category HTTP contract', () => {
       // The category double records the actor it was handed, so this asserts the *service*
       // attributed the write to the session rather than to a constant.
       expect(categories.updated[0]?.actorAdminId).toBe(ADMIN_ID);
+    });
+
+    it('records the authenticated Admin as the actor of a reason change', async () => {
+      await updateReason('reason-audit-1', CATEGORY_REASON_ID, { status: 'INACTIVE' });
+
+      expect(reasons.updated[0]?.actorAdminId).toBe(ADMIN_ID);
+    });
+  });
+
+  describe('REQ-EXP-005: reasons are scoped to their category', () => {
+    it('refuses every reason read route without a session', async () => {
+      for (const url of [
+        `/api/v1/expenses/reasons?categoryId=${CATEGORY_ID}`,
+        '/api/v1/expenses/reasons',
+      ]) {
+        expectApiError(await request(httpServer(app)).get(url), 401, 'UNAUTHENTICATED');
+      }
+    });
+
+    it('refuses a reason create and a reason update without a session', async () => {
+      const created = await request(httpServer(app))
+        .post('/api/v1/expenses/reasons')
+        .set('Origin', TEST_ORIGIN)
+        .set(CSRF_TOKEN_HEADER, CSRF_TOKEN)
+        .set(IDEMPOTENCY_KEY_HEADER, 'unauth-reason-1')
+        .send({ categoryId: CATEGORY_ID, name: 'Diesel Generator' });
+
+      const updated = await request(httpServer(app))
+        .patch(`/api/v1/expenses/reasons/${CATEGORY_REASON_ID}`)
+        .set('Origin', TEST_ORIGIN)
+        .set(CSRF_TOKEN_HEADER, CSRF_TOKEN)
+        .set(IDEMPOTENCY_KEY_HEADER, 'unauth-reason-2')
+        .send({ status: 'INACTIVE' });
+
+      expectApiError(created, 401, 'UNAUTHENTICATED');
+      expectApiError(updated, 401, 'UNAUTHENTICATED');
+    });
+
+    it('returns only the active reasons of the requested category', async () => {
+      await updateReason('reason-deactivate-1', CATEGORY_REASON_ID, { status: 'INACTIVE' });
+
+      const response = await authGet(`/api/v1/expenses/reasons?categoryId=${CATEGORY_ID}`);
+
+      expect(response.status).toBe(200);
+
+      const data = dataOf<readonly ExpenseReasonView[]>(response.body);
+      // The picker offers what may be chosen, so a retired reason is absent rather than greyed out.
+      // The historical expense still resolves its own label from the stored reference.
+      expect(data.map((reason) => reason.id)).toEqual([WRONG_CATEGORY_REASON_ID]);
+      expect(data.every((reason) => reason.status === 'ACTIVE')).toBe(true);
+      expect(data.every((reason) => reason.categoryId === CATEGORY_ID)).toBe(true);
+    });
+
+    it('never leaks a reason from another category into the list', async () => {
+      const data = dataOf<readonly ExpenseReasonView[]>(
+        (await authGet(`/api/v1/expenses/reasons?categoryId=${OTHER_CATEGORY_ID}`)).body,
+      );
+
+      // Both reasons belong to this category, and nothing belonging to another category appears —
+      // which is what makes the list safe to drive a dropdown from. Sorted by name, as the
+      // repository orders them.
+      expect(data.map((reason) => reason.id)).toEqual([
+        INACTIVE_REASON_UNDER_ACTIVE_CATEGORY_ID,
+        OTHER_CATEGORY_REASON_ID,
+      ]);
+      expect(data.every((reason) => reason.categoryId === OTHER_CATEGORY_ID)).toBe(true);
+    });
+
+    it('requires the category filter, rather than returning every reason', async () => {
+      const response = await authGet('/api/v1/expenses/reasons');
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'categoryId');
+    });
+
+    it('rejects a category filter that is not a UUID', async () => {
+      const response = await authGet('/api/v1/expenses/reasons?categoryId=Electricity');
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'categoryId');
+    });
+
+    it('answers 404 for a category that does not exist, rather than an empty list', async () => {
+      // An empty array would tell the Admin "this category has no reasons" — a conclusion they
+      // would act on. The category is genuinely missing, so that is what the answer must say.
+      const response = await authGet(`/api/v1/expenses/reasons?categoryId=${UNKNOWN_CATEGORY_ID}`);
+
+      expectApiError(response, 404, 'NOT_FOUND');
+    });
+
+    it('adds a custom reason under an active category and trims the name', async () => {
+      const response = await createReason('reason-create-1', {
+        categoryId: CATEGORY_ID,
+        name: '  Diesel Generator  ',
+      });
+
+      expect(response.status).toBe(201);
+
+      const created = dataOf<ExpenseReasonView>(response.body);
+
+      expect(created.name).toBe('Diesel Generator');
+      expect(created.status).toBe('ACTIVE');
+      // A reason an Admin typed is never marked as part of the documented set, or a later rename
+      // would be blocked by a flag that only the seed is allowed to set.
+      expect(created.isSystem).toBe(false);
+      expect(created.categoryId).toBe(CATEGORY_ID);
+
+      const listed = dataOf<readonly ExpenseReasonView[]>(
+        (await authGet(`/api/v1/expenses/reasons?categoryId=${CATEGORY_ID}`)).body,
+      );
+
+      expect(listed.map((reason) => reason.id)).toContain(created.id);
+    });
+
+    it('refuses a duplicate reason name in the same category, whatever the case or spacing', async () => {
+      const response = await createReason('reason-duplicate-1', {
+        categoryId: CATEGORY_ID,
+        name: '  electricity BILL ',
+      });
+
+      expectApiError(response, 409, 'CONFLICT', 'name');
+      expect(reasons.created).toHaveLength(0);
+    });
+
+    it('accepts the same reason name under a different category', async () => {
+      // Uniqueness is on the pair. `Groceries` already exists under `Electricity` in this fixture,
+      // and the database allows it here, so a double that compared names globally would refuse
+      // data the real schema stores without complaint.
+      const response = await createReason('reason-other-category-1', {
+        categoryId: OTHER_CATEGORY_ID,
+        name: 'Groceries',
+      });
+
+      expect(response.status).toBe(201);
+      expect(dataOf<ExpenseReasonView>(response.body).categoryId).toBe(OTHER_CATEGORY_ID);
+    });
+
+    it('refuses a name that is empty or over the documented length', async () => {
+      const blank = await createReason('reason-blank-1', {
+        categoryId: CATEGORY_ID,
+        name: '   ',
+      });
+
+      const tooLong = await createReason('reason-too-long-1', {
+        categoryId: CATEGORY_ID,
+        name: 'x'.repeat(EXPENSE_REASON_NAME_MAX_LENGTH + 1),
+      });
+
+      expectApiError(blank, 400, 'VALIDATION_FAILED', 'name');
+      expectApiError(tooLong, 400, 'VALIDATION_FAILED', 'name');
+    });
+
+    it('refuses a reason under an unknown category', async () => {
+      const response = await createReason('reason-unknown-category-1', {
+        categoryId: UNKNOWN_CATEGORY_ID,
+        name: 'Anything',
+      });
+
+      expectApiError(response, 404, 'NOT_FOUND');
+    });
+
+    it('refuses a reason under a deactivated category', async () => {
+      await updateCategory('reason-category-deactivated', INACTIVE_CATEGORY_ID, {
+        status: 'INACTIVE',
+      });
+
+      const response = await createReason('reason-inactive-category-1', {
+        categoryId: INACTIVE_CATEGORY_ID,
+        name: 'Late Addition',
+      });
+
+      // The reason would exist but could never be selected, so it is refused rather than stored.
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'categoryId');
+    });
+
+    it('refuses a reason create without an Idempotency-Key', async () => {
+      const response = await authed()
+        .post('/api/v1/expenses/reasons')
+        .send({ categoryId: CATEGORY_ID, name: 'No Key' });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', IDEMPOTENCY_KEY_HEADER);
+    });
+
+    it('replays the original reason rather than creating a second one', async () => {
+      const first = await createReason('reason-replay-1', {
+        categoryId: CATEGORY_ID,
+        name: 'Inverter Battery',
+      });
+      const second = await createReason('reason-replay-1', {
+        categoryId: CATEGORY_ID,
+        name: 'Inverter Battery',
+      });
+
+      expect(second.status).toBe(201);
+      expect(dataOf<ExpenseReasonView>(second.body).id).toBe(
+        dataOf<ExpenseReasonView>(first.body).id,
+      );
+      expect(reasons.created).toHaveLength(1);
+    });
+
+    it('refuses the same key with a different payload', async () => {
+      await createReason('reason-replay-2', {
+        categoryId: CATEGORY_ID,
+        name: 'Inverter Battery',
+      });
+
+      const response = await createReason('reason-replay-2', {
+        categoryId: CATEGORY_ID,
+        name: 'Something Else Entirely',
+      });
+
+      expectApiError(response, 409, 'CONFLICT', 'idempotencyKey');
+      expect(reasons.created).toHaveLength(1);
+    });
+
+    it('renames a reason without changing what its history refers to', async () => {
+      const response = await updateReason('reason-rename-1', CATEGORY_REASON_ID, {
+        name: 'Electricity Bill (Tata Power)',
+      });
+
+      expect(dataOf<ExpenseReasonView>(response.body).name).toBe('Electricity Bill (Tata Power)');
+
+      // The expense still points at the same row, so a rename relabels history rather than
+      // detaching it. This is why reasons are corrected through a row reference and never by
+      // rewriting the stored label on each expense.
+      const historical = dataOf<TransactionSummary>(
+        (await authGet(`/api/v1/transactions/${ELECTRICITY}`)).body,
+      );
+
+      expect(historical.expenseReason?.id).toBe(CATEGORY_REASON_ID);
+      expect(historical.expenseReason?.name).toBe('Electricity Bill (Tata Power)');
+    });
+
+    it('deactivates a reason so a historical expense stays readable but the reason is unselectable', async () => {
+      const response = await updateReason('reason-deactivate-2', CATEGORY_REASON_ID, {
+        status: 'INACTIVE',
+      });
+
+      expect(dataOf<ExpenseReasonView>(response.body).status).toBe('INACTIVE');
+
+      const historical = dataOf<TransactionSummary>(
+        (await authGet(`/api/v1/transactions/${ELECTRICITY}`)).body,
+      );
+
+      expect(historical.expenseReason?.status).toBe('INACTIVE');
+      expect(historical.expenseReason?.name).toBe('Electricity Bill');
+
+      const refused = await createExpense(
+        'expense-deactivated-reason',
+        expenseBody({ expenseReasonId: CATEGORY_REASON_ID }),
+      );
+
+      expectApiError(refused, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+    });
+
+    it('refuses an unknown reason and an id that is not a UUID', async () => {
+      const unknown = await updateReason('reason-update-unknown', UNKNOWN_REASON_ID, {
+        name: 'Anything',
+      });
+      const malformed = await updateReason('reason-update-malformed', NOT_A_UUID_REASON, {
+        name: 'Anything',
+      });
+
+      expectApiError(unknown, 404, 'NOT_FOUND');
+      // A malformed id is a bad request, not a missing reason: reporting `404` would tell the
+      // Admin to look for something they mistyped.
+      expectApiError(malformed, 400, 'VALIDATION_FAILED', 'id');
+    });
+
+    it('refuses a change that changes nothing', async () => {
+      const response = await updateReason('reason-noop-1', CATEGORY_REASON_ID, {});
+
+      expectApiError(response, 400, 'VALIDATION_FAILED');
+      expect(reasons.updated).toHaveLength(0);
+    });
+
+    it('refuses a rename onto a name the same category already uses', async () => {
+      const response = await updateReason('reason-rename-clash-1', CATEGORY_REASON_ID, {
+        name: 'groceries',
+      });
+
+      expectApiError(response, 409, 'CONFLICT', 'name');
+
+      const historical = dataOf<TransactionSummary>(
+        (await authGet(`/api/v1/transactions/${ELECTRICITY}`)).body,
+      );
+
+      // The refused rename must not have taken effect: a `409` that still moved the label would
+      // leave the history and the reason row disagreeing about the same record.
+      expect(historical.expenseReason?.name).toBe('Electricity Bill');
+    });
+
+    it('allows a rename to the same name in a different case', async () => {
+      const response = await updateReason('reason-recase-1', CATEGORY_REASON_ID, {
+        name: 'ELECTRICITY BILL',
+      });
+
+      expect(dataOf<ExpenseReasonView>(response.body).name).toBe('ELECTRICITY BILL');
+    });
+
+    it('offers no delete route, so a reason cannot be removed from history', async () => {
+      const response = await authed()
+        .delete(`/api/v1/expenses/reasons/${CATEGORY_REASON_ID}`)
+        .set(CSRF_TOKEN_HEADER, CSRF_TOKEN);
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe('REQ-EXP-005: a new expense names an active reason of its own category', () => {
+    it('records the reason alongside the category', async () => {
+      const created = dataOf<ExpenseSummary>(
+        (await createExpense('expense-with-reason-1', expenseBody())).body,
+      );
+
+      expect(created.category?.id).toBe(CATEGORY_ID);
+      expect(created.expenseReason.id).toBe(CATEGORY_REASON_ID);
+      expect(created.expenseReason.name).toBe('Electricity Bill');
+      expect(created.expenseReason.categoryId).toBe(CATEGORY_ID);
+    });
+
+    it('refuses an expense with no reason at all', async () => {
+      const response = await createExpense('expense-missing-reason', {
+        amount: '450.00',
+        paymentMethod: 'UPI',
+        businessDate: '2026-09-05',
+        categoryId: CATEGORY_ID,
+      });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+      expect(transactions.createCalls).toHaveLength(0);
+    });
+
+    it('refuses a reason that belongs to a different category', async () => {
+      const response = await createExpense(
+        'expense-foreign-reason',
+        expenseBody({ categoryId: OTHER_CATEGORY_ID, expenseReasonId: CATEGORY_REASON_ID }),
+      );
+
+      // `400` naming the reason, not `404`: the reason exists, the pairing in the request is wrong.
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+      expect(transactions.createCalls).toHaveLength(0);
+    });
+
+    it('refuses a reason that has been deactivated', async () => {
+      await updateReason('reason-deactivate-3', CATEGORY_REASON_ID, { status: 'INACTIVE' });
+
+      const response = await createExpense(
+        'expense-inactive-reason',
+        expenseBody({ expenseReasonId: CATEGORY_REASON_ID }),
+      );
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+    });
+
+    it('refuses an unknown reason id', async () => {
+      const response = await createExpense(
+        'expense-unknown-reason',
+        expenseBody({ expenseReasonId: UNKNOWN_REASON_ID }),
+      );
+
+      expectApiError(response, 404, 'NOT_FOUND');
+    });
+
+    it('carries the reason on the shared transaction detail route', async () => {
+      const detail = dataOf<TransactionSummary>(
+        (await authGet(`/api/v1/transactions/${ELECTRICITY}`)).body,
+      );
+
+      expect(detail.expenseReason?.id).toBe(CATEGORY_REASON_ID);
+      expect(detail.expenseReason?.name).toBe('Electricity Bill');
+    });
+
+    it('carries the reason status, so a retired reason is visibly retired on its own expenses', async () => {
+      const created = dataOf<ExpenseSummary>(
+        (
+          await createExpense(
+            'expense-before-its-reason-retires',
+            expenseBody({ expenseReasonId: WRONG_CATEGORY_REASON_ID }),
+          )
+        ).body,
+      );
+
+      await updateReason('reason-deactivate-4', WRONG_CATEGORY_REASON_ID, {
+        status: 'INACTIVE',
+      });
+
+      // The expense that used the retired reason keeps it and shows it as retired. Dropping the
+      // reference or blanking the label is what deletion would have done, and both would make the
+      // record unexplainable after the fact.
+      const detail = dataOf<TransactionSummary>(
+        (await authGet(`/api/v1/transactions/${created.id}`)).body,
+      );
+
+      expect(detail.expenseReason?.id).toBe(WRONG_CATEGORY_REASON_ID);
+      expect(detail.expenseReason?.name).toBe('Groceries');
+      expect(detail.expenseReason?.status).toBe('INACTIVE');
+
+      // And it is gone from the picker, so it cannot be chosen again.
+      const offered = dataOf<readonly ExpenseReasonView[]>(
+        (await authGet(`/api/v1/expenses/reasons?categoryId=${CATEGORY_ID}`)).body,
+      );
+
+      expect(offered.map((reason) => reason.id)).not.toContain(WRONG_CATEGORY_REASON_ID);
+    });
+
+    it('refuses a reason on an income, because reasons describe how money was spent', async () => {
+      const response = await authed()
+        .post('/api/v1/income')
+        .set(IDEMPOTENCY_KEY_HEADER, 'income-with-reason-1')
+        .send({
+          incomeType: 'OFFERING',
+          amount: '100.00',
+          paymentMethod: 'CASH',
+          businessDate: '2026-09-05',
+          expenseReasonId: CATEGORY_REASON_ID,
+        });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'expenseReasonId');
+    });
+
+    it('finds an expense by its reason name', async () => {
+      const page = listOf<ExpenseSummary>(
+        (await authGet('/api/v1/expenses?search=Electricity+Bill')).body,
+      );
+
+      // The reason name is part of the search box because `REQ-EXP-005` makes it how an Admin
+      // looks for "what did we spend on fuel" without first knowing which reference that is.
+      expect(page.pagination.totalItems).toBe(1);
+      expect(page.data[0]?.referenceId).toBe('HY-EXP-000001');
+    });
+
+    it('finds nothing for a reason name no expense uses', async () => {
+      const page = listOf<ExpenseSummary>(
+        (await authGet('/api/v1/expenses?search=Diesel+Generator')).body,
+      );
+
+      expect(page.data).toEqual([]);
+      expect(page.pagination.totalItems).toBe(0);
+    });
+  });
+
+  /**
+   * `REQ-EXPORT-003`: the filtered expense CSV.
+   *
+   * The writer itself is covered by `report-csv.spec.ts`. What only a request can prove is the part
+   * that actually decides the contents: that the required category filter is enforced, that the rows
+   * are the same expenses the list route returns, and that the two "honestly missing" facts -- no
+   * notes and no receipt -- reach the file as empty cells rather than as invented text.
+   */
+  describe('GET /api/v1/reports/expense-transactions/export.csv', () => {
+    const EXPORT_PATH = '/api/v1/reports/expense-transactions/export.csv';
+
+    /** Data lines only, so a header assertion and a row assertion cannot be confused. */
+    function dataLines(csv: string): readonly string[] {
+      return csv.trimEnd().split('\r\n').slice(1);
+    }
+
+    it('offers the file as an attachment with a CSV content type', async () => {
+      const response = await authGet(`${EXPORT_PATH}?categoryId=${CATEGORY_ID}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/csv');
+      expect(response.headers['content-disposition']).toContain('attachment');
+      expect(response.headers['content-disposition']).toContain('expense-transactions.csv');
+    });
+
+    it('refuses an export with no category, rather than exporting the whole ledger', async () => {
+      const response = await authGet(EXPORT_PATH);
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'categoryId');
+    });
+
+    it('refuses a page or page size, because a paged export is an incomplete export', async () => {
+      // Rejected outright rather than ignored: silently dropping the parameter would return the
+      // whole set while the caller believed they had asked for one page of it.
+      expectApiError(
+        await authGet(`${EXPORT_PATH}?categoryId=${CATEGORY_ID}&page=1`),
+        400,
+        'VALIDATION_FAILED',
+        'page',
+      );
+      expectApiError(
+        await authGet(`${EXPORT_PATH}?categoryId=${CATEGORY_ID}&pageSize=10`),
+        400,
+        'VALIDATION_FAILED',
+        'pageSize',
+      );
+    });
+
+    it('requires a session like every other read', async () => {
+      const response = await request(httpServer(app)).get(
+        `${EXPORT_PATH}?categoryId=${CATEGORY_ID}`,
+      );
+
+      expect([401, 403]).toContain(response.status);
+    });
+
+    it('writes the approved columns and only the expenses of the chosen category', async () => {
+      const response = await authGet(`${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}`);
+      const [header, ...rows] = response.text.trimEnd().split('\r\n');
+
+      expect(header).toBe(
+        'Expense ID,Expense Date,Category,Reason,Amount,Payment Method,Notes,Receipt URL',
+      );
+      // The other category holds REPAIRS, VOIDED_EXPENSE, and ATTACHED_RECEIPT, and nothing that
+      // belongs to CATEGORY_ID may leak in -- a filter the file ignores would still look plausible.
+      for (const reference of ['HY-EXP-000002', 'HY-EXP-000004', 'HY-EXP-000005']) {
+        expect(rows.some((row) => row.startsWith(`${reference},`))).toBe(true);
+      }
+      expect(rows.some((row) => row.startsWith('HY-EXP-000001,'))).toBe(false);
+    });
+
+    it('leaves the Receipt URL cell empty for an expense with no receipt', async () => {
+      const response = await authGet(`${EXPORT_PATH}?categoryId=${CATEGORY_ID}`);
+      const row = dataLines(response.text)[0];
+
+      // The row has no notes and no receipt, so the last two cells are both empty. `Receipt Missing`
+      // is the *screen's* wording under `REQ-DOC-003`; in a URL column it would read as a value.
+      expect(row).toBe('HY-EXP-000001,05-09-2026,Electricity,Electricity Bill,450.00,UPI,,');
+      expect(response.text).not.toContain('Receipt Missing');
+    });
+
+    it('writes the authenticated download path when a receipt is attached', async () => {
+      const response = await authGet(`${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}`);
+      const row = dataLines(response.text).find((line) => line.startsWith('HY-EXP-000005,'));
+
+      expect(row).toBe(
+        `HY-EXP-000005,08-09-2026,Repairs,Other,600.00,Cash,,` +
+          `/api/v1/documents/${ATTACHED_RECEIPT}-document-1/download`,
+      );
+    });
+
+    it('never leaks a storage key, which would name a file on the server disk', async () => {
+      const response = await authGet(`${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}`);
+
+      expect(response.text).not.toContain('storageKey');
+      expect(response.text).not.toContain('b'.repeat(64));
+      expect(response.text).not.toContain('file://');
+    });
+
+    it('exports voided expenses by default, exactly as the unfiltered expense list does', async () => {
+      const active = await authGet(`${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}`);
+      const onlyActive = await authGet(
+        `${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}&status=ACTIVE`,
+      );
+      const onlyVoided = await authGet(
+        `${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}&status=VOIDED`,
+      );
+
+      // The expense list has no status default either -- `TRANSACTION_LIST_DEFAULTS.status` is `''`
+      // and the screen marks a voided row with a status badge. So the export includes voided rows
+      // too, and `status` is the filter an Admin uses to exclude them. Asserted explicitly because
+      // this is the one behaviour that could silently change the meaning of a downloaded file.
+      expect(active.text).toContain('HY-EXP-000004');
+      expect(active.text).toContain('HY-EXP-000004,06-09-2026,Repairs,Other,300.00,Cash,,');
+
+      expect(onlyActive.text).not.toContain('HY-EXP-000004');
+      expect(dataLines(onlyActive.text)).toHaveLength(2);
+
+      expect(dataLines(onlyVoided.text)).toHaveLength(1);
+      expect(onlyVoided.text).toContain('HY-EXP-000004,06-09-2026');
+    });
+
+    it('exports the same expenses the on-screen list shows for the same filters', async () => {
+      const page = listOf<ExpenseSummary>(
+        (await authGet(`/api/v1/expenses?categoryId=${OTHER_CATEGORY_ID}&pageSize=100`)).body,
+      );
+      const exported = await authGet(`${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}`);
+
+      // The screen paginates and the file does not, so equal totals are the real invariant: a file
+      // describing a different set of expenses than the one on screen would be the failure mode.
+      expect(dataLines(exported.text)).toHaveLength(page.pagination.totalItems);
+    });
+
+    it('exports an expense whose category was retired, rather than hiding history', async () => {
+      const response = await authGet(`${EXPORT_PATH}?categoryId=${INACTIVE_CATEGORY_ID}`);
+      const row = dataLines(response.text)[0];
+
+      // Retiring a category stops it being *chosen* for new expenses. The expenses already recorded
+      // under it stay exportable, or a month could not be closed out after the fact.
+      expect(row).toBe('HY-EXP-000003,11-07-2026,Retired category,Other,80.00,Cash,,');
+    });
+
+    it('writes only the header when a filter matches no expense', async () => {
+      const response = await authGet(
+        `${EXPORT_PATH}?categoryId=${CATEGORY_ID}&search=nothing+at+all`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.text.trimEnd().split('\r\n')).toHaveLength(1);
+      expect(response.text).toBe(
+        'Expense ID,Expense Date,Category,Reason,Amount,Payment Method,Notes,Receipt URL\r\n',
+      );
+    });
+
+    it('quotes a note containing a comma so the sheet stays aligned', async () => {
+      // The fixture note has no comma, so this drives the escaper through a real request by
+      // creating the expense first. `Bought from the hardware shop on main street` proves the
+      // unquoted happy path; the created row proves the quoted one.
+      const response = await authGet(`${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}`);
+      const row = dataLines(response.text).find((line) => line.startsWith('HY-EXP-000002,'));
+
+      expect(row).toBe(
+        'HY-EXP-000002,20-08-2026,Repairs,Other,123.45,Cash,' +
+          'Bought from the hardware shop on main street,',
+      );
+
+      const created = dataOf<ExpenseSummary>(
+        (
+          await createExpense(
+            'expense-csv-comma-note',
+            expenseBody({
+              categoryId: OTHER_CATEGORY_ID,
+              expenseReasonId: OTHER_CATEGORY_REASON_ID,
+              amount: '99.00',
+              notes: 'Paid to Ravi, in cash',
+            }),
+          )
+        ).body,
+      );
+
+      const after = await authGet(`${EXPORT_PATH}?categoryId=${OTHER_CATEGORY_ID}`);
+      const quoted = dataLines(after.text).find((line) => line.startsWith(created.referenceId));
+
+      expect(quoted).toContain('"Paid to Ravi, in cash"');
     });
   });
 });

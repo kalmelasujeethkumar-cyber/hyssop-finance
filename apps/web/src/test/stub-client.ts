@@ -18,6 +18,7 @@ import {
   type DocumentReport,
   type DocumentSummary,
   type ExpenseCategoryView,
+  type ExpenseReasonView,
   type ExpenseSummary,
   type FinancialSummaryReport,
   type GlobalSearchResponse,
@@ -274,6 +275,7 @@ export const INCOME_ONE: TransactionSummary = {
   notes: 'Collected at the morning service',
   member: { id: MEMBER_ONE.id, referenceId: MEMBER_ONE.referenceId, name: MEMBER_ONE.name },
   category: null,
+  expenseReason: null,
   contributionPeriod: { id: MEMBER_ONE_PERIODS[0]?.id ?? '', year: 2026, month: 3 },
   voidReason: null,
   voidedAt: null,
@@ -298,6 +300,7 @@ export const INCOME_TWO: TransactionSummary = {
   notes: null,
   member: null,
   category: null,
+  expenseReason: null,
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -328,6 +331,7 @@ export const INCOME_VOIDED: TransactionSummary = {
   notes: null,
   member: { id: MEMBER_TWO.id, referenceId: MEMBER_TWO.referenceId, name: MEMBER_TWO.name },
   category: null,
+  expenseReason: null,
   contributionPeriod: null,
   voidReason: 'Recorded against the wrong member',
   voidedAt: '2026-05-12T05:00:00.000Z',
@@ -358,6 +362,7 @@ export const INCOME_ANONYMOUS: TransactionSummary = {
   notes: null,
   member: null,
   category: null,
+  expenseReason: null,
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -418,6 +423,59 @@ function categoryRef(
 }
 
 /**
+ * A reason reference.
+ *
+ * Carries its own `categoryId` rather than borrowing the enclosing category: `REQ-EXP-005` makes
+ * the pair the unit of validity, so a fixture that could describe a reason belonging to a different
+ * category than the expense would be describing something the API refuses. The default reuses the
+ * first active category, which is what every seeded expense reason belongs to.
+ */
+function reasonRef(
+  id: string,
+  name: string,
+  categoryId: string,
+  status: 'ACTIVE' | 'INACTIVE' = 'ACTIVE',
+): NonNullable<TransactionSummary['expenseReason']> {
+  return { id, name, categoryId, status };
+}
+
+/**
+ * The reason name each active category's single fixture reason carries.
+ *
+ * Keyed by category name rather than by index, so reordering {@link ACTIVE_EXPENSE_CATEGORIES}
+ * cannot silently give a category the wrong reason � and so the ids stay aligned with the
+ * transaction fixtures that reference them.
+ */
+const ACTIVE_REASON_NAMES: Readonly<Record<string, string>> = {
+  Electricity: 'Electricity Bill',
+  Repairs: 'Equipment Repair',
+};
+
+/**
+ * The active reasons, keyed to the active categories they belong to.
+ *
+ * Present because a fixture reason must point at a category id that exists, and because a screen
+ * test that stubs `GET /expenses/reasons` needs a matching list to resolve the label against.
+ *
+ * The generated ids are the ones the expense fixtures below already reference
+ * (`33333333-�-0001`, `�-0002`), so a fixture expense's reason is genuinely in the list the API
+ * would serve for its category. Generating different ids here would leave every label resolvable
+ * only by fallback, and a correction form would offer its expense's own reason as "no longer
+ * available" for no reason at all.
+ */
+export const ACTIVE_EXPENSE_REASONS: readonly ExpenseReasonView[] = (
+  ACTIVE_EXPENSE_CATEGORIES ?? []
+).map((category, index) => ({
+  id: `33333333-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+  categoryId: category.id,
+  name: ACTIVE_REASON_NAMES[category.name] ?? `Reason ${index + 1}`,
+  status: 'ACTIVE',
+  isSystem: true,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+}));
+
+/**
  * An active expense with a receipt.
  *
  * `hasReceipt: true` with `documentCount: 1` are the same fact read two ways, which is what lets
@@ -437,6 +495,11 @@ export const EXPENSE_ONE: ExpenseSummary = {
   notes: 'Paid by transfer to the utility',
   member: null,
   category: categoryRef(ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '', 'Electricity'),
+  expenseReason: reasonRef(
+    '33333333-0000-4000-8000-000000000001',
+    'Electricity Bill',
+    ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+  ),
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -468,6 +531,11 @@ export const EXPENSE_TWO: ExpenseSummary = {
   notes: null,
   member: null,
   category: categoryRef(ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '', 'Repairs'),
+  expenseReason: reasonRef(
+    '33333333-0000-4000-8000-000000000002',
+    'Equipment Repair',
+    ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '',
+  ),
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -499,6 +567,14 @@ export const EXPENSE_RETIRED_CATEGORY: ExpenseSummary = {
   notes: null,
   member: null,
   category: categoryRef(RETIRED_CATEGORY_REF.id, RETIRED_CATEGORY_REF.name, 'INACTIVE'),
+  // The reason is also inactive, which is what the migration's `Other` backfill produces for a
+  // category that was retired: the label is still readable and the "(inactive)" note is truthful.
+  expenseReason: reasonRef(
+    '33333333-0000-4000-8000-000000000003',
+    'Other',
+    RETIRED_CATEGORY_REF.id,
+    'INACTIVE',
+  ),
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -524,6 +600,13 @@ export const EXPENSE_VOIDED: ExpenseSummary = {
   notes: null,
   member: null,
   category: categoryRef(ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '', 'Electricity'),
+  // A voided expense keeps its reason: the row is auditable, and `REQ-EXP-005` requires historical
+  // expenses to stay readable rather than being blanked when they stop counting.
+  expenseReason: reasonRef(
+    '33333333-0000-4000-8000-000000000004',
+    'Electricity Bill',
+    ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
+  ),
   contributionPeriod: null,
   voidReason: 'Recorded twice',
   voidedAt: '2026-09-21T06:00:00.000Z',
@@ -1123,6 +1206,22 @@ export const DEFAULT_REPORT_CSV = [
 ].join('\r\n');
 
 /**
+ * The CSV body `GET /reports/expense-transactions/export.csv` returns.
+ *
+ * Shaped like the real filtered expense export: the eight documented columns in order, a
+ * `referenceId` rather than a UUID in the first, `DD-MM-YYYY` dates, an ungrouped amount, and the
+ * two honest-missing cases -- an empty cell for absent notes and an empty cell for an expense with
+ * no receipt, because `Receipt URL` is a URL column and a row either has a link or has none. A test
+ * can therefore assert the *bytes the browser saved*, which is the only way to prove the column
+ * order and the exact strings survived the round trip.
+ */
+export const DEFAULT_EXPENSE_CSV = [
+  'Expense ID,Expense Date,Category,Reason,Amount,Payment Method,Notes,Receipt URL',
+  'HY-EXP-000001,12-09-2026,Electricity,Electricity Bill,2450.75,Bank Transfer,Paid by transfer,/api/v1/documents/44444444-0000-4000-8000-000000000001/download',
+  'HY-EXP-000002,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,',
+].join('\r\n');
+
+/**
  * A dashboard response with deliberately awkward-but-legal numbers.
  *
  * Every value here is chosen to make a specific mistake detectable rather than merely present:
@@ -1437,6 +1536,18 @@ export interface ExpenseStubOptions {
   readonly firstCreateFails?: Error;
   /** Fails `POST /expenses/categories`, for the add-category error state. */
   readonly createCategoryFails?: Error;
+  /** Rejects `POST /expenses/reasons`, so the inline add-reason failure state can be exercised. */
+  readonly createReasonFails?: Error;
+  /** Rejects `GET /expenses/reasons`, so the form's reasons-unavailable state can be exercised. */
+  readonly reasonsFail?: Error;
+  /** The reasons `GET /expenses/reasons` serves. Defaults to {@link ACTIVE_EXPENSE_REASONS}. */
+  readonly reasons?: readonly ExpenseReasonView[];
+  /** Rejects the filtered expense CSV download, e.g. the `>10,000` row refusal. */
+  readonly csvFails?: Error;
+  /** The CSV body the filtered expense export returns. */
+  readonly csv?: string;
+  /** The declared filename, or `undefined` to exercise the browser's own fallback. */
+  readonly csvFilename?: string;
   /** Fails `PATCH /expenses/categories/:id`. */
   readonly updateCategoryFails?: Error;
 }
@@ -1618,6 +1729,10 @@ export function stubApiClient(
   const categoryStore: ExpenseCategoryView[] = [
     ...(expenseOptions.categories ?? ACTIVE_EXPENSE_CATEGORIES),
   ];
+  // The reason store is stateful for the same reason the category store is: adding a reason must
+  // really append a row the scoped picker can then select, so a test can prove the add-reason path
+  // ends in a usable selection rather than a closed dialog.
+  const reasonStore: ExpenseReasonView[] = [...(expenseOptions.reasons ?? ACTIVE_EXPENSE_REASONS)];
   // The real API rejects a mutation whose `Idempotency-Key` it has already answered, so the
   // stub does too. That is what makes a double submit observable here instead of silently
   // recording the same contribution twice.
@@ -1817,6 +1932,19 @@ export function stubApiClient(
         return settleOrReject<TData>(
           categoryStore.filter((category) => category.status === 'ACTIVE'),
           expenseOptions.categoriesFail,
+        );
+      }
+      if (pathWithoutQuery(path) === '/expenses/reasons') {
+        // Scoped on the server, so the stub scopes too. A stub that answered with every category's
+        // reasons would let a screen pass with an unscoped picker, and the whole feature turns on
+        // that scoping: a reason is only meaningful together with its category.
+        const categoryId = new URLSearchParams(path.split('?')[1] ?? '').get('categoryId') ?? '';
+
+        return settleOrReject<TData>(
+          reasonStore.filter(
+            (reason) => reason.categoryId === categoryId && reason.status === 'ACTIVE',
+          ),
+          expenseOptions.reasonsFail,
         );
       }
       if (pathWithoutQuery(path) === '/dashboard') {
@@ -2099,6 +2227,9 @@ export function stubApiClient(
                     name: namedMember.name,
                   },
             category: null,
+            // Income carries no reason. The API refuses the field on an income write, and a stub
+            // that invented one would hide a screen that wrongly sent it.
+            expenseReason: null,
             contributionPeriod:
               input.incomeType === 'MEMBER_CONTRIBUTION' && namedMember !== undefined
                 ? { id: 'aaaaaaa1-0000-4000-8000-000000000004', year: 2026, month: 9 }
@@ -2131,6 +2262,7 @@ export function stubApiClient(
         return idempotent<TData>(request?.idempotencyKey, () => {
           const input = (body ?? {}) as {
             categoryId?: string;
+            expenseReasonId?: string;
             amount?: string;
             paymentMethod?: TransactionSummary['paymentMethod'];
             businessDate?: string;
@@ -2158,6 +2290,45 @@ export function stubApiClient(
             );
           }
 
+          const reason = reasonStore.find((row) => row.id === input.expenseReasonId);
+
+          // `REQ-EXP-005` requires a reason, and one belonging to this expense's category. The stub
+          // enforces both, including the pairing rule, so a screen that submitted a reason from
+          // another category is refused here exactly as the API would refuse it.
+          if (reason === undefined) {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'An expense must reference an active reason.',
+                '2c9d0e1f-3f4a-4b5c-d34d-5e6071829304',
+                [
+                  {
+                    field: 'expenseReasonId',
+                    message: 'Choose a reason from the selected category.',
+                  },
+                ],
+              ),
+            );
+          }
+
+          if (reason.categoryId !== category.id) {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'The reason does not belong to the expense category.',
+                '3d0e1f2a-4f5b-4c6c-e45d-6f7182930405',
+                [
+                  {
+                    field: 'expenseReasonId',
+                    message: 'Choose a reason from the selected category.',
+                  },
+                ],
+              ),
+            );
+          }
+
           const referenceId = `HY-EXP-${String(nextExpenseNumber).padStart(6, '0')}`;
 
           nextExpenseNumber += 1;
@@ -2178,6 +2349,12 @@ export function stubApiClient(
             // An expense belongs to the church, never to a member, so `member` is `null` by
             // construction and the browser never sends one.
             category: categoryRef(category.id, category.name, category.status),
+            expenseReason: {
+              id: reason.id,
+              name: reason.name,
+              categoryId: reason.categoryId,
+              status: reason.status,
+            },
             contributionPeriod: null,
             voidReason: null,
             voidedAt: null,
@@ -2243,6 +2420,82 @@ export function stubApiClient(
           };
 
           categoryStore.push(created);
+
+          return Promise.resolve(created);
+        });
+      }
+
+      if (path === '/expenses/reasons') {
+        if (expenseOptions.createReasonFails !== undefined) {
+          return Promise.reject(expenseOptions.createReasonFails);
+        }
+
+        return idempotent<TData>(request?.idempotencyKey, () => {
+          const input = (body ?? {}) as { categoryId?: string; name?: string; isSystem?: boolean };
+          const name = (input.name ?? '').trim();
+          const category = categoryStore.find((row) => row.id === input.categoryId);
+
+          if (category === undefined) {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'A reason must belong to an active category.',
+                '4e1f2a3b-5c6d-4e7f-a67b-829304a5b627',
+                [
+                  {
+                    field: 'categoryId',
+                    message: 'Choose a category before adding a reason.',
+                  },
+                ],
+              ),
+            );
+          }
+
+          if (name === '') {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'A reason name is required.',
+                '5f2a3b4c-6d7e-4f80-b78c-9304a5b6c738',
+                [{ field: 'name', message: 'A reason name is required.' }],
+              ),
+            );
+          }
+
+          // Uniqueness is per category, so the same name under a *different* category is fine.
+          // Refusing it here as well would make the stub stricter than the API and hide the rule
+          // the feature actually turns on.
+          if (
+            reasonStore.some(
+              (row) =>
+                row.categoryId === category.id &&
+                row.name.trim().toLowerCase() === name.toLowerCase(),
+            )
+          ) {
+            return Promise.reject(
+              new ApiClientError(
+                409,
+                'CONFLICT',
+                'An expense reason with that name already exists in this category.',
+                '6a3b4c5d-7e8f-4091-c89d-a4b5c6d7e849',
+                [{ field: 'name', message: 'That reason name is already in use here.' }],
+              ),
+            );
+          }
+
+          const created: ExpenseReasonView = {
+            id: `77777777-0000-4000-8000-${String(reasonStore.length + 1).padStart(12, '0')}`,
+            categoryId: category.id,
+            name,
+            status: 'ACTIVE',
+            isSystem: input.isSystem ?? false,
+            createdAt: '2026-09-28T08:25:00.000Z',
+            updatedAt: '2026-09-28T08:25:00.000Z',
+          };
+
+          reasonStore.push(created);
 
           return Promise.resolve(created);
         });
@@ -2324,6 +2577,7 @@ export function stubApiClient(
             description?: string;
             notes?: string;
             categoryId?: string | null;
+            expenseReasonId?: string | null;
           };
 
           // `REQ-EXP-004`: an expense references exactly one category, so a correction may move
@@ -2365,6 +2619,54 @@ export function stubApiClient(
             );
           }
 
+          // `REQ-EXP-005`: the reason is part of the category move, so the pair is corrected together
+          // or not at all. Half a pair is refused here for the same reason the API refuses it �
+          // a screen that could send one would otherwise appear to work.
+          if ((input.categoryId === undefined) !== (input.expenseReasonId === undefined)) {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'A category and a reason must be corrected together.',
+                '6a3b4c5d-7e8f-4a9b-8c9d-0a1b2c3d4e5f',
+                [
+                  {
+                    field: input.categoryId === undefined ? 'categoryId' : 'expenseReasonId',
+                    message: 'A category and a reason must be corrected together.',
+                  },
+                ],
+              ),
+            );
+          }
+
+          const targetReason =
+            input.expenseReasonId === undefined
+              ? undefined
+              : reasonStore.find((row) => row.id === input.expenseReasonId);
+
+          if (
+            input.expenseReasonId !== undefined &&
+            (targetReason === undefined ||
+              targetReason.status !== 'ACTIVE' ||
+              targetReason.categoryId !== targetCategory?.id)
+          ) {
+            return Promise.reject(
+              new ApiClientError(
+                400,
+                'VALIDATION_FAILED',
+                'Only an active reason of the selected category can be used for an expense.',
+                '7b4c5d6e-8f9a-4b0c-9d0e-1b2c3d4e5f60',
+                [
+                  {
+                    field: 'expenseReasonId',
+                    message:
+                      'The selected reason does not belong to the selected category, or is inactive.',
+                  },
+                ],
+              ),
+            );
+          }
+
           const corrected: TransactionSummary = {
             ...existing,
             amount:
@@ -2378,6 +2680,10 @@ export function stubApiClient(
               targetCategory === undefined
                 ? existing.category
                 : categoryRef(targetCategory.id, targetCategory.name, targetCategory.status),
+            expenseReason:
+              targetReason === undefined
+                ? existing.expenseReason
+                : reasonRef(targetReason.id, targetReason.name, targetReason.categoryId),
             revision: existing.revision + 1,
             updatedAt: '2026-09-28T07:45:00.000Z',
           };
@@ -2639,9 +2945,27 @@ export function stubApiClient(
     getText(path: string, request?: ApiRequestOptionsShape): Promise<ApiTextDownload> {
       record('GET', path, undefined, request);
 
+      // The filtered expense export. Handled before the report lookup because
+      // `reportIdOf` normalizes `/reports/<id>/export.csv`, and this route's literal segment is
+      // not a report id -- so it must never fall through to the report projection.
+      if (pathWithoutQuery(path) === '/reports/expense-transactions/export.csv') {
+        if (expenseOptions.csvFails !== undefined) {
+          return Promise.reject(expenseOptions.csvFails);
+        }
+
+        const download: ApiTextDownload = {
+          text: expenseOptions.csv ?? DEFAULT_EXPENSE_CSV,
+          filename: expenseOptions.csvFilename,
+        };
+
+        textCalls.push(download);
+
+        return Promise.resolve(download);
+      }
+
       const reportId = reportIdOf(path);
 
-      // A text read is only ever the CSV export, so a path that is not one is a bug in the screen
+      // A text read is only ever a CSV export, so a path that is not one is a bug in the screen
       // rather than a route the API happens to serve as text.
       if (reportId === undefined || !path.includes('/export.csv')) {
         return unknown(path);
@@ -2954,12 +3278,16 @@ function paginateTransactions(
       return false;
     }
 
+    // `REQ-SEARCH-002`: the reference, description, member, category, and reason. `notes` stays out
+    // for the same reason it does everywhere else � free text that is never displayed alongside
+    // the row should not silently appear in results.
     return (
       search === '' ||
       row.referenceId.toLowerCase().includes(search) ||
       (row.description ?? '').toLowerCase().includes(search) ||
       (row.member?.name ?? '').toLowerCase().includes(search) ||
-      (row.category?.name ?? '').toLowerCase().includes(search)
+      (row.category?.name ?? '').toLowerCase().includes(search) ||
+      (row.expenseReason?.name ?? '').toLowerCase().includes(search)
     );
   });
 

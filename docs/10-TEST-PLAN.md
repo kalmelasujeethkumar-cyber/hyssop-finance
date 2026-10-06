@@ -25,7 +25,7 @@ Test identifiers are stable verification handles. They do not create product req
 | `TEST-MEM-001` | Member identity, references, contact validation, search, history, and creation-date boundary | `REQ-MEM-001`–`REQ-MEM-006`, `REQ-DASH-018` |
 | `TEST-CONTRIB-001` | Expected, received, remaining, and contribution statuses | `REQ-CONTRIB-001`–`REQ-CONTRIB-006` |
 | `TEST-INCOME-001` | Every income type, method, member association, and anonymous privacy | `REQ-INCOME-001`–`REQ-INCOME-006`, `REQ-DOC-010`–`REQ-DOC-014` |
-| `TEST-EXP-001` | Initial and custom expense categories and expense behavior | `REQ-EXP-001`–`REQ-EXP-004` |
+| `TEST-EXP-001` | Initial and custom expense categories, expense reasons, and expense behavior | `REQ-EXP-001`–`REQ-EXP-005` |
 | `TEST-DOC-001` | Allowed formats, multiple documents, association, preview, open, download, and missing receipt | `REQ-DOC-001`–`REQ-DOC-005` |
 | `TEST-DOC-002` | Removal, `410 Gone`, cleanup retry, path safety, and unauthorized access | `REQ-DOC-006`–`REQ-DOC-009` |
 | `TEST-DASH-001` | Required metrics, charts, trends, contribution buckets, formula reconciliation, recent transactions, and quick actions | `REQ-DASH-001`–`REQ-DASH-014`, `REQ-CONTRIB-005`, `REQ-CONTRIB-006`, `REQ-FIN-004`–`REQ-FIN-014` |
@@ -34,7 +34,7 @@ Test identifiers are stable verification handles. They do not create product req
 | `TEST-SEARCH-001` | Authorized global search, deterministic ordering, bounded filters, and privacy | `REQ-SEARCH-001`, `REQ-SEARCH-002` |
 | `TEST-AUDIT-001` | Audit coverage, filtering, detail safety, and immutability | `REQ-AUDIT-001`, `REQ-AUDIT-002` |
 | `TEST-AUDIT-002` | Settings scope, defaults, payment-method invariants, and settings audit | `REQ-SETTINGS-001`–`REQ-SETTINGS-009` |
-| `TEST-EXPORT-001` | CSV columns, escaping, reconciliation, and document references | `REQ-EXPORT-001`, `REQ-EXPORT-002` |
+| `TEST-EXPORT-001` | CSV columns, escaping, reconciliation, document references, and the filtered expense export | `REQ-EXPORT-001`–`REQ-EXPORT-003` |
 | `TEST-RESP-001` | Required controls, confirmation, feedback, accessibility, state honesty, product identity, and INR/date formatting | `REQ-RESP-001`–`REQ-RESP-011`, `REQ-AUTH-001`, `REQ-REPORT-004` |
 | `TEST-RESP-002` | Desktop, laptop, tablet, Android-sized, iPhone-sized, and print-output behavior | `REQ-RESP-012`, `REQ-RESP-013`, `REQ-REPORT-003` |
 | `TEST-SEC-001` | Sessions, CSRF, CORS, uploads, traversal, redaction, identity-disclosure prevention, settings invariants, rate limits, and authorization | `REQ-AUTH-002`–`REQ-AUTH-005`, `REQ-DOC-004`–`REQ-DOC-009`, `REQ-FIN-022`–`REQ-FIN-024`, `REQ-INCOME-005`, `REQ-INCOME-006`, `REQ-SETTINGS-006`, `REQ-SEARCH-002` |
@@ -109,4 +109,4 @@ After final QA finds and fixes a defect, do not rerun only the previously failin
 
 ## Evidence recording
 
-Record commands, environment assumptions, test counts, failures, fixes, and retest results in `docs/runtime/TEST-RESULTS.md`. Application tests have not started because implementation has not started.
+Record commands, environment assumptions, test counts, failures, fixes, and retest results in `docs/runtime/TEST-RESULTS.md`. The application and its complete required test process are implemented; after a final-QA fix the whole process is rerun from the beginning, and the executed evidence is recorded in `docs/runtime/TEST-RESULTS.md`.

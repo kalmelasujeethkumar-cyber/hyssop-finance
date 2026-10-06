@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   AVAILABLE_BALANCE_LABEL,
   ANONYMOUS_DONATION_DESCRIPTION,
+  CSV_EXPORT_MAX_ROWS,
   CURRENCY,
   isAnonymousIncomeType,
   PAYMENT_METHOD_LABELS,
@@ -14,6 +15,7 @@ import {
   type CompleteTransactionReport,
   type CompleteTransactionReportRow,
   type DocumentReport,
+  type ExpenseTransactionCsvRow,
   type FinancialSummaryReport,
   type GlobalSearchResponse,
   type MemberContributionReport,
@@ -32,7 +34,11 @@ import {
 } from '@hyssop/contracts';
 import { validationFailed } from '../common/errors/domain.errors';
 import { formatPaise } from '../common/money/paise';
-import { BUSINESS_TIMEZONE, formatBusinessDate } from '../common/time/business-date';
+import {
+  BUSINESS_TIMEZONE,
+  formatBusinessDate,
+  formatBusinessDateForExport,
+} from '../common/time/business-date';
 import {
   CONTRIBUTION_BUCKET_MAX_ROWS,
   ContributionPeriodRepository,
@@ -44,8 +50,17 @@ import {
   reportablePaymentMethods,
 } from '../database/reconciliation/reconciliation.service';
 import { TransactionRepository } from '../database/transactions/transaction.repository';
+import type {
+  TransactionQueryFilters,
+  TransactionSortDirection,
+  TransactionSortField,
+} from '../database/transactions/transaction.repository';
 import { AuditEventRepository } from '../database/audit/audit-event.repository';
 import { toTransactionSummary } from '../transactions/transaction-mapper';
+// The expense export's range rules are the ledger's range rules. Importing the one canonical parser
+// rather than writing a second set of "impossible filter" checks is what makes an export refuse the
+// same inverted date range and the same inverted amount window the expense list refuses.
+import { toQueryFilters } from '../transactions/transactions.service';
 import {
   assertSpanWithinLimit,
   calendarMonthsOf,
@@ -88,6 +103,53 @@ export interface SearchFilters {
   readonly term: string;
   readonly type: SearchType;
   readonly page: ReportPage;
+}
+
+/**
+ * The validated filter set of the expense transactions export.
+ *
+ * Structurally the shared transaction filters plus the two the export itself needs, and it is
+ * built by `toExpenseCsvFilters` rather than restated by hand: the export is required to reproduce
+ * the Expenses screen's list, and the only way that stays true as the screen's filters evolve is
+ * for the export to go through the same parser (`toQueryFilters`) the list uses.
+ *
+ * `categoryId` is `string` rather than `string | undefined` because it is mandatory. Typing it as
+ * required is what stops a future edit from quietly reintroducing an unbounded ledger export.
+ */
+export interface ExpenseExportFilters {
+  readonly categoryId: string;
+  readonly status?: 'ACTIVE' | 'VOIDED';
+  readonly paymentMethod?: PaymentMethod;
+  readonly search?: string;
+  readonly from?: Date;
+  readonly to?: Date;
+  readonly minAmountPaise?: bigint;
+  readonly maxAmountPaise?: bigint;
+  readonly sort: TransactionSortField;
+  readonly direction: TransactionSortDirection;
+}
+
+/**
+ * The raw, still-string form of the export's filters, as it arrives from the validated DTO.
+ *
+ * Declared here rather than imported from the DTO module so the reports service depends on the
+ * *shape* it consumes rather than on the HTTP layer that produced it. It is the same pattern as
+ * `TransactionListRequest`, and the reason is the same: the range rules are decided once, in
+ * `toQueryFilters`, and this interface only carries strings to it.
+ *
+ * `categoryId` is required for the reason given on `ExpenseExportFilters`.
+ */
+export interface ExpenseExportRequest {
+  readonly categoryId: string;
+  readonly search?: string;
+  readonly status?: string;
+  readonly paymentMethod?: string;
+  readonly from?: string;
+  readonly to?: string;
+  readonly minAmount?: string;
+  readonly maxAmount?: string;
+  readonly sort?: string;
+  readonly direction?: string;
 }
 
 const UNCATEGORIZED_LABEL = 'Uncategorised';
@@ -595,6 +657,59 @@ export class ReportsService {
     };
   }
 
+  /**
+   * The rows of the expense transactions CSV.
+   *
+   * Authority: `docs/01-REQUIREMENTS.md` `REQ-EXPORT-003`, `docs/06-API-SPEC.md`.
+   *
+   * Three decisions here are the reason this is not a call to `toReportTransactionRow`:
+   *
+   * 1. **The row limit is `CSV_EXPORT_MAX_ROWS`, not `REPORT_ROW_LIMIT`.** The 1,000-row cap
+   *    exists so a *screen* cannot be handed an unbounded list to scroll. A spreadsheet has no
+   *    such problem, and `REQ-EXPORT-003` requires the whole filtered set up to 10,000. Reusing the
+   *    screen cap here would silently ship a quarter of the file.
+   * 2. **The cap is enforced by refusing, never by truncating.** The query asks for
+   *    `CSV_EXPORT_MAX_ROWS + 1` rows; one more than the limit means more than the limit matched.
+   *    That is reported as a documented `400` telling the Admin to narrow the filters, so no
+   *    incomplete file is ever produced. Counting separately and then fetching would be two
+   *    queries that can disagree; the extra row is read from the same result set.
+   * 3. **It reuses the ledger query rather than a report projection.** There is no JSON route for
+   *    this export and no on-screen report, so there is no projection to be consistent with -- what
+   *    matters is that the rows are the same rows `GET /api/v1/expenses` returns, which is
+   *    `toQueryFilters` plus the forced `EXPENSE` type.
+   *
+   * `status` is honoured as a filter rather than defaulted, because `VOIDED` is a legal state for
+   * *this* export: an Admin reconciling a month asks about voided expenses too, and the status
+   * column is not in the approved column list precisely because the filter is the answer to it.
+   */
+  public async expenseTransactionsCsv(
+    filters: ExpenseExportFilters,
+  ): Promise<readonly ExpenseTransactionCsvRow[]> {
+    const { sort, direction, categoryId, ...rest } = filters;
+
+    const queryFilters: TransactionQueryFilters = {
+      transactionType: 'EXPENSE',
+      categoryId,
+      ...rest,
+    };
+
+    const rows = await this.transactionRepo.list(queryFilters, {
+      limit: CSV_EXPORT_MAX_ROWS + 1,
+      offset: 0,
+      sort,
+      direction,
+    });
+
+    if (rows.length > CSV_EXPORT_MAX_ROWS) {
+      throw validationFailed(
+        `More than ${CSV_EXPORT_MAX_ROWS.toLocaleString('en-IN')} expenses match these filters. Narrow the filters and try again.`,
+        { field: 'categoryId' },
+      );
+    }
+
+    return rows.map(toExpenseCsvRow);
+  }
+
   /** Shared by the Offering and Donation reports. */
   private async incomeTypeReport(
     reportId: 'offerings' | 'donations',
@@ -838,4 +953,105 @@ function trendPointsOf(
       movement: formatPaise(incomePaise - expensePaise),
     };
   });
+}
+
+/**
+ * Projects one expense row into the eight approved CSV cells.
+ *
+ * Every field is a *read-time* value, which is what lets a historical export stay faithful to the
+ * row as it stands now while the audit trail separately records what it looked like when the entry
+ * was recorded. The two are different questions and are answered from different places.
+ *
+ * The receipt cell is built from `documents[0]`, the oldest `AVAILABLE` document that
+ * `TRANSACTION_LIST_INCLUDE` already ordered. That ordering is what makes the export
+ * deterministic: without it, the same export twice could name a different receipt. A row whose
+ * only receipt was removed reports `null`, because `documents` is filtered to `AVAILABLE` and a
+ * removed row is history rather than something the Admin can open -- exporting a link to a
+ * `410 Gone` would be worse than exporting the honest missing marker.
+ *
+ * `notes` is passed through untouched, including `null`. The approved column is Notes, and an
+ * expense with no note is a true fact about the entry rather than an omission in the export.
+ */
+/**
+ * Projects one ledger row into an expense CSV row.
+ *
+ * The `category` and `expenseReason` parameters are nullable because that is what the Prisma
+ * relation is typed as -- `financial_transaction.category_id` is a nullable column on a table that
+ * also holds income. They are narrowed here rather than declared non-null because a declared
+ * non-null parameter would be a claim the type system cannot check, and the projection would then
+ * dereference `null` at runtime on a row the query was not supposed to return.
+ *
+ * Both relations are guaranteed non-null on every row this export can return: the query forces
+ * `transactionType = 'EXPENSE'` plus a `categoryId` filter, and the database `CHECK` constraints
+ * require an expense to carry both. The guard is therefore a real assertion about the data, not
+ * defensive noise -- and if it ever fires, that is a genuine constraint violation that must be
+ * loud rather than a CSV cell silently reading "undefined".
+ */
+function toExpenseCsvRow(row: {
+  readonly referenceId: string;
+  readonly amountPaise: bigint;
+  readonly paymentMethod: PaymentMethod;
+  readonly businessDate: Date;
+  readonly notes: string | null;
+  readonly category: { readonly name: string } | null;
+  readonly expenseReason: { readonly name: string } | null;
+  readonly documents: readonly { readonly id: string }[];
+}): ExpenseTransactionCsvRow {
+  if (row.category === null || row.expenseReason === null) {
+    throw new Error(
+      `Expense ${row.referenceId} cannot be exported without a category and a reason; the database constraints require both.`,
+    );
+  }
+
+  return {
+    referenceId: row.referenceId,
+    expenseDate: formatBusinessDateForExport(row.businessDate),
+    categoryName: row.category.name,
+    reasonName: row.expenseReason.name,
+    amount: formatPaise(row.amountPaise),
+    paymentMethod: row.paymentMethod,
+    notes: row.notes,
+    receiptUrl:
+      row.documents[0] === undefined ? null : `/api/v1/documents/${row.documents[0].id}/download`,
+  };
+}
+
+/**
+ * Builds the validated expense export filter set.
+ *
+ * Exported so the controller is the only caller and the DTO can stay a pure shape validator: every
+ * range rule that decides an *impossible* filter -- an inverted date range, an amount window whose
+ * minimum exceeds its maximum -- is already enforced by `toQueryFilters`, and reusing it is what
+ * makes the export reject the same filters the expense list rejects instead of quietly matching
+ * nothing and looking like an empty month.
+ *
+ * `sort` and `direction` default to the expense list's own defaults (`businessDate`, `desc`) so an
+ * export requested without them is ordered the way the screen would be.
+ */
+export function toExpenseCsvFilters(query: ExpenseExportRequest): ExpenseExportFilters {
+  const shared = toQueryFilters({
+    ...(query.status === undefined ? {} : { status: query.status as 'ACTIVE' | 'VOIDED' }),
+    ...(query.paymentMethod === undefined
+      ? {}
+      : { paymentMethod: query.paymentMethod as PaymentMethod }),
+    ...(query.search === undefined ? {} : { search: query.search }),
+    ...(query.from === undefined ? {} : { from: query.from }),
+    ...(query.to === undefined ? {} : { to: query.to }),
+    ...(query.minAmount === undefined ? {} : { minAmount: query.minAmount }),
+    ...(query.maxAmount === undefined ? {} : { maxAmount: query.maxAmount }),
+    categoryId: query.categoryId,
+  });
+
+  return {
+    categoryId: query.categoryId,
+    ...(shared.status === undefined ? {} : { status: shared.status }),
+    ...(shared.paymentMethod === undefined ? {} : { paymentMethod: shared.paymentMethod }),
+    ...(shared.search === undefined ? {} : { search: shared.search }),
+    ...(shared.from === undefined ? {} : { from: shared.from }),
+    ...(shared.to === undefined ? {} : { to: shared.to }),
+    ...(shared.minAmountPaise === undefined ? {} : { minAmountPaise: shared.minAmountPaise }),
+    ...(shared.maxAmountPaise === undefined ? {} : { maxAmountPaise: shared.maxAmountPaise }),
+    sort: (query.sort ?? 'businessDate') as TransactionSortField,
+    direction: (query.direction ?? 'desc') as TransactionSortDirection,
+  };
 }

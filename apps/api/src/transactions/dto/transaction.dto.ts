@@ -278,6 +278,24 @@ export class CorrectTransactionDto {
   @IsString()
   @Matches(UUID_PATTERN, { message: 'A category identifier must be a UUID.' })
   public categoryId?: string | null;
+
+  /**
+   * The expense reason for a correction (`REQ-EXP-005`).
+   *
+   * Permitted only on an expense, and only alongside a category that owns it. The service
+   * enforces the pairing rather than the DTO, because whether a reason belongs to a category is
+   * a data question the database can answer and a validator cannot: a correction that changes the
+   * category without the reason, or the reason without the category, is refused as a documented
+   * `400` naming both fields instead of failing the reason/category pairing trigger after the
+   * write.
+   *
+   * `null` is rejected by the service for the same reason it rejects a null category: an expense
+   * must always name exactly one reason, so a correction cannot strip it.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(UUID_PATTERN, { message: 'A reason identifier must be a UUID.' })
+  public expenseReasonId?: string | null;
 }
 
 /** The `POST /transactions/:id/void` body. `REQ-FIN-017` requires a non-empty reason. */

@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
+import { EXPENSE_REASON_NAME_MAX_LENGTH } from '@hyssop/contracts';
 import {
   conflict,
   notFound,
@@ -14,6 +15,9 @@ import {
 import { hashToken } from '../../src/auth/token.util';
 import type { AuthenticatedSession } from '../../src/auth/session.service';
 import { normalizeCategoryName } from '../../src/database/categories/expense-category.repository';
+// The real normalizer rather than a second copy. The doubles exist to prove the *repository's*
+// rules, so re-implementing normalization here would test the copy rather than the rule.
+import { normalizeReasonName } from '../../src/database/reasons/expense-reason.repository';
 import type {
   CorrectableTransactionFields,
   CreateTransactionInput,
@@ -79,6 +83,16 @@ export interface FakeTransactionRow {
   memberId: string | null;
   contributionPeriodId: string | null;
   categoryId: string | null;
+  /**
+   * The expense reason, or `null` for income.
+   *
+   * `REQ-EXP-005` requires an expense to reference an active reason that belongs to its category,
+   * and forbids a reason on income -- so this mirrors the real nullable `expense_reason_id` column
+   * rather than being derived from `categoryId`. A suite that wants to prove the pairing rule is
+   * enforced supplies a mismatched pair on purpose; one that just needs a valid expense names a
+   * reason from its own reason rows.
+   */
+  expenseReasonId: string | null;
   status: 'ACTIVE' | 'VOIDED';
   voidReason: string | null;
   voidedAt: Date | null;
@@ -149,6 +163,24 @@ export interface FakeCategory {
 }
 
 /**
+ * An expense reason row.
+ *
+ * Mirrors the real table, including `normalizedName` -- the column the database CHECK asserts is
+ * exactly `lower(trim(name))` and the composite unique index is built on. A double that normalized
+ * nothing would let a suite pass against a row the database would refuse.
+ */
+export interface FakeReason {
+  id: string;
+  categoryId: string;
+  name: string;
+  normalizedName: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  isSystem: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
  * The shared ledger the transaction and audit doubles read.
  *
  * The audit double is a separate Nest provider but reads the same events, so a correction
@@ -182,6 +214,7 @@ export class FakeLedger {
       memberId: row.memberId,
       contributionPeriodId: row.contributionPeriodId,
       categoryId: row.categoryId,
+      expenseReasonId: row.expenseReasonId,
       voidReason: row.voidReason,
       revision: row.revision,
     };
@@ -241,6 +274,7 @@ export class FakeTransactions {
     private readonly members: readonly FakeMember[],
     private readonly periods: readonly FakePeriod[],
     private readonly categories: readonly FakeCategory[],
+    private readonly reasons: readonly FakeReason[] = [],
   ) {}
 
   /** A row with the relations the single transaction projection reads. */
@@ -248,6 +282,8 @@ export class FakeTransactions {
     const member = this.members.find((candidate) => candidate.id === row.memberId) ?? null;
     const category = this.categories.find((candidate) => candidate.id === row.categoryId) ?? null;
     const period = this.periods.find((candidate) => candidate.id === row.contributionPeriodId);
+    const expenseReason =
+      this.reasons.find((candidate) => candidate.id === row.expenseReasonId) ?? null;
 
     return {
       ...row,
@@ -259,6 +295,17 @@ export class FakeTransactions {
         category === null
           ? null
           : { id: category.id, name: category.name, status: category.status },
+      // `status` is carried through so a suite can prove an expense whose reason was deactivated
+      // still reads, with the reason's own inactive status rather than a fabricated one.
+      expenseReason:
+        expenseReason === null
+          ? null
+          : {
+              id: expenseReason.id,
+              name: expenseReason.name,
+              status: expenseReason.status,
+              categoryId: expenseReason.categoryId,
+            },
       contributionPeriod:
         period === undefined ? null : { id: period.id, year: period.year, month: period.month },
       _count: { documents: row.documents?.length ?? row.documentCount },
@@ -466,6 +513,7 @@ export class FakeTransactions {
       memberId: input.memberId ?? null,
       contributionPeriodId: input.contributionPeriodId ?? null,
       categoryId: input.categoryId ?? null,
+      expenseReasonId: input.expenseReasonId ?? null,
       status: 'ACTIVE',
       voidReason: null,
       voidedAt: null,
@@ -522,6 +570,11 @@ export class FakeTransactions {
       ...(changes.description === undefined ? {} : { description: changes.description }),
       ...(changes.notes === undefined ? {} : { notes: changes.notes }),
       ...(changes.categoryId === undefined ? {} : { categoryId: changes.categoryId }),
+      // `REQ-EXP-005` makes the reason correctable on the same terms as the category: the service
+      // validates the pair, and the repository stores whatever the validated pair says.
+      ...(changes.expenseReasonId === undefined
+        ? {}
+        : { expenseReasonId: changes.expenseReasonId }),
       // `null` is a meaningful correction, not an absent field: it is how a mis-keyed member
       // is detached, so it must be applied rather than skipped.
       ...(changes.memberId === undefined ? {} : { memberId: changes.memberId }),
@@ -578,9 +631,10 @@ export class FakeTransactions {
   /**
    * The documented filter set, applied exactly as `toPrismaWhere` applies it.
    *
-   * `search` covers the reference, the description, the member's name and reference, and the
-   * category name — and deliberately not `notes`, which is how an identity written into a
-   * private note would otherwise become attributable through the search box.
+   * `search` covers the reference, the description, the member's name and reference, the
+   * category name, and the expense reason name — and deliberately not `notes`, which is how an
+   * identity written into a private note would otherwise become attributable through the search
+   * box.
    */
   private matching(filters: TransactionQueryFilters): FakeTransactionRow[] {
     const term = filters.search?.toLowerCase() ?? '';
@@ -639,12 +693,16 @@ export class FakeTransactions {
 
       const member = this.members.find((candidate) => candidate.id === row.memberId);
       const category = this.categories.find((candidate) => candidate.id === row.categoryId);
+      // The reason is searched by name, as `REQ-EXP-005` requires. A double that omitted it would
+      // make a search-for-reason test pass only because the double matched nothing at all.
+      const expenseReason = this.reasons.find((candidate) => candidate.id === row.expenseReasonId);
       const haystack = [
         row.referenceId,
         row.description ?? '',
         member?.name ?? '',
         member?.referenceId ?? '',
         category?.name ?? '',
+        expenseReason?.name ?? '',
       ]
         .join(' ')
         .toLowerCase();
@@ -1401,6 +1459,218 @@ export class FakeCategories {
 }
 
 /**
+ * The expense-reason persistence double.
+ *
+ * Every rule is copied from `expense-reason.repository.ts`: `trim().toLowerCase()` normalization
+ * checked by a database CHECK, uniqueness scoped to the category rather than global, active-only
+ * reads for the picker, and status as the way a reason retires instead of being deleted.
+ *
+ * Uniqueness is scoped per category on purpose. A double that compared names globally would refuse
+ * `Electrical Repair` under a second category, which the database allows -- and that is exactly the
+ * behaviour `REQ-EXP-005` turns on, so a stricter double would make the feature untestable.
+ */
+export class FakeReasons {
+  public readonly created: {
+    readonly categoryId: string;
+    readonly name: string;
+    readonly actorAdminId: string;
+  }[] = [];
+
+  public readonly updated: {
+    readonly id: string;
+    readonly changes: {
+      readonly name?: string;
+      readonly status?: 'ACTIVE' | 'INACTIVE';
+    };
+    readonly actorAdminId: string;
+  }[] = [];
+
+  /**
+   * @param reasons  the seed reasons. Copied rather than retained, so a caller may pass a shared
+   *   `readonly` fixture array that other suites also use.
+   * @param categories  the categories the reason rows belong to. Required rather than optional:
+   *   the repository reads the category *inside* the write and refuses a missing or deactivated
+   *   one, so a double that skipped the read would let an unusable reason through and the suite
+   *   would prove nothing about that rule.
+   */
+  public constructor(reasons: readonly FakeReason[], categories: FakeCategories) {
+    this.reasons = [...reasons];
+    this.categories = categories;
+  }
+
+  private readonly reasons: FakeReason[];
+  private readonly categories: FakeCategories;
+
+  public async findForCategory(categoryId: string): Promise<readonly FakeReason[]> {
+    return this.reasons
+      .filter((reason) => reason.categoryId === categoryId)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  public async findActiveForCategory(categoryId: string): Promise<readonly FakeReason[]> {
+    return this.reasons
+      .filter((reason) => reason.categoryId === categoryId && reason.status === 'ACTIVE')
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  public async findById(id: string): Promise<FakeReason> {
+    const found = this.reasons.find((reason) => reason.id === id);
+
+    if (found === undefined) {
+      throw notFound('Expense reason', id);
+    }
+
+    return found;
+  }
+
+  /**
+   * The reason only when it may be used for a new expense *under this category*.
+   *
+   * The pairing check and the status check fail separately, matching the repository: a reason from
+   * another category is a `400` naming `expenseReasonId`, not a `404`, because the row exists and
+   * the request is what is wrong. Collapsing them would send a test looking for the wrong bug.
+   */
+  public async requireActiveForCategory(id: string, categoryId: string): Promise<FakeReason> {
+    const reason = await this.findById(id);
+
+    if (reason.categoryId !== categoryId) {
+      throw validationFailed('The selected reason does not belong to the selected category.', {
+        field: 'expenseReasonId',
+      });
+    }
+
+    if (reason.status !== 'ACTIVE') {
+      throw validationFailed('Only an active reason can be used for a new expense.', {
+        field: 'expenseReasonId',
+      });
+    }
+
+    return reason;
+  }
+
+  public async findByNormalizedName(categoryId: string, name: string): Promise<FakeReason | null> {
+    const normalizedName = normalizeReasonName(name);
+
+    return (
+      this.reasons.find(
+        (reason) => reason.categoryId === categoryId && reason.normalizedName === normalizedName,
+      ) ?? null
+    );
+  }
+
+  public async create(categoryId: string, name: string, actorAdminId: string): Promise<FakeReason> {
+    return this.createWithinTransaction(null, categoryId, name, actorAdminId);
+  }
+
+  public async createWithinTransaction(
+    _tx: unknown,
+    categoryId: string,
+    name: string,
+    actorAdminId: string,
+  ): Promise<FakeReason> {
+    const displayName = name.trim();
+
+    if (displayName === '') {
+      throw validationFailed('A reason name is required.', { field: 'name' });
+    }
+
+    if (displayName.length > EXPENSE_REASON_NAME_MAX_LENGTH) {
+      throw validationFailed(
+        `A reason name must be ${EXPENSE_REASON_NAME_MAX_LENGTH} characters or fewer.`,
+        { field: 'name' },
+      );
+    }
+
+    // The category is read before the reason is written, exactly as the repository does inside the
+    // caller's transaction: a reason under a category that does not exist, or under one that is no
+    // longer active, could never be selected, so it is refused rather than stored. The wording is
+    // the repository's, because a suite asserting the message is asserting the contract.
+    const category = await this.categories.findById(categoryId);
+
+    if (category.status !== 'ACTIVE') {
+      throw validationFailed('A reason can only be added to an active category.', {
+        field: 'categoryId',
+      });
+    }
+
+    const normalizedName = normalizeReasonName(displayName);
+
+    if (
+      this.reasons.some(
+        (reason) => reason.categoryId === categoryId && reason.normalizedName === normalizedName,
+      )
+    ) {
+      throw conflict('A reason with this name already exists in this category.', { field: 'name' });
+    }
+
+    this.created.push({ categoryId, name: displayName, actorAdminId });
+
+    const reason = reasonFixture({
+      id: `0000f000-0000-4000-8000-${String(this.reasons.length + 1).padStart(12, '0')}`,
+      categoryId,
+      name: displayName,
+      isSystem: false,
+    });
+
+    this.reasons.push(reason);
+
+    return reason;
+  }
+
+  public async update(
+    id: string,
+    changes: { readonly name?: string; readonly status?: 'ACTIVE' | 'INACTIVE' },
+    actorAdminId: string,
+  ): Promise<FakeReason> {
+    return this.updateWithinTransaction(null, id, changes, actorAdminId);
+  }
+
+  public async updateWithinTransaction(
+    _tx: unknown,
+    id: string,
+    changes: { readonly name?: string; readonly status?: 'ACTIVE' | 'INACTIVE' },
+    actorAdminId: string,
+  ): Promise<FakeReason> {
+    const current = await this.findById(id);
+
+    this.updated.push({ id, changes, actorAdminId });
+
+    if (changes.name !== undefined) {
+      const displayName = changes.name.trim();
+
+      if (displayName === '') {
+        throw validationFailed('A reason name is required.', { field: 'name' });
+      }
+
+      const normalizedName = normalizeReasonName(displayName);
+
+      if (
+        normalizedName !== current.normalizedName &&
+        this.reasons.some(
+          (reason) =>
+            reason.categoryId === current.categoryId && reason.normalizedName === normalizedName,
+        )
+      ) {
+        throw conflict('A reason with this name already exists in this category.', {
+          field: 'name',
+        });
+      }
+
+      current.name = displayName;
+      current.normalizedName = normalizedName;
+    }
+
+    if (changes.status !== undefined) {
+      current.status = changes.status;
+    }
+
+    current.updatedAt = new Date('2026-09-10T06:00:00.000Z');
+
+    return current;
+  }
+}
+
+/**
  * The idempotency double.
  *
  * It reproduces the two rules the HTTP layer depends on: an identical key with an identical
@@ -1578,6 +1848,10 @@ export function transactionFixture(
     memberId: null,
     contributionPeriodId: null,
     categoryId: null,
+    // `null` by default because the default fixture is income. A suite that builds an expense
+    // names a reason alongside its category, because an expense without one is unrepresentable in
+    // the database.
+    expenseReasonId: null,
     status: 'ACTIVE',
     voidReason: null,
     voidedAt: null,
@@ -1599,6 +1873,23 @@ export function categoryFixture(overrides: Partial<FakeCategory> & { id: string 
   return {
     name,
     normalizedName: normalizeCategoryName(name),
+    status: 'ACTIVE',
+    isSystem: false,
+    createdAt: new Date('2026-09-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+/** A reason row with the defaults every fixture shares, normalized as the schema requires. */
+export function reasonFixture(
+  overrides: Partial<FakeReason> & { id: string; categoryId: string },
+): FakeReason {
+  const name = overrides.name ?? 'Fixture reason';
+
+  return {
+    name,
+    normalizedName: normalizeReasonName(name),
     status: 'ACTIVE',
     isSystem: false,
     createdAt: new Date('2026-09-01T00:00:00.000Z'),

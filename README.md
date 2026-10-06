@@ -1,17 +1,18 @@
 # HYSSOP FINANCE
 
-HYSSOP FINANCE is a financial-management demo for one church. The repository contains the project constitution, locked specifications, phase plan, traceability matrix, and runtime documentation, plus the Phase 01 technical foundation (a real API shell, a real web shell, shared contracts, and a complete quality-gate toolchain) and the Phase 02 data layer (the canonical Prisma schema, reviewed migrations, exact paise persistence, transactional idempotency, reconciliation queries, a fictional idempotent seed, and real-PostgreSQL tests).
+HYSSOP FINANCE is a financial-management demo for one church. The repository contains the project constitution, locked specifications, phase plan, traceability matrix, and runtime documentation, plus the implemented application: a NestJS API, a React + Vite web app, shared contracts, the canonical Prisma data layer, authentication, members, income, expenses, documents, dashboard, reports, audit history, settings, and the responsive application shell.
 
-The database stores real data, but no REST route exposes it yet and no financial screen renders it. Nothing in the interface is presented as complete before its real path exists.
+Every figure is computed and persisted through the backend and database. Nothing in the interface is presented as complete before its real path exists.
 
 ## Current status
 
-- Stage: Phase 02 — Database
-- Application implementation: **foundation and persistence complete** (API shell, web shell, contracts, tooling, data layer)
-- Database, Prisma, and migrations: **implemented**; 2 reviewed migrations applied to a disposable local PostgreSQL 16 instance
-- Authentication, sessions, and CSRF: **not started**
-- Members, contributions, income, expenses, documents, dashboard, and reports: **not started**
-- Next step: Phase 02 Git gate, then user review before Phase 03 — Auth
+- Stage: Phase 12 — Final QA (local quality gate passed; deployment `BLOCKED — DEPLOYMENT NOT AUTHORIZED`)
+- Application implementation: **complete** (API, web app, contracts, data layer, authentication, members, income, expenses, documents, dashboard, reports, audit history, settings, responsive shell)
+- Database, Prisma, and migrations: **implemented**; 7 reviewed migrations applied to a disposable local PostgreSQL 16 instance
+- Authentication, sessions, and CSRF: **implemented** (single Admin, Argon2id, server-side sessions, cookie CSRF, login and request rate limits)
+- Members, contributions, income, expenses, documents, dashboard, and reports: **implemented** and verified
+- Deployment: **BLOCKED** — no hosting target is authorized (`ISSUE-051`); a local-only run is not a deployment
+- Next step: a user decision on a future demo deployment path; see `docs/runtime/FINAL-REPORT.md`
 
 ## Workspace layout
 
@@ -49,12 +50,12 @@ Configuration lives in one root `.env`; `.env.example` is the only template and 
 npm run lint           # ESLint 10 flat config, type-aware rules, no rule disabled
 npm run typecheck      # contracts build + strict tsc for the API and the web app
 npm run typecheck:scripts # strict tsc for prisma/seed*.ts and scripts/
-npm run test           # 103 API unit/integration tests + 19 web tests
-npm run test:db        # 48 tests against real disposable PostgreSQL
+npm run test           # 42 API suites / 865 tests + 21 web files / 557 tests
+npm run test:db        # 13 suites / 267 tests against real disposable PostgreSQL
 npm run db:drift       # migration history and live dev database vs prisma/schema.prisma
 npm run build          # contracts, nest build, vite build
 npm run format:check   # Prettier
-npm run test:e2e       # 2 Playwright tests; builds the smoke bundle and starts both services
+npm run test:e2e       # 71 Playwright journeys; builds the smoke bundle and starts both services
 ```
 
 `npm run verify` runs lint, typecheck, tests, builds, and the formatting check in order. `npm run test:db` requires a running local PostgreSQL 16 cluster, refuses any database name that does not end in `_test`, and derives its test URLs from the development URLs unless `TEST_DATABASE_URL` and `TEST_DIRECT_DATABASE_URL` are set. `npm run test:e2e` builds the web app in `smoke` mode first; install the browser once with `npx playwright install chromium`.

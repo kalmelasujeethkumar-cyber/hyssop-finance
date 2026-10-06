@@ -218,6 +218,15 @@ export interface CorrectionFormValues {
   readonly description: string;
   readonly notes: string;
   readonly categoryId?: string;
+  /**
+   * The reason, travelling with `categoryId`.
+   *
+   * `REQ-EXP-005` makes the reason meaningful only inside a category, so the API refuses a
+   * correction that moves one without the other. Both are optional here for the same reason
+   * `categoryId` is: an income screen leaves both `undefined` and the keys are omitted entirely,
+   * while an expense screen sets both and can never send half the pair.
+   */
+  readonly expenseReasonId?: string;
 }
 
 export interface CorrectionFieldErrors {
@@ -227,6 +236,7 @@ export interface CorrectionFieldErrors {
   readonly description?: string;
   readonly notes?: string;
   readonly categoryId?: string;
+  readonly expenseReasonId?: string;
 }
 
 const ZERO_AMOUNTS: readonly string[] = ['0', '0.0', '0.00'];
@@ -250,6 +260,7 @@ export function validateCorrectionFields(values: CorrectionFormValues): Correcti
     paymentMethod?: string;
     businessDate?: string;
     categoryId?: string;
+    expenseReasonId?: string;
   } = {};
   const amount = values.amount.trim();
 
@@ -273,6 +284,10 @@ export function validateCorrectionFields(values: CorrectionFormValues): Correcti
     errors.categoryId = 'Choose a category.';
   }
 
+  if (values.expenseReasonId !== undefined && !UUID_PATTERN.test(values.expenseReasonId.trim())) {
+    errors.expenseReasonId = 'Choose a reason.';
+  }
+
   return errors;
 }
 
@@ -281,7 +296,8 @@ export function hasCorrectionErrors(errors: CorrectionFieldErrors): boolean {
     errors.amount !== undefined ||
     errors.paymentMethod !== undefined ||
     errors.businessDate !== undefined ||
-    errors.categoryId !== undefined
+    errors.categoryId !== undefined ||
+    errors.expenseReasonId !== undefined
   );
 }
 
@@ -306,11 +322,13 @@ export function correctionRequestBody(values: CorrectionFormValues): {
   description?: string;
   notes?: string;
   categoryId?: string;
+  expenseReasonId?: string;
 } {
   const amount = values.amount.trim();
   const description = values.description.trim();
   const notes = values.notes.trim();
   const categoryId = values.categoryId?.trim() ?? '';
+  const expenseReasonId = values.expenseReasonId?.trim() ?? '';
 
   return {
     ...(amount === '' ? {} : { amount }),
@@ -319,6 +337,10 @@ export function correctionRequestBody(values: CorrectionFormValues): {
     ...(description === '' ? {} : { description }),
     ...(notes === '' ? {} : { notes }),
     ...(categoryId === '' ? {} : { categoryId }),
+    // Sent only when the form has a reason, and the form always sets it together with the
+    // category. Emitting it here rather than in each screen is what keeps an expense correction
+    // from ever sending half the pair the API refuses.
+    ...(expenseReasonId === '' ? {} : { expenseReasonId }),
   };
 }
 

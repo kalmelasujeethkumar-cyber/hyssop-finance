@@ -14,7 +14,7 @@
 
 ## Phase Metadata
 
-- Status: `NOT STARTED`; requires Phases 01–06 complete.
+- Status: `COMPLETE`; the quality gate passed and the Git gate is closed with commit `2e1d778287da8d7c67c90cac2d25a63a80ba0e82` recorded in `docs/runtime/PHASE-HISTORY.md`.
 - Preconditions: shared document metadata and audit persistence exist; storage path is project-local and ignored by Git.
 - Handoff rule: no earlier phase may bypass this adapter or create a duplicate upload path.
 

@@ -1,10 +1,12 @@
 import {
+  EXPENSE_TRANSACTION_CSV_COLUMNS,
   REPORT_CSV_COLUMNS,
   type CompleteTransactionReport,
+  type ExpenseTransactionCsvRow,
   type ReportDocumentLink,
   type TransactionListReport,
 } from '@hyssop/contracts';
-import { reportToCsv } from './report-csv';
+import { expenseTransactionsToCsv, reportToCsv } from './report-csv';
 
 /**
  * The document columns of `REPORT_CSV_COLUMNS` are the tests that were missing.
@@ -107,6 +109,8 @@ function completeTransactionRow(
     notes: null,
     member: null,
     category: null,
+    // Income carries no reason, which is what `REQ-EXP-005` requires of every income row.
+    expenseReason: null,
     contributionPeriod: null,
     voidReason: null,
     voidedAt: null,
@@ -121,6 +125,70 @@ function completeTransactionRow(
 /** The header line and every data line of an export, so a width can be compared to the header. */
 function linesOf(csv: string): readonly string[] {
   return csv.trimEnd().split('\r\n');
+}
+
+/**
+ * The single data line of an export that is expected to hold exactly one row.
+ *
+ * Returning a narrowed `string` rather than `string | undefined` means an export that silently lost
+ * its data row fails as a plain wrong-value assertion instead of as a `TypeError` inside the test.
+ */
+function dataLineOf(csv: string): string {
+  const [, row] = linesOf(csv);
+  expect(row).toBeDefined();
+
+  return row ?? '';
+}
+
+/**
+ * Splits one CSV line into its cells, honouring quoted cells.
+ *
+ * `row.split(',')` is wrong for any row whose note or category contains a comma: it reports more
+ * cells than the row has, which would make a width assertion pass for the wrong reason and hide a
+ * genuinely misaligned row. This is a test helper, so it only has to handle what the writer emits.
+ */
+function parseCsvRow(line: string): readonly string[] {
+  const cells: string[] = [];
+  let current = '';
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line.charAt(index);
+
+    if (quoted) {
+      if (character !== '"') {
+        current += character;
+        continue;
+      }
+
+      // A doubled quote inside a quoted cell is one literal quote; anything else ends the cell.
+      if (line.charAt(index + 1) === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+
+      quoted = false;
+      continue;
+    }
+
+    if (character === '"') {
+      quoted = true;
+      continue;
+    }
+
+    if (character === ',') {
+      cells.push(current);
+      current = '';
+      continue;
+    }
+
+    current += character;
+  }
+
+  cells.push(current);
+
+  return cells;
 }
 
 describe('the document columns of an income-type report export', () => {
@@ -186,5 +254,131 @@ describe('the document columns of the Complete Transaction export', () => {
     for (const row of rows) {
       expect(row.split(',')).toHaveLength(header?.split(',').length ?? 0);
     }
+  });
+});
+
+/**
+ * The expense transactions CSV is a separate writer with its own approved columns, so the column
+ * contract has to be asserted against it directly. `buildCsv` pads a short row and drops an extra
+ * cell, so a writer that emitted the wrong columns would still produce a well-formed file whose
+ * header and data disagree — a silent export failure that only a reader of the sheet would notice.
+ */
+describe('the expense transactions CSV export', () => {
+  const RECEIPT_PATH = '/api/v1/documents/e5000000-0000-4000-8000-000000000001/download';
+
+  function expenseRow(overrides: Partial<ExpenseTransactionCsvRow> = {}): ExpenseTransactionCsvRow {
+    return {
+      referenceId: 'HY-EXP-000001',
+      expenseDate: '18-09-2026',
+      categoryName: 'Repairs',
+      reasonName: 'Equipment Repair',
+      amount: '800.00',
+      paymentMethod: 'CASH',
+      notes: null,
+      receiptUrl: null,
+      ...overrides,
+    };
+  }
+
+  it('writes the approved columns in order, with the row values in that same order', () => {
+    const csv = expenseTransactionsToCsv([expenseRow()]);
+
+    expect(EXPENSE_TRANSACTION_CSV_COLUMNS).toEqual([
+      'Expense ID',
+      'Expense Date',
+      'Category',
+      'Reason',
+      'Amount',
+      'Payment Method',
+      'Notes',
+      'Receipt URL',
+    ]);
+    expect(csv).toBe(
+      `${EXPENSE_TRANSACTION_CSV_COLUMNS.join(',')}\r\n` +
+        'HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,\r\n',
+    );
+  });
+
+  it('leaves the Receipt URL cell empty when there is no receipt', () => {
+    const csv = expenseTransactionsToCsv([expenseRow({ receiptUrl: null })]);
+    const row = dataLineOf(csv);
+
+    // The column holds URLs, so an absent receipt is an empty cell rather than placeholder words
+    // that would look like a link a spreadsheet might try to open. `REQ-DOC-003` still requires
+    // the *interface* to say **Receipt Missing**; that is a screen obligation and stops here.
+    expect(row).toBe('HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,');
+    expect(row).not.toContain('Receipt Missing');
+    expect(row.endsWith(',')).toBe(true);
+  });
+
+  it('writes the authenticated download path when a receipt is attached', () => {
+    const csv = expenseTransactionsToCsv([expenseRow({ receiptUrl: RECEIPT_PATH })]);
+
+    expect(linesOf(csv)[1]).toBe(
+      `HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,${RECEIPT_PATH}`,
+    );
+  });
+
+  it('keeps the amount exact and ungrouped, and the payment method human-readable', () => {
+    const csv = expenseTransactionsToCsv([
+      expenseRow({ amount: '2450.75', paymentMethod: 'BANK_TRANSFER', notes: 'Paid by transfer' }),
+    ]);
+
+    // `2450.75`, not `2,450.75`: a grouped amount would not re-import as the same number, and the
+    // stored paise must survive the export unaltered.
+    expect(linesOf(csv)[1]).toBe(
+      'HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,2450.75,Bank Transfer,Paid by transfer,',
+    );
+  });
+
+  it('guards an Admin-entered reason or note that a spreadsheet would treat as a formula', () => {
+    const csv = expenseTransactionsToCsv([
+      expenseRow({ categoryName: '=cmd()', reasonName: '+1+1', notes: '@SUM(A1)' }),
+    ]);
+
+    // A category, reason, or note is stored Admin text and may legitimately start with `=`, `+`,
+    // or `@`. `csv.ts` prefixes such a cell with a single quote, which spreadsheets display as a
+    // literal character and never execute -- so the guard is asserted in that exact form rather
+    // than as double quotes, which would mean structural quoting instead of the guard.
+    expect(linesOf(csv)[1]).toBe("HY-EXP-000001,18-09-2026,'=cmd(),'+1+1,800.00,Cash,'@SUM(A1),");
+  });
+
+  it('quotes a note containing a comma without splitting the row', () => {
+    const csv = expenseTransactionsToCsv([expenseRow({ notes: 'Bought on 2 Sept, cash' })]);
+    const row = dataLineOf(csv);
+
+    expect(row).toContain('"Bought on 2 Sept, cash"');
+    // Counting raw commas would be wrong here -- the quoted note legitimately contains one -- so
+    // the row is checked by its parsed cell count instead.
+    expect(parseCsvRow(row)).toHaveLength(EXPENSE_TRANSACTION_CSV_COLUMNS.length);
+    expect(parseCsvRow(row)).toEqual([
+      'HY-EXP-000001',
+      '18-09-2026',
+      'Repairs',
+      'Equipment Repair',
+      '800.00',
+      'Cash',
+      'Bought on 2 Sept, cash',
+      '',
+    ]);
+    expect(linesOf(csv)[0]).toBe(EXPENSE_TRANSACTION_CSV_COLUMNS.join(','));
+  });
+
+  it('gives every row exactly as many cells as the header declares', () => {
+    const csv = expenseTransactionsToCsv([
+      expenseRow({ receiptUrl: RECEIPT_PATH }),
+      expenseRow({ referenceId: 'HY-EXP-000002', receiptUrl: null, notes: 'a note, with comma' }),
+    ]);
+    const rows = linesOf(csv).slice(1);
+
+    for (const row of rows) {
+      expect(parseCsvRow(row)).toHaveLength(EXPENSE_TRANSACTION_CSV_COLUMNS.length);
+    }
+  });
+
+  it('writes only the header when no expense matched, rather than a blank data row', () => {
+    // A header-only file is the honest result of an empty filtered export; padding it with one
+    // empty row would suggest an expense exists with nothing in it.
+    expect(expenseTransactionsToCsv([])).toBe(`${EXPENSE_TRANSACTION_CSV_COLUMNS.join(',')}\r\n`);
   });
 });
