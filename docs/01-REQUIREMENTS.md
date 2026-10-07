@@ -33,6 +33,11 @@ The system must support the following financial record behavior:
 - **REQ-EXP-002** — Admin-created custom expense categories are supported.
 - **REQ-EXP-004** — An expense requires exactly one existing active expense category. A missing, unknown, or inactive category is rejected instead of being saved without a category.
 - **REQ-EXP-005** — An expense records exactly one existing expense reason that belongs to its own expense category. A new expense requires an active reason, so a missing, unknown, inactive, or wrong-category reason is rejected instead of being saved without a reason. On an existing expense the reason and the category change together or neither does; a category correction always carries a reason of the new category.
+- **REQ-EXP-006** — An expense may carry an optional structured Vendor field naming whom the church bought a product or service from, separate from the description and notes.
+- **REQ-EXP-007** — The Vendor field is optional: an expense may be recorded without a vendor, and existing expenses without one remain valid without backfill.
+- **REQ-EXP-008** — The Vendor field must not replace the Description or Notes fields; it stores a distinct value and the other fields keep their existing meaning and rules.
+- **REQ-EXP-009** — When present, the Vendor value is shown in the expense list and expense detail.
+- **REQ-EXP-010** — When present, the Vendor value appears in the detailed expense CSV/report output.
 - **REQ-INCOME-002** — Payment methods are Cash, UPI, and Bank Transfer.
 - **REQ-EXP-003** — The same three payment methods apply to expense entries.
 - **REQ-FIN-001** — Financial records carry transaction date, business date, description, amount, and relevant associations.
@@ -131,6 +136,14 @@ The correction allow-list, immutable identity fields, and revision conflict beha
 - **REQ-DOC-007** — Raw files must not be stored directly in PostgreSQL.
 - **REQ-DOC-008** — Local project-controlled storage is used behind an abstraction so production storage can be substituted later.
 - **REQ-DOC-009** — Access to storage paths must not bypass authentication or authorization.
+- **REQ-DOC-015** — The Record Expense form offers an optional Receipt / Document selection control that chooses a file to attach to the expense being recorded.
+- **REQ-DOC-016** — A receipt selected in the Record Expense form is uploaded through the existing validated transaction-document architecture, reusing its formats, size limits, storage abstraction, and authorized access; it is not a separate upload path.
+- **REQ-DOC-017** — When the Admin selects a receipt in the form, the expense is created first and the document is then uploaded and associated with the created transaction, so an attachment never exists without the expense it belongs to.
+- **REQ-DOC-018** — Recording an expense with a selected receipt remains idempotent: retrying the same submission does not create a duplicate expense or a duplicate document.
+- **REQ-DOC-019** — If the expense is created but the receipt upload fails, the interface reports an honest, recoverable failure that never claims the expense has a receipt it does not have and never creates a second expense on retry.
+- **REQ-DOC-020** — Existing receipt/document functionality on the expense detail view remains available after the form-level selection is added.
+- **REQ-DOC-021** — Receipts and documents chosen during expense recording remain private and subject to the same authentication, authorization, and download rules as any other document; adding the form control must not expose them publicly.
+- **REQ-DOC-022** — Selecting, uploading, and where applicable removing a receipt through the Record Expense workflow preserves the existing document audit behavior; upload and removal events are recorded exactly as before.
 
 ## Receipts
 

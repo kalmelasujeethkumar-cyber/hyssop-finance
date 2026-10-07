@@ -124,6 +124,7 @@ export function expenseTransactionsToCsv(rows: readonly ExpenseTransactionCsvRow
       row.expenseDate,
       { value: row.categoryName, text: true },
       { value: row.reasonName, text: true },
+      { value: row.vendor ?? ABSENT, text: true },
       row.amount,
       PAYMENT_METHOD_LABELS[row.paymentMethod],
       { value: row.notes ?? ABSENT, text: true },

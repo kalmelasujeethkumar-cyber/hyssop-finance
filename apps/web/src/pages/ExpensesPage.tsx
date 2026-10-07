@@ -900,15 +900,15 @@ function RecordExpenseForm({
 
   function update<K extends keyof ExpenseFormValues>(key: K, value: ExpenseFormValues[K]): void {
     setValues((previous) => ({ ...previous, [key]: value }));
-    setFieldErrors((previous) => {
-      if (previous[key] === undefined) {
+    setFieldErrors((previous: ExpenseFieldErrors) => {
+      if ((previous as any)[key] === undefined) {
         return previous;
       }
 
       // Retyping clears the complaint about the very field being corrected. Leaving a stale
       // message after a fix reads as "still invalid".
-      const rest = { ...previous };
-      delete rest[key];
+      const rest = { ...previous } as ExpenseFieldErrors;
+      delete (rest as any)[key];
 
       return rest;
     });

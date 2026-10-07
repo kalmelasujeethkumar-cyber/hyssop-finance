@@ -666,14 +666,16 @@ export const CSV_EXPORT_MAX_ROWS = 10_000;
  * owns its own columns rather than borrowing the period-report machinery.
  *
  * The order is part of the contract and is asserted directly by a CSV test. Each column answers
- * one question a pastor reconciling a month of spending would ask: which entry, when, where, why,
- * how much, how paid, what else was noted, and can I see the receipt.
+ * one question a pastor reconciling a month of spending would ask: which entry, when, in which
+ * category, for what reason, from whom, how much, how paid, what else was noted, and can I see
+ * the receipt.
  */
 export const EXPENSE_TRANSACTION_CSV_COLUMNS: readonly string[] = [
   'Expense ID',
   'Expense Date',
   'Category',
   'Reason',
+  'Vendor',
   'Amount',
   'Payment Method',
   'Notes',
@@ -701,6 +703,12 @@ export interface ExpenseTransactionCsvRow {
   readonly categoryName: string;
   /** The reason's name at read time. */
   readonly reasonName: string;
+  /**
+   * The optional structured vendor (`REQ-EXP-006`), as stored after trimming, or `null` when
+   * the expense has none. A `null` here exports as an **empty cell**, following the same
+   * absent-value rule as Notes and Receipt URL; a present value is a guarded text cell.
+   */
+  readonly vendor: string | null;
   /** Exact INR decimal string such as `"5000.00"`. Never a number. */
   readonly amount: string;
   readonly paymentMethod: PaymentMethod;

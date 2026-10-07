@@ -61,6 +61,16 @@ Charts must use real API-derived data. Each chart must have a text alternative o
 
 Document actions must show upload progress, validation feedback, file type and size constraints, multiple-file support, and clear association with the transaction. Preview is offered only for supported formats; other valid files open or download safely. Missing expense evidence is labeled **Receipt Missing**. Removal requires confirmation, a reason, and must be reflected in audit history.
 
+## Record Expense experience (Vendor and receipt selection)
+
+The Record Expense form offers two optional controls, reversing the earlier UI decision that a receipt cannot be selected in this form; the historical decision `DEC-091` is retained and the reversal is recorded as `DEC-113`.
+
+- **Vendor (optional)** appears after Business Date and before Description. Label: **Vendor (optional)**. Helper text: **Who did the church buy the item or service from?** Placeholder: **e.g. ABC Electricals**. It stores a structured value separate from description and notes; leaving it empty is valid and submission must not require it.
+- **Receipt / Document (optional)** is placed in the form itself, visually obvious but never forced. It opens the OS file picker restricted to the supported formats (JPG, JPEG, PNG, WEBP, PDF). After selection show the chosen filename, a clear selected state, and working replace and remove actions; validate type and size before submit with inline error feedback. The control follows the existing form rules: labels and optional marking, inline validation, correct keyboard order, disabled/loading state during submission, duplicate-submission protection, and clear feedback.
+- With no receipt selected the expense is recorded normally and later shows **Receipt Missing**; the form must never imply a receipt was attached when none was.
+- When a receipt is selected the expense is created first and the receipt is then uploaded and attached to the created expense; the form explains the attachment in progress and, on success, the receipt status for the new expense. If the expense is saved but the upload fails, tell the user exactly that — the expense is saved and the receipt did not attach — plus a safe retry path. Never claim a receipt exists when it does not, and never create a second expense on retry.
+- The existing expense detail receipt/document functionality stays exactly as it is. No new Documents navigation section, menu item, or separate screen is introduced by this change.
+
 ## Receipts
 
 An eligible income transaction must be able to show a receipt containing HYSSOP FINANCE, the transaction reference, the amount, income type, payment method, business date, and the member or contributor name when one legitimately applies. The receipt must be viewable on screen and printable, must not expose an anonymous donor identity, and must not offer controls that do nothing.

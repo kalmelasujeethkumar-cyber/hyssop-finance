@@ -1484,7 +1484,7 @@ describe('the filtered expense CSV export', () => {
     // screen shows. `Receipt Missing` is a `REQ-DOC-003` interface obligation; the export's
     // Receipt URL column is data, and a row with no receipt has no URL to write.
     const saved = client.textCalls[0]?.text ?? '';
-    expect(saved).toContain('HY-EXP-000002,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,');
+    expect(saved).toContain('HY-EXP-000002,18-09-2026,Repairs,Equipment Repair,,800.00,Cash,,');
     expect(saved).not.toContain('Receipt Missing');
   });
 

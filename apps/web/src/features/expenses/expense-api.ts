@@ -68,6 +68,7 @@ export interface ExpenseFormValues {
   readonly businessDate: string;
   readonly description: string;
   readonly notes: string;
+  readonly vendor: string;
 }
 
 export const EMPTY_EXPENSE_FORM: ExpenseFormValues = {
@@ -78,6 +79,7 @@ export const EMPTY_EXPENSE_FORM: ExpenseFormValues = {
   businessDate: '',
   description: '',
   notes: '',
+  vendor: '',
 };
 
 export interface ExpenseFieldErrors {
@@ -173,9 +175,11 @@ export function expenseRequestBody(values: ExpenseFormValues): {
   businessDate: string;
   description?: string;
   notes?: string;
+  vendor?: string;
 } {
   const description = values.description.trim();
   const notes = values.notes.trim();
+  const vendor = values.vendor.trim();
 
   return {
     categoryId: values.categoryId.trim(),
@@ -185,6 +189,7 @@ export function expenseRequestBody(values: ExpenseFormValues): {
     businessDate: values.businessDate.trim(),
     ...(description === '' ? {} : { description }),
     ...(notes === '' ? {} : { notes }),
+    ...(vendor === '' ? {} : { vendor }),
   };
 }
 

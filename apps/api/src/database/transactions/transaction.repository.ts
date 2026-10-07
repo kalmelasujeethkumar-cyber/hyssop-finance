@@ -54,6 +54,8 @@ export interface CorrectableTransactionFields {
    * different category than the expense's.
    */
   readonly expenseReasonId?: string | null;
+  /** `REQ-EXP-006`: optional structured vendor for expenses, correctable. */
+  readonly vendor?: string | null;
 }
 
 export interface CreateTransactionInput {
@@ -71,6 +73,7 @@ export interface CreateTransactionInput {
   readonly contributionPeriodId?: string | null;
   readonly categoryId?: string | null;
   readonly expenseReasonId?: string | null;
+  readonly vendor?: string | null;
 }
 
 export interface CorrectTransactionInput extends CorrectableTransactionFields {
@@ -92,6 +95,7 @@ const CORRECTABLE_FIELDS: readonly (keyof CorrectableTransactionFields)[] = [
   'memberId',
   'categoryId',
   'expenseReasonId',
+  'vendor',
 ];
 
 /**
@@ -706,6 +710,8 @@ export class TransactionRepository {
       });
     }
 
+    const vendor = input.vendor ?? null;
+
     return {
       transactionType: input.transactionType,
       amountPaise: input.amountPaise,
@@ -714,6 +720,7 @@ export class TransactionRepository {
       occurredAt: input.occurredAt,
       description: input.description ?? null,
       notes: input.notes ?? null,
+      vendor,
       incomeType,
       memberId,
       contributionPeriodId,
@@ -746,7 +753,8 @@ export class TransactionRepository {
         field === 'notes' ||
         field === 'memberId' ||
         field === 'categoryId' ||
-        field === 'expenseReasonId'
+        field === 'expenseReasonId' ||
+        field === 'vendor'
       ) {
         const value = input[field];
 
@@ -788,8 +796,11 @@ export class TransactionRepository {
       // storing it would make the audit trail describe the *current* name of a category or reason
       // rather than the one in force at the time.
       expenseReasonId: transaction.expenseReasonId,
+      vendor: transaction.vendor,
       memberId: transaction.memberId,
       contributionPeriodId: transaction.contributionPeriodId,
+      voidedAt: transaction.voidedAt === null ? null : transaction.voidedAt.toISOString(),
+      voidedByAdminId: transaction.voidedByAdminId,
       voidReason: transaction.voidReason,
       revision: transaction.revision,
     };

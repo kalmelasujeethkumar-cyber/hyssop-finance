@@ -13,7 +13,7 @@ This document specifies the proposed PostgreSQL and Prisma design. No schema, mi
 
 ## Persistence responsibility and references
 
-This document implements the persistence side of `REQ-FIN-001` through `REQ-FIN-003`, `REQ-FIN-005` through `REQ-FIN-020`, `REQ-MEM-001` through `REQ-MEM-006`, `REQ-CONTRIB-001` through `REQ-CONTRIB-003`, `REQ-DOC-007` through `REQ-DOC-009`, `REQ-DOC-013`, `REQ-EXP-001` through `REQ-EXP-004`, and `REQ-SETTINGS-001` through `REQ-SETTINGS-007`. The product statements remain in `01-REQUIREMENTS.md`; the API and UI consume these invariants rather than restating them.
+This document implements the persistence side of `REQ-FIN-001` through `REQ-FIN-003`, `REQ-FIN-005` through `REQ-FIN-020`, `REQ-MEM-001` through `REQ-MEM-006`, `REQ-CONTRIB-001` through `REQ-CONTRIB-003`, `REQ-DOC-007` through `REQ-DOC-009`, `REQ-DOC-013`, `REQ-EXP-001` through `REQ-EXP-004`, `REQ-EXP-006` and `REQ-EXP-007`, and `REQ-SETTINGS-001` through `REQ-SETTINGS-007`. The product statements remain in `01-REQUIREMENTS.md`; the API and UI consume these invariants rather than restating them.
 
 `occurred_at` is the recorded instant; `business_date` is the Asia/Kolkata accounting and filter date used by financial periods. A record is valid for aggregation when it is persisted as `ACTIVE` and satisfies the database type and association constraints. The application must not introduce an undocumented third transaction status.
 
@@ -76,6 +76,7 @@ Required columns:
 - `income_type income_type NULL`
 - `category_id UUID NULL REFERENCES expense_category(id) ON DELETE RESTRICT`
 - `expense_reason_id UUID NULL REFERENCES expense_reason(id) ON DELETE RESTRICT`
+- `vendor TEXT NULL` — optional structured name of whom the church bought a product or service from (`REQ-EXP-006`); metadata only, never participating in aggregation, balance, method, or status rules
 - `notes TEXT NULL`
 - `voided_at TIMESTAMPTZ NULL`
 - `voided_by_admin_id UUID NULL REFERENCES admin_user(id) ON DELETE RESTRICT`
@@ -95,6 +96,16 @@ Database checks must enforce the type-specific shape:
 - `status = 'ACTIVE'` requires void columns to be null; `status = 'VOIDED'` requires `voided_at`, `voided_by_admin_id`, and a non-empty `void_reason`.
 
 Application validation and database constraints must both exist. The database is the final guard.
+
+## Optional vendor field
+
+The optional, nullable `vendor TEXT NULL` column on `financial_transaction` stores the structured name of whom the church bought a product or service from. It is metadata, not a monetary or ledger field, and it must not participate in any aggregation, balance, method, or status rule. BIGINT paise storage, exact-money invariants, the `ACTIVE`/`VOIDED` status rules, and the correction/void workflows are unchanged.
+
+- `vendor` is optional: `NULL` when the Admin provides no vendor, for new and existing rows alike.
+- No backfill: existing expense rows remain `NULL` until an Admin supplies a vendor.
+- Not unique and not immutable: like description and notes, the value may be changed (or cleared) through the validated correction workflow and is recorded in the before/after audit event.
+- Trimmed and length-capped at the API boundary (`VENDOR_MAX_LENGTH`, see `06-API-SPEC.md`); it never holds a storage key, file path, or URL.
+- The change is an additive, reviewed migration (`20261007120000_expense_vendor`), preserving the locked invariants per the migration rules above.
 
 ## Contribution periods
 

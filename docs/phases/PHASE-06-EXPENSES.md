@@ -4,7 +4,7 @@
 
 - Owns: expense commands and reads, the initial category set, per-category expense reasons, custom category and reason lifecycle, and the expense missing-receipt state.
 - Does not own: reusable document storage implementation, dashboard aggregation, reports, or requirement definitions.
-- Primary owned requirements: `REQ-EXP-001`–`REQ-EXP-005`, `REQ-DOC-003`.
+- Primary owned requirements: `REQ-EXP-001`–`REQ-EXP-005`, `REQ-DOC-003`, `REQ-EXPORT-003`.
 - Consumed requirements: `REQ-AUTH-*`, `REQ-FIN-015`–`REQ-FIN-020`, `REQ-DASH-*`, `REQ-REPORT-*`, and `REQ-DOC-001`–`REQ-DOC-009` for association integration.
 - Authority references: `01-REQUIREMENTS.md`, `02-ARCHITECTURE.md`, `05-DATABASE-SPEC.md`, `06-API-SPEC.md`, `07-SECURITY-RULES.md`, `10-TEST-PLAN.md`, and `14-TRACEABILITY-MATRIX.md`.
 - Deliverables: expense create/read/update/void, category management, method/date handling, and **Receipt Missing** state.

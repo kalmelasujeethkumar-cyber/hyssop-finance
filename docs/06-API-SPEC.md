@@ -96,7 +96,7 @@ All create and mutation endpoints require an idempotency key for safe retries. R
 
 ## Expenses and categories
 
-- `POST /api/v1/expenses` — create an expense with category, reason, amount, method, and business date. The reason must exist, be `ACTIVE`, and belong to the chosen category (`REQ-EXP-005`); a missing, unknown, inactive, or wrong-category reason is rejected with `400 VALIDATION_FAILED` naming `expenseReasonId`.
+- `POST /api/v1/expenses` — create an expense with category, reason, amount, method, business date, and an optional vendor. The reason must exist, be `ACTIVE`, and belong to the chosen category (`REQ-EXP-005`); a missing, unknown, inactive, or wrong-category reason is rejected with `400 VALIDATION_FAILED` naming `expenseReasonId`.
 - `GET /api/v1/expenses` — paginated expense list with filters. Search matches reference, description, member, category name, and reason (`REQ-EXP-005`); Notes are excluded. Filters include `categoryId`, `status`, `paymentMethod`, date range, amount range, `sort`, and `direction`.
 - `GET /api/v1/expenses/categories` — active categories.
 - `POST /api/v1/expenses/categories` — create a custom category.
@@ -104,6 +104,13 @@ All create and mutation endpoints require an idempotency key for safe retries. R
 - `GET /api/v1/expenses/reasons?categoryId=` — the active reasons of one category, for a new expense. `categoryId` is required; for an unknown category the answer is `404 NOT_FOUND` rather than an empty list, so a deleted link cannot look like a category with no reasons. Reads are allowed for inactive categories so history stays durable.
 - `POST /api/v1/expenses/reasons` — create a custom reason under the given `categoryId`. `isSystem` is never accepted; only the name is, and it is unique case-insensitively within the category with `409 CONFLICT` on a duplicate.
 - `PATCH /api/v1/expenses/reasons/:id` — rename or deactivate a reason; never silently delete history. A deactivated reason stays readable on its historical expenses (`REQ-EXP-005`).
+
+### Optional vendor and form-level receipt selection
+
+- `CreateExpenseDto` and `CorrectTransactionDto` accept an optional `vendor` string, trimmed and length-capped at `VENDOR_MAX_LENGTH` (120), protected by the existing whitelist and `forbidNonWhitelisted` validation so an unknown field remains rejected. An omitted or empty value records no vendor; an expense correction may clear a stored vendor with an explicitly empty value.
+- The vendor is a canonical property of the expense projection: it is returned consistently by the create response, the expense list, the transaction detail, the correction response, the reports, and the CSV export, so the field never silently disappears between surfaces. Income transactions return `vendor: null` and never accept the field.
+- Receipt selection in the Record Expense form is a two-step flow, not a combined multipart create: `POST /api/v1/expenses` creates the expense and returns its transaction id, then the form uploads the chosen file to `POST /api/v1/transactions/{id}/documents` and updates the receipt status from that result. If the expense is created but the upload fails, the expense exists without a receipt and the client reports that honestly; a retry uploads to the same transaction and never creates a second expense. No new endpoints are required.
+- CSV: the column order is `Expense ID`, `Expense Date`, `Category`, `Reason`, `Vendor`, `Amount`, `Payment Method`, `Notes`, `Receipt URL` (see below).
 
 ## Documents
 
@@ -148,10 +155,13 @@ The rows come from the same ledger query and the same forced `transactionType = 
 
 The row limit is `CSV_EXPORT_MAX_ROWS` (10,000), not the 1,000-row screen cap: a spreadsheet has no scrolling problem. The cap is enforced by refusing, never by truncating — the query reads `CSV_EXPORT_MAX_ROWS + 1` rows and, if more matched, returns `400 VALIDATION_FAILED` on `categoryId` telling the Admin to narrow the filters. No incomplete file is ever produced.
 
-Columns, in this exact order: `Expense ID`, `Expense Date`, `Category`, `Reason`, `Amount`, `Payment Method`, `Notes`, `Receipt URL`.
+Columns, in this exact order: `Expense ID`, `Expense Date`, `Category`, `Reason`, `Vendor`, `Amount`, `Payment Method`, `Notes`, `Receipt URL`.
+
+`Vendor` sits between `Reason` and `Amount`: the trimmed structured vendor name exactly as stored, exported as guarded text when present and as an empty cell when absent, following the same absent-value rule as Notes and Receipt URL.
 
 - `Expense ID` is the human reference such as `HY-EXP-000001`, never the internal UUID.
 - `Expense Date` is `DD-MM-YYYY`. The API and database keep `YYYY-MM-DD`; this is the one place the business date is re-rendered for a human.
+- `Vendor` is the trimmed structured vendor name exactly as stored, a guarded text cell like Category and Reason — never a formula, storage key, path, or URL.
 - `Amount` is the exact ungrouped decimal string produced by `formatPaise`, such as `2450.75`. It is never grouped, rounded, or converted to a spreadsheet formula.
 - `Payment Method` is human-readable: `Cash`, `UPI`, `Bank Transfer`.
 - `Receipt URL` is the authenticated relative download path `/api/v1/documents/{id}/download`, never a storage key, never a `file://` path, and never an absolute URL, because the sheet leaves this application.

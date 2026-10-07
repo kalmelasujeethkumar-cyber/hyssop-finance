@@ -20,9 +20,9 @@
 
 | Measure | Count |
 |---|---:|
-| Required `REQ-*` identifiers | 119 |
+| Required `REQ-*` identifiers | 134 |
 | Verification identifiers | 24 |
-| Phases with a primary owner | 12 of 13; Phase 00 owns no product requirement |
+| Phases with a primary owner | 13 of 14; `PHASE-13-EXPENSE-VENDOR-RECEIPTS` is planned (no phase document yet) and Phase 00 owns no product requirement |
 | Orphan requirements | 0 |
 | Unmapped required requirements | 0 |
 | Multiple primary phase owners | 0 |
@@ -38,14 +38,17 @@
 | `PHASE-03-AUTH` | 4 | Admin authentication, sessions, CSRF, and security events |
 | `PHASE-04-MEMBERS` | 10 | Members, references, periods, and derived contribution status |
 | `PHASE-05-INCOME` | 19 | Income commands, receipts, correction, void, and income audit |
-| `PHASE-06-EXPENSES` | 5 | Expenses, categories, and missing-receipt state |
+| `PHASE-06-EXPENSES` | 7 | Expenses, categories, missing-receipt state, and the filtered expense CSV contract |
 | `PHASE-07-DOCUMENTS` | 8 | Reusable storage, document lifecycle, and authorized access |
 | `PHASE-08-DASHBOARD` | 31 | Canonical calculation projections and dashboard |
 | `PHASE-09-REPORTS` | 8 | Reports, search, CSV, and print |
 | `PHASE-10-AUDIT-SETTINGS` | 11 | Dedicated audit interface and demo settings |
 | `PHASE-11-UI-INTEGRATION` | 13 | Integrated accessible responsive experience |
 | `PHASE-12-FINAL-QA` | 2 | Complete evidence and deployment verification |
-| **Total** | **119** | |
+| `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | 13 | (planned, not yet authored) improved expense recording: optional structured Vendor field and optional receipt/document selection during Record Expense |
+| **Total** | **134** | |
+
+> `PHASE-13-EXPENSE-VENDOR-RECEIPTS` is a planned primary owner introduced by the Phase 2 change-control step. No phase document exists for it yet; it is listed here so the new requirements have exactly one designated implementation owner.
 
 ## Requirement register
 
@@ -98,6 +101,11 @@
 | `REQ-EXP-003` | `PHASE-06-EXPENSES` | `01-REQUIREMENTS` §Financial records | `TEST-EXP-001`, `TEST-E2E-001` |
 | `REQ-EXP-004` | `PHASE-06-EXPENSES` | `01-REQUIREMENTS` §Financial records | `TEST-EXP-001`, `TEST-FIN-003` |
 | `REQ-EXP-005` | `PHASE-06-EXPENSES` | `01-REQUIREMENTS` §Financial records | `TEST-EXP-001`, `TEST-FIN-003` |
+| `REQ-EXP-006` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Financial records | `TEST-EXP-001 (planned extension)` |
+| `REQ-EXP-007` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Financial records | `TEST-EXP-001 (planned extension)` |
+| `REQ-EXP-008` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Financial records | `TEST-EXP-001 (planned extension)` |
+| `REQ-EXP-009` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Financial records | `TEST-EXP-001 (planned extension)` |
+| `REQ-EXP-010` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Financial records | `TEST-EXPORT-001 (planned extension)` |
 | `REQ-DOC-001` | `PHASE-07-DOCUMENTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-001`, `TEST-E2E-001` |
 | `REQ-DOC-002` | `PHASE-07-DOCUMENTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-001` |
 | `REQ-DOC-003` | `PHASE-06-EXPENSES` | `01-REQUIREMENTS` §Documents | `TEST-DOC-001`, `TEST-E2E-001` |
@@ -112,6 +120,14 @@
 | `REQ-DOC-012` | `PHASE-05-INCOME` | `01-REQUIREMENTS` §Receipts | `TEST-INCOME-001`, `TEST-SEC-001` |
 | `REQ-DOC-013` | `PHASE-05-INCOME` | `01-REQUIREMENTS` §Receipts | `TEST-INCOME-001`, `TEST-FIN-002` |
 | `REQ-DOC-014` | `PHASE-05-INCOME` | `01-REQUIREMENTS` §Receipts | `TEST-INCOME-001` |
+| `REQ-DOC-015` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-001 (planned extension)` |
+| `REQ-DOC-016` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-001 (planned extension)` |
+| `REQ-DOC-017` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-001 (planned extension)`, `TEST-FIN-003 (planned extension)` |
+| `REQ-DOC-018` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-FIN-003 (planned extension)` |
+| `REQ-DOC-019` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-FIN-003 (planned extension)`, `TEST-DOC-001 (planned extension)` |
+| `REQ-DOC-020` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-001 (planned extension)` |
+| `REQ-DOC-021` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-002 (planned extension)`, `TEST-SEC-001 (planned extension)` |
+| `REQ-DOC-022` | `PHASE-13-EXPENSE-VENDOR-RECEIPTS` | `01-REQUIREMENTS` §Documents | `TEST-DOC-002 (planned extension)` |
 | `REQ-REPORT-001` | `PHASE-09-REPORTS` | `01-REQUIREMENTS` §Search, reports, and export | `TEST-REPORT-001`, `TEST-E2E-001` |
 | `REQ-REPORT-002` | `PHASE-09-REPORTS` | `01-REQUIREMENTS` §Search, reports, and export | `TEST-REPORT-001`, `TEST-CONTRIB-001` |
 | `REQ-REPORT-003` | `PHASE-09-REPORTS` | `01-REQUIREMENTS` §Search, reports, and export | `TEST-REPORT-001`, `TEST-RESP-002` |
@@ -173,6 +189,14 @@
 | `REQ-FIN-026` | `PHASE-01-FOUNDATION` | `01-REQUIREMENTS` §Technology and deployment direction | `TEST-FIN-001` |
 | `REQ-FIN-027` | `PHASE-12-FINAL-QA` | `01-REQUIREMENTS` §Technology and deployment direction | `TEST-DEPLOY-001` |
 
+## Phase 2 change-control mapping (planned additions)
+
+Thirteen requirements (`REQ-EXP-006` through `REQ-EXP-010` and `REQ-DOC-015` through `REQ-DOC-022`) were added to `01-REQUIREMENTS.md` by the Phase 2 documentation and change-control step (`DEC-113`, `ISSUE-055`). They map to the planned primary owner `PHASE-13-EXPENSE-VENDOR-RECEIPTS`.
+
+The verification cells above reference existing `TEST-*` identifiers from `10-TEST-PLAN.md` with the annotation **planned extension**; no new `TEST-*` identifier is invented here, and `10-TEST-PLAN.md` is intentionally not changed in Phase 2. The two-way coverage consistency audit for these new rows therefore becomes enforceable when the Phase 13 test-plan extension is authorized; it is prospective until then. The strict registration audits (orphans, unmapped required requirements, multiple primary owners) are all `0` from today.
+
+This step also surfaced a pre-existing traceability gap that predates Phase 2: the register already assigned `REQ-EXPORT-003` to `PHASE-06-EXPENSES`, but `PHASE-06-EXPENSES.md`'s primary-owned list (which names `REQ-EXP-001`–`REQ-EXP-005` and `REQ-DOC-003`) does not list it, and the phase-ownership map count claimed 5 while the register held 7 rows. The register is the authoritative mapping, so this matrix now reports the register's true totals (134 required identifiers, Phase 06 = 7). Updating `PHASE-06-EXPENSES.md` to list `REQ-EXPORT-003` is a phase-document change that this prompt does not authorize; it is flagged for the Phase 13 implementation prompt.
+
 ## Integration and dependency notes
 
 - Phase 02 owns shared idempotency persistence; every later create or mutation module consumes it and is verified by `TEST-FIN-003`.
@@ -180,20 +204,21 @@
 - Phase 08 owns the canonical calculation/query layer. Phases 09, 10, and 11 consume its projections; they do not recalculate financial totals independently.
 - Phase 09 provides the minimal canonical audit-read projection needed by the Audit Report; Phase 10 owns the full dedicated Audit History interface.
 - Phase 06 owns the category data lifecycle; Phase 10 owns the Settings entry point that exposes it.
+- Phase 13 (planned) consumes the Phase 06 expense contracts and the Phase 07 document storage/lifecycle rather than creating a second upload system.
 - A later phase may regression-test an earlier requirement, but the primary owner column remains the single acceptance owner.
 
 ## Audit result
 
 Verified by identifier-set comparison between `docs/01-REQUIREMENTS.md`, `docs/10-TEST-PLAN.md`, the register below, and the primary owned requirement lists in `docs/phases/`.
 
-- Requirement coverage: **119 of 119 mapped**, with contiguous, unique identifiers and no duplicates.
+- Requirement coverage: **134 of 134 mapped**, with contiguous, unique identifiers and no duplicates.
 - Verification identifiers: **24**, each referenced by at least one requirement row.
 - Orphan requirements: **0**.
 - Unmapped required requirements: **0**.
 - Multiple primary phase owners: **0**.
 - Unresolved specification conflicts: **0**.
-- Phase owned-requirement lists: **13 of 13 match the register**.
-- Traceability matrix: **COMPLETE**.
+- Phase owned-requirement lists: **13 of 14 registered phases**; `PHASE-06-EXPENSES.md` has a pre-existing coverage gap for `REQ-EXPORT-003` (discussed in the change-control note below) and `PHASE-13-EXPENSE-VENDOR-RECEIPTS` is planned without a document yet.
+- Traceability matrix: **COMPLETE** (includes the planned Phase 13 mapping).
 - Documentation ownership audit: **PASS**.
 
 ### Corrections applied during the Prompt 01B audit

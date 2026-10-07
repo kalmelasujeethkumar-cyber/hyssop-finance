@@ -993,6 +993,7 @@ function toExpenseCsvRow(row: {
   readonly paymentMethod: PaymentMethod;
   readonly businessDate: Date;
   readonly notes: string | null;
+  readonly vendor: string | null;
   readonly category: { readonly name: string } | null;
   readonly expenseReason: { readonly name: string } | null;
   readonly documents: readonly { readonly id: string }[];
@@ -1008,6 +1009,7 @@ function toExpenseCsvRow(row: {
     expenseDate: formatBusinessDateForExport(row.businessDate),
     categoryName: row.category.name,
     reasonName: row.expenseReason.name,
+    vendor: row.vendor,
     amount: formatPaise(row.amountPaise),
     paymentMethod: row.paymentMethod,
     notes: row.notes,

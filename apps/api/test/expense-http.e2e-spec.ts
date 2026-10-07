@@ -2020,7 +2020,7 @@ describe('Expense and category HTTP contract', () => {
       const [header, ...rows] = response.text.trimEnd().split('\r\n');
 
       expect(header).toBe(
-        'Expense ID,Expense Date,Category,Reason,Amount,Payment Method,Notes,Receipt URL',
+        'Expense ID,Expense Date,Category,Reason,Vendor,Amount,Payment Method,Notes,Receipt URL',
       );
       // The other category holds REPAIRS, VOIDED_EXPENSE, and ATTACHED_RECEIPT, and nothing that
       // belongs to CATEGORY_ID may leak in -- a filter the file ignores would still look plausible.
@@ -2036,7 +2036,7 @@ describe('Expense and category HTTP contract', () => {
 
       // The row has no notes and no receipt, so the last two cells are both empty. `Receipt Missing`
       // is the *screen's* wording under `REQ-DOC-003`; in a URL column it would read as a value.
-      expect(row).toBe('HY-EXP-000001,05-09-2026,Electricity,Electricity Bill,450.00,UPI,,');
+      expect(row).toBe('HY-EXP-000001,05-09-2026,Electricity,Electricity Bill,,450.00,UPI,,');
       expect(response.text).not.toContain('Receipt Missing');
     });
 
@@ -2045,7 +2045,7 @@ describe('Expense and category HTTP contract', () => {
       const row = dataLines(response.text).find((line) => line.startsWith('HY-EXP-000005,'));
 
       expect(row).toBe(
-        `HY-EXP-000005,08-09-2026,Repairs,Other,600.00,Cash,,` +
+        `HY-EXP-000005,08-09-2026,Repairs,Other,,600.00,Cash,,` +
           `/api/v1/documents/${ATTACHED_RECEIPT}-document-1/download`,
       );
     });
@@ -2072,7 +2072,7 @@ describe('Expense and category HTTP contract', () => {
       // too, and `status` is the filter an Admin uses to exclude them. Asserted explicitly because
       // this is the one behaviour that could silently change the meaning of a downloaded file.
       expect(active.text).toContain('HY-EXP-000004');
-      expect(active.text).toContain('HY-EXP-000004,06-09-2026,Repairs,Other,300.00,Cash,,');
+      expect(active.text).toContain('HY-EXP-000004,06-09-2026,Repairs,Other,,300.00,Cash,,');
 
       expect(onlyActive.text).not.toContain('HY-EXP-000004');
       expect(dataLines(onlyActive.text)).toHaveLength(2);
@@ -2098,7 +2098,7 @@ describe('Expense and category HTTP contract', () => {
 
       // Retiring a category stops it being *chosen* for new expenses. The expenses already recorded
       // under it stay exportable, or a month could not be closed out after the fact.
-      expect(row).toBe('HY-EXP-000003,11-07-2026,Retired category,Other,80.00,Cash,,');
+      expect(row).toBe('HY-EXP-000003,11-07-2026,Retired category,Other,,80.00,Cash,,');
     });
 
     it('writes only the header when a filter matches no expense', async () => {
@@ -2109,7 +2109,7 @@ describe('Expense and category HTTP contract', () => {
       expect(response.status).toBe(200);
       expect(response.text.trimEnd().split('\r\n')).toHaveLength(1);
       expect(response.text).toBe(
-        'Expense ID,Expense Date,Category,Reason,Amount,Payment Method,Notes,Receipt URL\r\n',
+        'Expense ID,Expense Date,Category,Reason,Vendor,Amount,Payment Method,Notes,Receipt URL\r\n',
       );
     });
 
@@ -2121,7 +2121,7 @@ describe('Expense and category HTTP contract', () => {
       const row = dataLines(response.text).find((line) => line.startsWith('HY-EXP-000002,'));
 
       expect(row).toBe(
-        'HY-EXP-000002,20-08-2026,Repairs,Other,123.45,Cash,' +
+        'HY-EXP-000002,20-08-2026,Repairs,Other,,123.45,Cash,' +
           'Bought from the hardware shop on main street,',
       );
 

@@ -111,6 +111,7 @@ function completeTransactionRow(
     category: null,
     // Income carries no reason, which is what `REQ-EXP-005` requires of every income row.
     expenseReason: null,
+    vendor: null,
     contributionPeriod: null,
     voidReason: null,
     voidedAt: null,
@@ -272,6 +273,7 @@ describe('the expense transactions CSV export', () => {
       expenseDate: '18-09-2026',
       categoryName: 'Repairs',
       reasonName: 'Equipment Repair',
+      vendor: null,
       amount: '800.00',
       paymentMethod: 'CASH',
       notes: null,
@@ -288,6 +290,7 @@ describe('the expense transactions CSV export', () => {
       'Expense Date',
       'Category',
       'Reason',
+      'Vendor',
       'Amount',
       'Payment Method',
       'Notes',
@@ -295,7 +298,7 @@ describe('the expense transactions CSV export', () => {
     ]);
     expect(csv).toBe(
       `${EXPENSE_TRANSACTION_CSV_COLUMNS.join(',')}\r\n` +
-        'HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,\r\n',
+        'HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,,800.00,Cash,,\r\n',
     );
   });
 
@@ -306,7 +309,7 @@ describe('the expense transactions CSV export', () => {
     // The column holds URLs, so an absent receipt is an empty cell rather than placeholder words
     // that would look like a link a spreadsheet might try to open. `REQ-DOC-003` still requires
     // the *interface* to say **Receipt Missing**; that is a screen obligation and stops here.
-    expect(row).toBe('HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,');
+    expect(row).toBe('HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,,800.00,Cash,,');
     expect(row).not.toContain('Receipt Missing');
     expect(row.endsWith(',')).toBe(true);
   });
@@ -315,7 +318,7 @@ describe('the expense transactions CSV export', () => {
     const csv = expenseTransactionsToCsv([expenseRow({ receiptUrl: RECEIPT_PATH })]);
 
     expect(linesOf(csv)[1]).toBe(
-      `HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,${RECEIPT_PATH}`,
+      `HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,,800.00,Cash,,${RECEIPT_PATH}`,
     );
   });
 
@@ -327,7 +330,7 @@ describe('the expense transactions CSV export', () => {
     // `2450.75`, not `2,450.75`: a grouped amount would not re-import as the same number, and the
     // stored paise must survive the export unaltered.
     expect(linesOf(csv)[1]).toBe(
-      'HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,2450.75,Bank Transfer,Paid by transfer,',
+      'HY-EXP-000001,18-09-2026,Repairs,Equipment Repair,,2450.75,Bank Transfer,Paid by transfer,',
     );
   });
 
@@ -340,7 +343,7 @@ describe('the expense transactions CSV export', () => {
     // or `@`. `csv.ts` prefixes such a cell with a single quote, which spreadsheets display as a
     // literal character and never execute -- so the guard is asserted in that exact form rather
     // than as double quotes, which would mean structural quoting instead of the guard.
-    expect(linesOf(csv)[1]).toBe("HY-EXP-000001,18-09-2026,'=cmd(),'+1+1,800.00,Cash,'@SUM(A1),");
+    expect(linesOf(csv)[1]).toBe("HY-EXP-000001,18-09-2026,'=cmd(),'+1+1,,800.00,Cash,'@SUM(A1),");
   });
 
   it('quotes a note containing a comma without splitting the row', () => {
@@ -356,6 +359,7 @@ describe('the expense transactions CSV export', () => {
       '18-09-2026',
       'Repairs',
       'Equipment Repair',
+      '',
       '800.00',
       'Cash',
       'Bought on 2 Sept, cash',

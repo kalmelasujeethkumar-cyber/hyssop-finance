@@ -51,6 +51,7 @@ export function toTransactionSummary(row: TransactionWithRelations): Transaction
     member: anonymous || row.member === null ? null : row.member,
     category: row.category,
     expenseReason: row.expenseReason,
+    vendor: row.vendor,
     contributionPeriod: row.contributionPeriod,
     voidReason: row.voidReason,
     voidedAt: row.voidedAt === null ? null : row.voidedAt.toISOString(),
@@ -91,6 +92,7 @@ export function toExpenseSummary(row: TransactionWithRelations): ExpenseSummary 
     ...toTransactionSummary(row),
     category: row.category,
     expenseReason: row.expenseReason,
+    vendor: row.vendor,
     hasReceipt: row.documents.length > 0,
   };
 }

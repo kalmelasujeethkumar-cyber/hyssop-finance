@@ -108,6 +108,13 @@ export interface ExpenseReasonView {
 /** `docs/05-DATABASE-SPEC.md`: a reason name is unique per category and bounded. */
 export const EXPENSE_REASON_NAME_MAX_LENGTH = 80;
 
+/**
+ * `docs/05-DATABASE-SPEC.md` (`vendor TEXT NULL`) and `06-API-SPEC.md`: the optional vendor is
+ * trimmed and length-capped at the API boundary (`REQ-EXP-006`). 120 characters covers a full
+ * vendor trading name without widening the list, detail, or CSV surface.
+ */
+export const VENDOR_MAX_LENGTH = 120;
+
 /** The filters `GET /api/v1/expenses` supports, matching the income list filters. */
 export interface ExpenseListFilters {
   readonly search: string;

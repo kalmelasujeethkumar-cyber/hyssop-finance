@@ -101,7 +101,7 @@ model AdminUser {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  sessions             AdminSession[]
+  sessions            AdminSession[]
   createdTransactions FinancialTransaction[] @relation("TransactionCreatedBy")
   voidedTransactions  FinancialTransaction[] @relation("TransactionVoidedBy")
   uploadedDocuments   TransactionDocument[]  @relation("DocumentUploadedBy")
@@ -199,7 +199,7 @@ model ExpenseCategory {
   updatedAt      DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   transactions FinancialTransaction[]
-  reasons        ExpenseReason[]
+  reasons      ExpenseReason[]
 
   @@unique([normalizedName], map: "expense_category_normalized_name_key")
   @@map("expense_category")
@@ -227,7 +227,7 @@ model ExpenseReason {
   createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  category     ExpenseCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category     ExpenseCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   transactions FinancialTransaction[]
 
   @@unique([categoryId, normalizedName], map: "expense_reason_category_normalized_name_key")
@@ -255,6 +255,9 @@ model FinancialTransaction {
   /// `REQ-EXP-005`: an expense must name one reason from its category. Null only during the
   /// additive migration, before the backfill; the `expense_shape` CHECK enforces it afterwards.
   expenseReasonId      String?           @map("expense_reason_id") @db.Uuid
+  /// `REQ-EXP-006`: optional structured vendor for expenses (metadata only; does not affect
+  /// monetary calculations). Stored as trimmed text when present.
+  vendor               String?           @db.Text
   notes                String?           @db.Text
   voidedAt             DateTime?         @map("voided_at") @db.Timestamptz(6)
   voidedByAdminId      String?           @map("voided_by_admin_id") @db.Uuid

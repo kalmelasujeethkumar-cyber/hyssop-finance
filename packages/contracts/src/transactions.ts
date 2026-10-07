@@ -209,6 +209,14 @@ export interface TransactionSummary {
   readonly category: TransactionCategoryRef | null;
   /** Set only for expenses, per `REQ-EXP-005`. */
   readonly expenseReason: TransactionExpenseReasonRef | null;
+  /**
+   * The optional structured vendor on an expense (`REQ-EXP-006`), or `null` on income.
+   *
+   * Metadata only: it never alters any monetary projection or aggregation. It is trimmed and
+   * length-capped at `VENDOR_MAX_LENGTH` by the API, and shown in the expense list, the
+   * expense detail, and the CSV export.
+   */
+  readonly vendor: string | null;
   readonly contributionPeriod: TransactionContributionPeriodRef | null;
   /** Non-null exactly when `status` is `VOIDED`. */
   readonly voidReason: string | null;

@@ -8,6 +8,7 @@ import {
   PAYMENT_METHODS,
   TRANSACTION_DESCRIPTION_MAX_LENGTH,
   TRANSACTION_NOTES_MAX_LENGTH,
+  VENDOR_MAX_LENGTH,
   type CategoryStatus,
   type ExpenseReasonStatus,
   type PaymentMethod,
@@ -109,6 +110,12 @@ export class CreateExpenseDto {
   @IsString()
   @MaxLength(TRANSACTION_DESCRIPTION_MAX_LENGTH)
   public description?: string;
+
+  @IsOptional()
+  @trimmed()
+  @IsString()
+  @MaxLength(VENDOR_MAX_LENGTH)
+  public vendor?: string;
 
   @IsOptional()
   @trimmed()

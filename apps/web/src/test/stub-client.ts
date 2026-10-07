@@ -276,6 +276,7 @@ export const INCOME_ONE: TransactionSummary = {
   member: { id: MEMBER_ONE.id, referenceId: MEMBER_ONE.referenceId, name: MEMBER_ONE.name },
   category: null,
   expenseReason: null,
+  vendor: null,
   contributionPeriod: { id: MEMBER_ONE_PERIODS[0]?.id ?? '', year: 2026, month: 3 },
   voidReason: null,
   voidedAt: null,
@@ -301,6 +302,7 @@ export const INCOME_TWO: TransactionSummary = {
   member: null,
   category: null,
   expenseReason: null,
+  vendor: null,
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -332,6 +334,7 @@ export const INCOME_VOIDED: TransactionSummary = {
   member: { id: MEMBER_TWO.id, referenceId: MEMBER_TWO.referenceId, name: MEMBER_TWO.name },
   category: null,
   expenseReason: null,
+  vendor: null,
   contributionPeriod: null,
   voidReason: 'Recorded against the wrong member',
   voidedAt: '2026-05-12T05:00:00.000Z',
@@ -363,6 +366,7 @@ export const INCOME_ANONYMOUS: TransactionSummary = {
   member: null,
   category: null,
   expenseReason: null,
+  vendor: null,
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -500,6 +504,7 @@ export const EXPENSE_ONE: ExpenseSummary = {
     'Electricity Bill',
     ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
   ),
+  vendor: null,
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -536,6 +541,7 @@ export const EXPENSE_TWO: ExpenseSummary = {
     'Equipment Repair',
     ACTIVE_EXPENSE_CATEGORIES[1]?.id ?? '',
   ),
+  vendor: null,
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -575,6 +581,7 @@ export const EXPENSE_RETIRED_CATEGORY: ExpenseSummary = {
     RETIRED_CATEGORY_REF.id,
     'INACTIVE',
   ),
+  vendor: null,
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -607,6 +614,7 @@ export const EXPENSE_VOIDED: ExpenseSummary = {
     'Electricity Bill',
     ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
   ),
+  vendor: null,
   contributionPeriod: null,
   voidReason: 'Recorded twice',
   voidedAt: '2026-09-21T06:00:00.000Z',
@@ -1216,9 +1224,9 @@ export const DEFAULT_REPORT_CSV = [
  * order and the exact strings survived the round trip.
  */
 export const DEFAULT_EXPENSE_CSV = [
-  'Expense ID,Expense Date,Category,Reason,Amount,Payment Method,Notes,Receipt URL',
-  'HY-EXP-000001,12-09-2026,Electricity,Electricity Bill,2450.75,Bank Transfer,Paid by transfer,/api/v1/documents/44444444-0000-4000-8000-000000000001/download',
-  'HY-EXP-000002,18-09-2026,Repairs,Equipment Repair,800.00,Cash,,',
+  'Expense ID,Expense Date,Category,Reason,Vendor,Amount,Payment Method,Notes,Receipt URL',
+  'HY-EXP-000001,12-09-2026,Electricity,Electricity Bill,,2450.75,Bank Transfer,Paid by transfer,/api/v1/documents/44444444-0000-4000-8000-000000000001/download',
+  'HY-EXP-000002,18-09-2026,Repairs,Equipment Repair,,800.00,Cash,,',
 ].join('\r\n');
 
 /**
@@ -2230,6 +2238,7 @@ export function stubApiClient(
             // Income carries no reason. The API refuses the field on an income write, and a stub
             // that invented one would hide a screen that wrongly sent it.
             expenseReason: null,
+            vendor: null,
             contributionPeriod:
               input.incomeType === 'MEMBER_CONTRIBUTION' && namedMember !== undefined
                 ? { id: 'aaaaaaa1-0000-4000-8000-000000000004', year: 2026, month: 9 }
@@ -2355,6 +2364,7 @@ export function stubApiClient(
               categoryId: reason.categoryId,
               status: reason.status,
             },
+            vendor: (input as any).vendor ?? null,
             contributionPeriod: null,
             voidReason: null,
             voidedAt: null,

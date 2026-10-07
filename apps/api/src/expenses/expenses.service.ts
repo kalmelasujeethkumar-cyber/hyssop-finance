@@ -103,6 +103,7 @@ export class ExpensesService {
     const occurredAt = startOfBusinessDay(businessDate);
     const description = input.description ?? null;
     const notes = input.notes ?? null;
+    const vendor = input.vendor ? input.vendor.trim() : null;
 
     const result = await this.idempotency.run<ExpenseSummary>({
       adminUserId: actor.adminUserId,
@@ -116,8 +117,9 @@ export class ExpensesService {
         businessDate: input.businessDate.trim(),
         categoryId: input.categoryId,
         expenseReasonId: input.expenseReasonId,
-        ...(input.description === undefined ? {} : { description: input.description }),
-        ...(input.notes === undefined ? {} : { notes: input.notes }),
+        ...(input.description === undefined ? {} : { description: input.description.trim() }),
+        ...(input.notes === undefined ? {} : { notes: input.notes.trim() }),
+        ...(input.vendor === undefined ? {} : { vendor: input.vendor.trim() }),
       },
       run: async (tx) => {
         const created = await this.transactions.createWithinTransaction(
@@ -130,6 +132,7 @@ export class ExpensesService {
             occurredAt,
             description,
             notes,
+            vendor,
             categoryId: input.categoryId,
             expenseReasonId: input.expenseReasonId,
           },
