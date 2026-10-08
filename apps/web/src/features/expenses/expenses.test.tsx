@@ -1,6 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DOCUMENT_UPLOAD_FIELD } from '@hyssop/contracts';
 import { renderRoute } from '../../test/render';
 import { ApiClientError } from '../../lib/api-client';
 import {
@@ -60,6 +61,16 @@ function renderExpenses(client: StubApiClient, path = '/expenses'): StubApiClien
   renderRoute({ client, path });
 
   return client;
+}
+
+/** A real, small file, so the upload carries the bytes the browser chose rather than a marker. */
+function receiptFile(name = 'bill.jpg', bytes = 4): File {
+  return new File([new Uint8Array(bytes)], name, { type: 'image/jpeg' });
+}
+
+/** A PDF, which a browser cannot render inline, so it must be offered as a file state instead. */
+function pdfFile(name = 'invoice.pdf', bytes = 4): File {
+  return new File([new Uint8Array(bytes)], name, { type: 'application/pdf' });
 }
 
 function lastCallTo(client: StubApiClient, method: string, pathFragment: string) {
@@ -186,6 +197,17 @@ describe('the expense list', () => {
 
     expect(within(table).getByText(EXPENSE_VOIDED.referenceId)).toBeInTheDocument();
     expect(within(table).getByText('Voided')).toBeInTheDocument();
+  });
+
+  it('shows the recorded vendor, and an em dash when none was recorded', async () => {
+    // `REQ-EXP-009` shows the vendor in the list. An absent vendor reads as "not recorded" rather
+    // than a blank cell, which would look like a rendering fault.
+    renderExpenses(stubApiClient());
+
+    const table = await screen.findByRole('table');
+
+    expect(within(table).getByText('KSEB')).toBeInTheDocument();
+    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
   });
 
   it('says Receipt Missing for an expense with no receipt, in the documented words', async () => {
@@ -681,19 +703,263 @@ describe('recording an expense', () => {
     ).toBeInTheDocument();
   });
 
-  it('states up front that the expense is recorded with no receipt', async () => {
-    // A document belongs to a transaction by id, so it can only be attached once the expense exists.
-    // The create form therefore states the state the record will carry and sends the Admin to the
-    // detail screen to attach, rather than holding a file control that has nothing to attach to yet.
+  it('offers an optional receipt control without claiming a receipt up front', async () => {
+    // The receipt is chosen here and attached after the expense is created, so the control is a
+    // *selection*. Until a file is chosen it states that plainly rather than implying a receipt.
     const user = userEvent.setup({ delay: null });
     renderExpenses(stubApiClient());
 
     await screen.findByRole('table');
     await openRecordForm(user);
 
-    expect(await screen.findByText(/recorded with no receipt attached/)).toBeInTheDocument();
-    // No file input, because there is no transaction id to attach it to.
-    expect(document.querySelector('input[type="file"]')).toBeNull();
+    const receipt = screen.getByLabelText('Receipt / Document (optional)');
+
+    expect(receipt).toHaveAttribute('type', 'file');
+    expect(screen.getByText(/no file chosen/i)).toBeInTheDocument();
+    expect(screen.queryByText(/with the receipt attached/i)).not.toBeInTheDocument();
+  });
+
+  it('offers exactly the supported receipt formats on the device picker', async () => {
+    // `REQ-DOC-016`: the picker and the document architecture must agree about what is accepted,
+    // otherwise the Admin chooses a file the API is guaranteed to refuse.
+    const user = userEvent.setup({ delay: null });
+    renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+
+    const accepted = (
+      screen.getByLabelText('Receipt / Document (optional)').getAttribute('accept') ?? ''
+    ).split(',');
+
+    expect(accepted).toEqual(
+      expect.arrayContaining([
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'image/webp',
+        'application/pdf',
+      ]),
+    );
+  });
+
+  it('refuses an unsupported file and records nothing', async () => {
+    // An obviously unsupported file is reported before the request, so the Admin is never left
+    // wondering why a valid-looking expense vanished, and no transaction is created for it.
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseCategory(user, ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    // The device picker filters on `accept`, so the file is applied the way a browser that does not
+    // would be: the form's own check is what has to refuse it.
+    fireEvent.change(screen.getByLabelText('Receipt / Document (optional)'), {
+      target: { files: [new File(['x'], 'notes.txt', { type: 'text/plain' })] },
+    });
+
+    expect(await screen.findByText('Choose a JPG, PNG, WEBP, or PDF file.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+
+    // Still reported, and still no expense: a file the browser already knows is wrong is not
+    // quietly sent, so the Admin fixes the selection instead of getting a record that silently
+    // has no receipt.
+    expect(screen.getByText('Choose a JPG, PNG, WEBP, or PDF file.')).toBeInTheDocument();
+    expect(callsTo(client, 'POST', '/expenses')).toHaveLength(0);
+  });
+
+  it('replaces a chosen receipt with another, releasing the first preview', async () => {
+    const user = userEvent.setup({ delay: null });
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:receipt-preview');
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    try {
+      renderExpenses(stubApiClient());
+      await screen.findByRole('table');
+      await openRecordForm(user);
+
+      const picker = screen.getByLabelText('Receipt / Document (optional)');
+
+      await user.upload(picker, receiptFile('bill.jpg'));
+      expect(await screen.findByAltText(/preview of the receipt bill\.jpg/i)).toBeInTheDocument();
+
+      await user.upload(picker, pdfFile('invoice.pdf'));
+
+      // The new choice is the only one offered for submission, and the superseded image preview
+      // is gone rather than left behind showing a file that will not be sent.
+      expect(await screen.findByText('invoice.pdf')).toBeInTheDocument();
+      expect(screen.queryByText('bill.jpg')).not.toBeInTheDocument();
+      expect(screen.queryByAltText(/preview of the receipt/i)).not.toBeInTheDocument();
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:receipt-preview');
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
+  });
+
+  it('records with a chosen PDF and attaches it, without pretending it was an image', async () => {
+    // A PDF is a supported receipt, so it must go through the same two-step flow as an image while
+    // being shown as the file it is.
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseCategory(user, ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.upload(
+      screen.getByLabelText('Receipt / Document (optional)'),
+      pdfFile('invoice.pdf'),
+    );
+
+    await screen.findByText('invoice.pdf');
+    expect(screen.queryByAltText(/preview of the receipt/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+
+    expect(await screen.findByText(/with the receipt attached/i)).toBeInTheDocument();
+
+    const created = client.transactions.find((row) => row.referenceId === 'HY-EXP-000005');
+    const upload = lastCallTo(client, 'POST', '/documents');
+
+    expect(upload?.path).toBe(`/transactions/${created?.id ?? ''}/documents`);
+    expect((upload?.body as FormData).get(DOCUMENT_UPLOAD_FIELD)).toBeInstanceOf(File);
+  });
+
+  it('records the optional vendor and sends it, trimmed, to the API', async () => {
+    // `REQ-EXP-007`/`REQ-EXP-008`: the vendor is optional and separate from the other free text.
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseCategory(user, ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.type(screen.getByLabelText('Vendor (optional)'), 'KSEB');
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+
+    await screen.findByText(/was recorded as HY-EXP-/);
+
+    const body = lastExactCallTo(client, 'POST', '/expenses')?.body as { vendor?: string };
+
+    expect(body.vendor).toBe('KSEB');
+  });
+
+  it('records with no vendor when the field is left empty, sending no vendor key', async () => {
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseCategory(user, ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+
+    await screen.findByText(/was recorded as HY-EXP-/);
+
+    const body = lastExactCallTo(client, 'POST', '/expenses')?.body as Record<string, unknown>;
+
+    expect(body).not.toHaveProperty('vendor');
+  });
+
+  it('previews a chosen image and revokes the object URL when it is removed', async () => {
+    // An image preview is offered before submission, and the blob URL is released so a chosen and
+    // discarded file does not leak memory. A PDF deliberately has no preview.
+    const user = userEvent.setup({ delay: null });
+    // jsdom's `URL.createObjectURL` is a stub that cannot read a jsdom `File`, so it is replaced
+    // here to prove the browser asks for a preview and releases the URL when the choice changes.
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:receipt-preview');
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    try {
+      renderExpenses(stubApiClient());
+      await screen.findByRole('table');
+      await openRecordForm(user);
+
+      await user.upload(
+        screen.getByLabelText('Receipt / Document (optional)'),
+        receiptFile('bill.jpg'),
+      );
+
+      expect(await screen.findByAltText(/preview of the receipt bill\.jpg/i)).toHaveAttribute(
+        'src',
+        'blob:receipt-preview',
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Remove receipt' }));
+
+      expect(screen.queryByAltText(/preview of the receipt bill\.jpg/i)).not.toBeInTheDocument();
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:receipt-preview');
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
+  });
+
+  it('records the expense first, then attaches the chosen receipt to that record', async () => {
+    // The two-step flow: a document belongs to a transaction by id, so it can only be attached once
+    // the expense exists. The create must come first and the attach must target the created id.
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(stubApiClient());
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseCategory(user, ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.upload(
+      screen.getByLabelText('Receipt / Document (optional)'),
+      receiptFile('bill.jpg'),
+    );
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+
+    expect(await screen.findByText(/with the receipt attached/i)).toBeInTheDocument();
+
+    const create = lastExactCallTo(client, 'POST', '/expenses');
+    const created = client.transactions.find((row) => row.referenceId === 'HY-EXP-000005');
+    const upload = lastCallTo(client, 'POST', '/documents');
+
+    expect(create).toBeDefined();
+    expect(created).toBeDefined();
+    expect(upload?.path).toBe(`/transactions/${created?.id ?? ''}/documents`);
+    // One expense, not two: the attach step added a document, not another transaction.
+    expect(client.transactions.filter((row) => row.type === 'EXPENSE')).toHaveLength(5);
+  });
+
+  it('keeps the saved expense when the receipt fails, and retries the attach on the same record', async () => {
+    // Partial success must be honest: the expense is saved and shown as Receipt Missing, and a
+    // retry attaches to the same record rather than creating a second expense.
+    const user = userEvent.setup({ delay: null });
+    const client = renderExpenses(
+      stubApiClient({ documents: { firstUploadFails: serverFailure } }),
+    );
+
+    await screen.findByRole('table');
+    await openRecordForm(user);
+    await chooseCategory(user, ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '');
+    await user.type(screen.getByLabelText('Amount (required)'), '500');
+    await user.upload(
+      screen.getByLabelText('Receipt / Document (optional)'),
+      receiptFile('bill.jpg'),
+    );
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+
+    // The expense is saved; only the receipt is missing.
+    expect(await screen.findByText(/is saved and will show/i)).toBeInTheDocument();
+    expect(client.transactions.filter((row) => row.type === 'EXPENSE')).toHaveLength(5);
+
+    await user.click(screen.getByRole('button', { name: 'Attach the receipt again' }));
+
+    expect(await screen.findByText(/with the receipt attached/i)).toBeInTheDocument();
+    // One create and two uploads: the retry re-uploaded the receipt without a new expense.
+    expect(callsTo(client, 'POST', '/expenses')).toHaveLength(1);
+    expect(callsTo(client, 'POST', '/documents')).toHaveLength(2);
+    expect(client.transactions.filter((row) => row.type === 'EXPENSE')).toHaveLength(5);
   });
 
   it('adds a custom category inline and selects it, so an expense is never blocked', async () => {
@@ -919,6 +1185,30 @@ describe('one expense record', () => {
     // An expense answers "what was this for", which the category alone cannot. If the reason were
     // missing from the detail view the Admin would have to open the correction form to find out.
     expect(screen.getByText(EXPENSE_ONE.expenseReason.name)).toBeInTheDocument();
+  });
+
+  it('shows the vendor on the record that has one', async () => {
+    // `REQ-EXP-009`. The vendor is a separate fact from the description and notes, so it has its
+    // own line rather than being folded into free text the Admin would have to read to find it.
+    renderExpenses(stubApiClient(), `/expenses/${EXPENSE_ONE.id}`);
+
+    await screen.findByText('Recorded details');
+
+    const vendor = screen.getByText('Vendor');
+
+    expect(vendor.nextElementSibling).toHaveTextContent(EXPENSE_ONE.vendor ?? '');
+  });
+
+  it('shows an em dash for the vendor on an expense recorded without one', async () => {
+    // `REQ-EXP-007`: an expense with no vendor stays valid and readable, and a blank value here
+    // means "not recorded" rather than a value the screen failed to load.
+    renderExpenses(stubApiClient(), `/expenses/${EXPENSE_TWO.id}`);
+
+    await screen.findByText('Recorded details');
+
+    const vendor = screen.getByText('Vendor');
+
+    expect(vendor.nextElementSibling).toHaveTextContent('—');
   });
 
   it('marks a deactivated category as inactive on the record that still has it', async () => {

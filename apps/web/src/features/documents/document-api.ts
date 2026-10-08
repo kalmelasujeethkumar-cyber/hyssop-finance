@@ -244,6 +244,44 @@ export function useUploadDocument(
 }
 
 /**
+ * An upload whose transaction is chosen by the caller at call time, not at render time.
+ *
+ * The Record Expense form has to attach a receipt to a transaction it only learns about *after*
+ * the expense is created (`REQ-DOC-017`). `useUploadDocument` binds the transaction id when the
+ * hook is called, which cannot work for that two-step flow: the create-time id is not yet known.
+ * This variant carries the id in the mutation input instead, so the exact same validated upload
+ * path, idempotency key, storage abstraction, and cache invalidation are reused without a second
+ * upload implementation (`REQ-DOC-016`).
+ */
+export function useAttachDocument() {
+  const client = useApiClient();
+  const { withCsrf } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: {
+      readonly transactionId: string;
+      readonly file: File;
+      readonly declaredMimeType?: DocumentMimeType;
+      readonly idempotencyKey: string;
+    }) =>
+      withCsrf((csrfToken) =>
+        client.upload<DocumentSummary>(
+          transactionDocumentsPath(input.transactionId),
+          buildUploadForm(input.file, input.declaredMimeType),
+          { csrfToken, idempotencyKey: input.idempotencyKey },
+        ),
+      ),
+    onSuccess: (_document, input) => {
+      void queryClient.invalidateQueries({
+        queryKey: [...DOCUMENTS_QUERY_KEY, input.transactionId],
+      });
+      invalidateTransactionDependents(queryClient);
+    },
+  });
+}
+
+/**
  * A reason-required removal.
  *
  * The row is retained, so this returns the removed document and the panel keeps showing it as

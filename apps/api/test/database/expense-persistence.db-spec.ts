@@ -460,6 +460,101 @@ describe('expense persistence', () => {
     });
   });
 
+  /**
+   * `REQ-EXP-006` to `REQ-EXP-010`: the vendor column, as PostgreSQL holds it.
+   *
+   * The HTTP suite already proves the shape of the request and the response. What needs a real
+   * database is the storage itself: that "no vendor" is SQL `NULL` rather than an empty string
+   * standing in for nothing, that a correction really rewrites the column, and that a correction
+   * which omits the field leaves the stored value alone. The last two would pass against a double
+   * that merely echoed its input, which is exactly why they are proved against the repository.
+   */
+  describe('REQ-EXP-006: the optional vendor persists', () => {
+    /** An expense with an explicit vendor, filed under `categoryId`. */
+    async function createExpenseWithVendor(categoryId: string, vendor: string | null) {
+      return harness.transactions.create(
+        {
+          transactionType: 'EXPENSE',
+          amountPaise: 25_000n,
+          paymentMethod: 'CASH',
+          businessDate: SEPTEMBER,
+          occurredAt: new Date(),
+          categoryId,
+          expenseReasonId: (await reasonFor(categoryId)).id,
+          vendor,
+        },
+        { actorAdminId },
+      );
+    }
+
+    it('stores a vendor with the record and returns it on the read and the list', async () => {
+      const electricity = await createCategory('Electricity');
+      const created = await createExpenseWithVendor(electricity.id, 'ABC Electricals');
+
+      expect(created.vendor).toBe('ABC Electricals');
+
+      const stored = await harness.transactions.findById(created.id);
+      expect(stored.vendor).toBe('ABC Electricals');
+
+      const listed = await harness.transactions.list(
+        { transactionType: 'EXPENSE' },
+        { limit: 10, offset: 0, sort: 'businessDate', direction: 'desc' },
+      );
+
+      expect(listed.find((entry) => entry.id === created.id)?.vendor).toBe('ABC Electricals');
+      // The other free-text columns are unaffected, so the new column is not a rename in disguise.
+      expect(stored.description).toBe(created.description);
+      expect(stored.notes).toBeNull();
+    });
+
+    it('stores no vendor as SQL NULL rather than as an empty string', async () => {
+      const electricity = await createCategory('Electricity');
+      const created = await createExpenseWithVendor(electricity.id, null);
+
+      // `''` would sort with real vendors and would render as a recorded vendor of nothing, so
+      // "not recorded" has to be the absence of a value and not a blank one.
+      const stored = await harness.transactions.findById(created.id);
+
+      expect(stored.vendor).toBeNull();
+      // Counted straight from the table rather than through the repository's filters, because
+      // "no vendor" is a storage fact: no row anywhere holds a blank vendor.
+      expect(await harness.runtime.financialTransaction.count({ where: { vendor: '' } })).toBe(0);
+    });
+
+    it('rewrites the vendor on a correction, and leaves it alone when the correction omits it', async () => {
+      const electricity = await createCategory('Electricity');
+      const created = await createExpenseWithVendor(electricity.id, 'ABC Electricals');
+
+      const unchanged = await harness.transactions.correct(
+        created.id,
+        { amountPaise: 3_000n, expectedRevision: created.revision },
+        { actorAdminId },
+      );
+
+      // Omitting an optional field must mean "not part of this change".
+      expect(unchanged.vendor).toBe('ABC Electricals');
+      expect(unchanged.amountPaise).toBe(3_000n);
+
+      const corrected = await harness.transactions.correct(
+        created.id,
+        { vendor: 'Main Street Hardware', expectedRevision: unchanged.revision },
+        { actorAdminId },
+      );
+
+      expect(corrected.vendor).toBe('Main Street Hardware');
+
+      // And clearing writes NULL, not the empty string the request may have carried.
+      const cleared = await harness.transactions.correct(
+        created.id,
+        { vendor: null, expectedRevision: corrected.revision },
+        { actorAdminId },
+      );
+
+      expect(cleared.vendor).toBeNull();
+      expect((await harness.transactions.findById(created.id)).vendor).toBeNull();
+    });
+  });
+
   describe('the ledger still describes an expense correctly after it is voided', () => {
     it('excludes a voided expense from the active totals while keeping the row auditable', async () => {
       const electricity = await createCategory('Electricity');

@@ -7,6 +7,7 @@ import {
   PAYMENT_METHODS,
   TRANSACTION_DESCRIPTION_MAX_LENGTH,
   TRANSACTION_NOTES_MAX_LENGTH,
+  VENDOR_MAX_LENGTH,
   isPaymentMethod,
   type ExpenseCategoryView,
   type ExpenseReasonView,
@@ -90,6 +91,7 @@ export interface ExpenseFieldErrors {
   readonly businessDate?: string;
   readonly description?: string;
   readonly notes?: string;
+  readonly vendor?: string;
 }
 
 export const PAYMENT_METHOD_CHOICES: readonly PaymentMethod[] = PAYMENT_METHODS;
@@ -113,6 +115,7 @@ export function validateExpenseFields(values: ExpenseFormValues): ExpenseFieldEr
     businessDate?: string;
     description?: string;
     notes?: string;
+    vendor?: string;
   } = {};
 
   if (values.categoryId.trim() === '') {
@@ -149,6 +152,12 @@ export function validateExpenseFields(values: ExpenseFormValues): ExpenseFieldEr
 
   if (values.notes.trim().length > TRANSACTION_NOTES_MAX_LENGTH) {
     errors.notes = `Notes must be ${TRANSACTION_NOTES_MAX_LENGTH} characters or fewer.`;
+  }
+
+  // The vendor is optional (`REQ-EXP-007`), so only its length is checked. The value is trimmed,
+  // and the API caps it at the same shared constant rather than a second copy written here.
+  if (values.vendor.trim().length > VENDOR_MAX_LENGTH) {
+    errors.vendor = `Vendor must be ${VENDOR_MAX_LENGTH} characters or fewer.`;
   }
 
   return errors;

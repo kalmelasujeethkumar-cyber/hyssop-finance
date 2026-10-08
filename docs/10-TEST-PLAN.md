@@ -21,23 +21,23 @@ Test identifiers are stable verification handles. They do not create product req
 | `TEST-AUTH-002` | Pre-authentication and post-authentication CSRF, trusted origins, and CORS policy | `REQ-AUTH-003`, `REQ-AUTH-004`, `REQ-FIN-024` |
 | `TEST-FIN-001` | Exact money, ledger aggregates, period boundaries, reconciliation, and technology-direction adherence | `REQ-FIN-001`–`REQ-FIN-014`, `REQ-FIN-025`, `REQ-AUTH-006` |
 | `TEST-FIN-002` | Transaction correction, void, audit, voided-receipt retention, and immutability | `REQ-FIN-015`–`REQ-FIN-020`, `REQ-DOC-013` |
-| `TEST-FIN-003` | Validation, category and association rules, duplicate submission, idempotency, and revision conflicts | `REQ-FIN-021`–`REQ-FIN-024`, `REQ-EXP-004` |
+| `TEST-FIN-003` | Validation, category and association rules, duplicate submission, idempotency, and revision conflicts | `REQ-FIN-021`–`REQ-FIN-024`, `REQ-EXP-004`, `REQ-DOC-017`–`REQ-DOC-019` |
 | `TEST-MEM-001` | Member identity, references, contact validation, search, history, and creation-date boundary | `REQ-MEM-001`–`REQ-MEM-006`, `REQ-DASH-018` |
 | `TEST-CONTRIB-001` | Expected, received, remaining, and contribution statuses | `REQ-CONTRIB-001`–`REQ-CONTRIB-006` |
 | `TEST-INCOME-001` | Every income type, method, member association, and anonymous privacy | `REQ-INCOME-001`–`REQ-INCOME-006`, `REQ-DOC-010`–`REQ-DOC-014` |
-| `TEST-EXP-001` | Initial and custom expense categories, expense reasons, and expense behavior | `REQ-EXP-001`–`REQ-EXP-005` |
-| `TEST-DOC-001` | Allowed formats, multiple documents, association, preview, open, download, and missing receipt | `REQ-DOC-001`–`REQ-DOC-005` |
-| `TEST-DOC-002` | Removal, `410 Gone`, cleanup retry, path safety, and unauthorized access | `REQ-DOC-006`–`REQ-DOC-009` |
+| `TEST-EXP-001` | Initial and custom expense categories, expense reasons, expense behavior, and the optional vendor | `REQ-EXP-001`–`REQ-EXP-010` |
+| `TEST-DOC-001` | Allowed formats, multiple documents, association, preview, open, download, missing receipt, and the Record Expense selection control | `REQ-DOC-001`–`REQ-DOC-005`, `REQ-DOC-015`–`REQ-DOC-020` |
+| `TEST-DOC-002` | Removal, `410 Gone`, cleanup retry, path safety, unauthorized access, privacy of form-chosen receipts, and preserved audit | `REQ-DOC-006`–`REQ-DOC-009`, `REQ-DOC-021`, `REQ-DOC-022` |
 | `TEST-DASH-001` | Required metrics, charts, trends, contribution buckets, formula reconciliation, recent transactions, and quick actions | `REQ-DASH-001`–`REQ-DASH-014`, `REQ-CONTRIB-005`, `REQ-CONTRIB-006`, `REQ-FIN-004`–`REQ-FIN-014` |
 | `TEST-DASH-002` | Period presets, custom ranges, active-period labeling, and member-count derivation | `REQ-DASH-015`–`REQ-DASH-018`, `REQ-MEM-006` |
 | `TEST-REPORT-001` | All required reports, period filters, contribution report fields, and print behavior | `REQ-REPORT-001`–`REQ-REPORT-004` |
 | `TEST-SEARCH-001` | Authorized global search, deterministic ordering, bounded filters, and privacy | `REQ-SEARCH-001`, `REQ-SEARCH-002` |
 | `TEST-AUDIT-001` | Audit coverage, filtering, detail safety, and immutability | `REQ-AUDIT-001`, `REQ-AUDIT-002` |
 | `TEST-AUDIT-002` | Settings scope, defaults, payment-method invariants, and settings audit | `REQ-SETTINGS-001`–`REQ-SETTINGS-009` |
-| `TEST-EXPORT-001` | CSV columns, escaping, reconciliation, document references, and the filtered expense export | `REQ-EXPORT-001`–`REQ-EXPORT-003` |
+| `TEST-EXPORT-001` | CSV columns, escaping, reconciliation, document references, the filtered expense export, and the expense vendor column | `REQ-EXPORT-001`–`REQ-EXPORT-003`, `REQ-EXP-010` |
 | `TEST-RESP-001` | Required controls, confirmation, feedback, accessibility, state honesty, product identity, and INR/date formatting | `REQ-RESP-001`–`REQ-RESP-011`, `REQ-AUTH-001`, `REQ-REPORT-004` |
 | `TEST-RESP-002` | Desktop, laptop, tablet, Android-sized, iPhone-sized, and print-output behavior | `REQ-RESP-012`, `REQ-RESP-013`, `REQ-REPORT-003` |
-| `TEST-SEC-001` | Sessions, CSRF, CORS, uploads, traversal, redaction, identity-disclosure prevention, settings invariants, rate limits, and authorization | `REQ-AUTH-002`–`REQ-AUTH-005`, `REQ-DOC-004`–`REQ-DOC-009`, `REQ-FIN-022`–`REQ-FIN-024`, `REQ-INCOME-005`, `REQ-INCOME-006`, `REQ-SETTINGS-006`, `REQ-SEARCH-002` |
+| `TEST-SEC-001` | Sessions, CSRF, CORS, uploads, traversal, redaction, identity-disclosure prevention, settings invariants, rate limits, authorization, and privacy of receipts chosen during expense recording | `REQ-AUTH-002`–`REQ-AUTH-005`, `REQ-DOC-004`–`REQ-DOC-009`, `REQ-DOC-021`, `REQ-FIN-022`–`REQ-FIN-024`, `REQ-INCOME-005`, `REQ-INCOME-006`, `REQ-SETTINGS-006`, `REQ-SEARCH-002` |
 | `TEST-E2E-001` | Complete Admin browser workflow from login through logout | All user-visible `REQ-*` identifiers |
 | `TEST-E2E-002` | Invalid, adversarial, duplicate, expired-session, unauthorized flows, and cross-layer evidence for those flows | `REQ-FIN-021`–`REQ-FIN-025`, `REQ-AUTH-*`, `REQ-DOC-*`, `REQ-SEARCH-002` |
 | `TEST-DEPLOY-001` | Free-tier capability verification, durable storage, HTTPS, CORS/CSRF, migrations, and hosted smoke test | `REQ-FIN-027` |
@@ -85,7 +85,7 @@ Intentionally test negative amounts, zero amounts, non-numeric amounts, ambiguou
 
 ## Document testing (`TEST-DOC-001`, `TEST-DOC-002`)
 
-Cover JPG, JPEG, PNG, WEBP, PDF, multiple documents per transaction, transaction association, preview, open, download, missing-receipt indication, controlled removal, persistence after application restart, invalid content rejection, path traversal rejection, and unauthorized access. After removal, verify metadata remains, content returns `410 Gone`, and a failed storage deletion remains inaccessible with a controlled cleanup retry. Raw files must never be written to PostgreSQL.
+Cover JPG, JPEG, PNG, WEBP, PDF, multiple documents per transaction, transaction association, preview, open, download, missing-receipt indication, controlled removal, persistence after application restart, invalid content rejection, path traversal rejection, and unauthorized access. After removal, verify metadata remains, content returns `410 Gone`, and a failed storage deletion remains inaccessible with a controlled cleanup retry. Raw files must never be written to PostgreSQL. For the Record Expense selection control, verify that a chosen receipt is attached to the just-created expense through the shared document path (never a parallel upload), that a retry of the whole submission duplicates neither the expense nor the document, that a failed attach leaves the saved expense honestly reported as missing its receipt with a recoverable retry, and that the chosen file remains private and audited exactly as any other document.
 
 ## Search, filter, report, and export testing (`TEST-SEARCH-001`, `TEST-REPORT-001`, `TEST-EXPORT-001`)
 

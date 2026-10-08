@@ -5,6 +5,7 @@ import {
   RECEIPT_MISSING_LABEL,
   TRANSACTION_DESCRIPTION_MAX_LENGTH,
   TRANSACTION_NOTES_MAX_LENGTH,
+  VENDOR_MAX_LENGTH,
   type ExpenseCategoryView,
   type TransactionSummary,
 } from '@hyssop/contracts';
@@ -141,6 +142,19 @@ describe('validateExpenseFields', () => {
     ).toEqual({});
   });
 
+  it('bounds the optional vendor at the documented length and never requires it', () => {
+    // `REQ-EXP-007`: the vendor is optional, so a blank one is valid, but a value longer than the
+    // shared limit is refused before the request. Both edges are asserted against the constant.
+    expect(validateExpenseFields(form({ vendor: '' })).vendor).toBeUndefined();
+    expect(validateExpenseFields(form({ vendor: '   ' })).vendor).toBeUndefined();
+    expect(
+      validateExpenseFields(form({ vendor: 'x'.repeat(VENDOR_MAX_LENGTH) })).vendor,
+    ).toBeUndefined();
+    expect(validateExpenseFields(form({ vendor: 'x'.repeat(VENDOR_MAX_LENGTH + 1) })).vendor).toBe(
+      `Vendor must be ${VENDOR_MAX_LENGTH} characters or fewer.`,
+    );
+  });
+
   it('requires a reason, because a category alone does not say what the money was spent on', () => {
     // `REQ-EXP-005`. The reason is not optional detail: "Electricity" does not distinguish a
     // monthly bill from a rewiring job, and the whole point of the set is that the ledger answers
@@ -227,6 +241,13 @@ describe('expenseRequestBody', () => {
       description: 'September bill',
       notes: 'Paid by transfer',
     });
+  });
+
+  it('omits a blank vendor and sends a trimmed one when present', () => {
+    // `REQ-EXP-007`: an absent vendor must not become an empty string, which is a different fact
+    // from "not recorded". A present one is trimmed, matching the API's own normalisation.
+    expect(expenseRequestBody(form({ vendor: '   ' }))).not.toHaveProperty('vendor');
+    expect(expenseRequestBody(form({ vendor: '  KSEB ' })).vendor).toBe('KSEB');
   });
 
   it('never sends a member, an income type, or a contribution period', () => {

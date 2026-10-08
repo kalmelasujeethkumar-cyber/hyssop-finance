@@ -695,6 +695,48 @@ describe('database invariants', () => {
       ).rejects.toThrow(/HY_FIN_VOIDED_TRANSACTION_IMMUTABLE/);
     });
 
+    it('freezes the vendor of a voided expense', async () => {
+      const actorAdminId = await seedActor();
+      const categoryId = await seedCategory();
+      const created = await harness.transactions.create(
+        {
+          transactionType: 'EXPENSE',
+          amountPaise: 3_000n,
+          paymentMethod: 'CASH',
+          businessDate: new Date('2026-09-07T00:00:00.000Z'),
+          occurredAt: new Date(),
+          categoryId,
+          expenseReasonId: await seedReason(categoryId, actorAdminId),
+          vendor: 'ABC Electricals',
+        },
+        { actorAdminId },
+      );
+      await harness.transactions.voidTransaction(created.id, 'Entered in error', { actorAdminId });
+
+      // `REQ-EXP-006` adds the vendor as an ordinary correctable field while the row is ACTIVE,
+      // and the freeze list is what makes it frozen afterwards. The window the trigger exists
+      // for is a correction that read an ACTIVE row and then wrote after a void won the race, so
+      // the new column has to be refused by the database and not only by the service's 409.
+      await expect(
+        harness.runtime.financialTransaction.update({
+          where: { id: created.id },
+          data: {
+            vendor: 'Too Late Traders',
+            revision: { increment: 1 },
+          },
+        }),
+      ).rejects.toThrow(/HY_FIN_VOIDED_TRANSACTION_IMMUTABLE/);
+
+      // And the row still says what it said when it was voided, rather than keeping the rejected
+      // value because the trigger fired after the write.
+      const stored = await harness.runtime.financialTransaction.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+
+      expect(stored.vendor).toBe('ABC Electricals');
+      expect(stored.status).toBe('VOIDED');
+    });
+
     it('refuses a reason whose normalized name is not lower-cased and trimmed', async () => {
       const categoryId = await seedCategory();
 

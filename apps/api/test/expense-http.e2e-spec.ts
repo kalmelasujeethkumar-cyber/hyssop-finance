@@ -1435,6 +1435,184 @@ describe('Expense and category HTTP contract', () => {
     });
   });
 
+  /**
+   * `REQ-EXP-006` to `REQ-EXP-010`: the optional vendor, as the routes carry it.
+   *
+   * A vendor is metadata, so every assertion here pairs it with a fact that must *not* move —
+   * the amount, the revision, the type — because the failure mode that matters is a field that
+   * quietly rewrites money or turns an income into an expense. Persistence of the column is
+   * `expense-persistence.db-spec.ts`'s job and the freeze after a void is
+   * `schema-invariants.db-spec.ts`'s; what only a request can prove is the transport contract:
+   * trimming, the length cap, the clear-with-empty rule, the income refusal, and the fact that
+   * a retry key covers the vendor too.
+   */
+  describe('REQ-EXP-006: the optional vendor', () => {
+    it('records the vendor the Admin typed and returns it on create, list, and detail', async () => {
+      const created = dataOf<ExpenseSummary>(
+        (await createExpense('expense-vendor-create', expenseBody({ vendor: 'KSEB Electricals' })))
+          .body,
+      );
+
+      expect(created.vendor).toBe('KSEB Electricals');
+      // The vendor is additive: it must not disturb the facts the same response already carried.
+      expect(created.amount).toBe('450.00');
+      expect(created.type).toBe('EXPENSE');
+
+      const page = listOf<ExpenseSummary>((await authGet('/api/v1/expenses')).body);
+
+      expect(page.data.find((row) => row.id === created.id)?.vendor).toBe('KSEB Electricals');
+
+      const detail = dataOf<TransactionSummary>(
+        (await authGet(`/api/v1/transactions/${created.id}`)).body,
+      );
+
+      expect(detail.vendor).toBe('KSEB Electricals');
+    });
+
+    it('trims the vendor before storing it, so the record holds what was meant', async () => {
+      await createExpense('expense-vendor-trim', expenseBody({ vendor: '   ABC Electricals   ' }));
+
+      expect(transactions.createCalls[0]?.input.vendor).toBe('ABC Electricals');
+    });
+
+    it('records no vendor when the field is left out, and the expense is still valid', async () => {
+      const created = dataOf<ExpenseSummary>(
+        (await createExpense('expense-vendor-absent', expenseBody())).body,
+      );
+
+      expect(created.vendor).toBeNull();
+      expect(created.status).toBe('ACTIVE');
+      expect(created.category?.id).toBe(CATEGORY_ID);
+    });
+
+    it('refuses a vendor longer than the documented limit instead of truncating it', async () => {
+      // Silent truncation would store a name the Admin never typed, and a vendor is a fact about
+      // who was paid: a wrong-but-plausible name is worse than a refusal.
+      const response = await createExpense(
+        'expense-vendor-too-long',
+        expenseBody({ vendor: 'V'.repeat(121) }),
+      );
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'vendor');
+      expect(transactions.createCalls).toHaveLength(0);
+    });
+
+    it('changes a stored vendor in a correction, and leaves the amount alone', async () => {
+      const created = dataOf<ExpenseSummary>(
+        (
+          await createExpense(
+            'expense-vendor-correct-create',
+            expenseBody({ vendor: 'Old Hardware Store' }),
+          )
+        ).body,
+      );
+      const response = await correctTransaction(
+        'expense-vendor-correct',
+        created.id,
+        String(created.revision),
+        { vendor: 'Main Street Hardware' },
+      );
+
+      const corrected = dataOf<TransactionSummary>(response.body);
+
+      expect(corrected.vendor).toBe('Main Street Hardware');
+      expect(corrected.amount).toBe('450.00');
+      expect(corrected.revision).toBe(created.revision + 1);
+    });
+
+    it('clears a stored vendor with an empty value, without storing a blank vendor', async () => {
+      const created = dataOf<ExpenseSummary>(
+        (await createExpense('expense-vendor-clear-create', expenseBody({ vendor: 'KSEB' }))).body,
+      );
+
+      const cleared = dataOf<TransactionSummary>(
+        (
+          await correctTransaction('expense-vendor-clear', created.id, String(created.revision), {
+            vendor: '',
+          })
+        ).body,
+      );
+
+      // `''` would render as a recorded vendor of nothing and would sort as a real name.
+      expect(cleared.vendor).toBeNull();
+      expect(cleared.amount).toBe('450.00');
+
+      const detail = dataOf<TransactionSummary>(
+        (await authGet(`/api/v1/transactions/${created.id}`)).body,
+      );
+
+      expect(detail.vendor).toBeNull();
+    });
+
+    it('leaves a stored vendor alone when the correction does not mention it', async () => {
+      const created = dataOf<ExpenseSummary>(
+        (
+          await createExpense(
+            'expense-vendor-untouched-create',
+            expenseBody({ vendor: 'KSEB Electricals' }),
+          )
+        ).body,
+      );
+      const corrected = dataOf<TransactionSummary>(
+        (
+          await correctTransaction(
+            'expense-vendor-untouched',
+            created.id,
+            String(created.revision),
+            { amount: '460.00' },
+          )
+        ).body,
+      );
+
+      // The field is optional in the DTO precisely so a correction of one thing cannot wipe
+      // another; `undefined` must mean "not part of this change", not "empty".
+      expect(corrected.vendor).toBe('KSEB Electricals');
+      expect(corrected.amount).toBe('460.00');
+    });
+
+    it('refuses a vendor on an income correction, because income has no vendor', async () => {
+      const response = await correctTransaction('income-vendor-correct', OFFERING, '1', {
+        vendor: 'Main Street Hardware',
+      });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'vendor');
+    });
+
+    it('refuses a vendor on an income create, so the field cannot appear on income at all', async () => {
+      const response = await authed()
+        .post('/api/v1/income')
+        .set(IDEMPOTENCY_KEY_HEADER, 'income-with-vendor-1')
+        .send({
+          incomeType: 'OFFERING',
+          amount: '100.00',
+          paymentMethod: 'CASH',
+          businessDate: '2026-09-05',
+          vendor: 'Main Street Hardware',
+        });
+
+      expectApiError(response, 400, 'VALIDATION_FAILED', 'vendor');
+    });
+
+    it('refuses the same retry key with a different vendor, rather than replaying it', async () => {
+      await createExpense('expense-vendor-key-1', expenseBody({ vendor: 'KSEB' }));
+      const reused = await createExpense(
+        'expense-vendor-key-1',
+        expenseBody({ vendor: 'Main Street Hardware' }),
+      );
+
+      expectApiError(reused, 409, 'CONFLICT');
+      expect(transactions.createCalls).toHaveLength(1);
+    });
+
+    it('refuses to edit the vendor of a voided expense', async () => {
+      const response = await correctTransaction('expense-vendor-voided', VOIDED_EXPENSE, '2', {
+        vendor: 'Too Late Traders',
+      });
+
+      expect(response.status).toBe(409);
+    });
+  });
+
   describe('REQ-DOC-003: the receipt state is derived, never hard-coded', () => {
     it('reports no receipt for an expense with no attached document', async () => {
       const page = listOf<ExpenseSummary>((await authGet('/api/v1/expenses')).body);

@@ -504,7 +504,7 @@ export const EXPENSE_ONE: ExpenseSummary = {
     'Electricity Bill',
     ACTIVE_EXPENSE_CATEGORIES[0]?.id ?? '',
   ),
-  vendor: null,
+  vendor: 'KSEB',
   contributionPeriod: null,
   voidReason: null,
   voidedAt: null,
@@ -1225,7 +1225,7 @@ export const DEFAULT_REPORT_CSV = [
  */
 export const DEFAULT_EXPENSE_CSV = [
   'Expense ID,Expense Date,Category,Reason,Vendor,Amount,Payment Method,Notes,Receipt URL',
-  'HY-EXP-000001,12-09-2026,Electricity,Electricity Bill,,2450.75,Bank Transfer,Paid by transfer,/api/v1/documents/44444444-0000-4000-8000-000000000001/download',
+  'HY-EXP-000001,12-09-2026,Electricity,Electricity Bill,KSEB,2450.75,Bank Transfer,Paid by transfer,/api/v1/documents/44444444-0000-4000-8000-000000000001/download',
   'HY-EXP-000002,18-09-2026,Repairs,Equipment Repair,,800.00,Cash,,',
 ].join('\r\n');
 
@@ -2277,6 +2277,7 @@ export function stubApiClient(
             businessDate?: string;
             description?: string;
             notes?: string;
+            vendor?: string;
           };
           const category = categoryStore.find((row) => row.id === input.categoryId);
 
@@ -2364,7 +2365,7 @@ export function stubApiClient(
               categoryId: reason.categoryId,
               status: reason.status,
             },
-            vendor: (input as any).vendor ?? null,
+            vendor: input.vendor ?? null,
             contributionPeriod: null,
             voidReason: null,
             voidedAt: null,
@@ -3063,7 +3064,18 @@ export function stubApiClient(
     const transaction = transactionStore.find((row) => row.id === transactionId);
 
     if (transaction !== undefined) {
-      replaceTransaction({ ...transaction, documentCount: transaction.documentCount + 1 });
+      // `hasReceipt` is derived by the API on every read, so the stub derives it from the stored
+      // document rather than leaving a created expense showing Receipt Missing after an attach.
+      // It exists only on an expense, so an income row simply gains the document count.
+      replaceTransaction(
+        transaction.type === 'EXPENSE'
+          ? ({
+              ...transaction,
+              documentCount: transaction.documentCount + 1,
+              hasReceipt: true,
+            } as ExpenseSummary)
+          : { ...transaction, documentCount: transaction.documentCount + 1 },
+      );
     }
 
     return document;

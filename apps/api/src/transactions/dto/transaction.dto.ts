@@ -26,6 +26,7 @@ import {
   TRANSACTION_SORT_FIELDS,
   TRANSACTION_STATUSES,
   TRANSACTION_TYPES,
+  VENDOR_MAX_LENGTH,
   VOID_REASON_MAX_LENGTH,
   type IncomeType,
   type PaymentMethod,
@@ -214,9 +215,9 @@ export class TransactionListQueryDto extends SharedTransactionFilterQueryDto {
  * The `PATCH /transactions/:id` body.
  *
  * `docs/06-API-SPEC.md` allows editing only the amount, payment method, business date,
- * description, notes, and the type-specific associations the transaction type permits.
- * Identity, reference, transaction type, creator, creation timestamp, status, and void
- * fields are not in this DTO at all, and the global pipe's `forbidNonWhitelisted` setting
+ * description, notes, the optional vendor, and the type-specific associations the transaction
+ * type permits. Identity, reference, transaction type, creator, creation timestamp, status, and
+ * void fields are not in this DTO at all, and the global pipe's `forbidNonWhitelisted` setting
  * rejects them with a field-level 400 instead of silently ignoring an attempt to change
  * them.
  *
@@ -296,6 +297,25 @@ export class CorrectTransactionDto {
   @IsString()
   @Matches(UUID_PATTERN, { message: 'A reason identifier must be a UUID.' })
   public expenseReasonId?: string | null;
+
+  /**
+   * The optional structured vendor for a correction (`REQ-EXP-006`).
+   *
+   * `undefined` leaves the stored value alone, so a correction that moves only the amount cannot
+   * silently wipe the vendor. `null` and an explicitly empty value both *clear* it, which is how
+   * a vendor typed against the wrong expense is removed without voiding the record; the service
+   * collapses the empty string onto `null` so the column never holds `''`, a value that would
+   * read as a recorded vendor of nothing.
+   *
+   * Refused on income by the service, exactly like `categoryId`, because a vendor answers "whom
+   * did the church buy from" and an income row has no such answer. The database stores it as a
+   * plain nullable column, so the API is where the type-specific rule has to live.
+   */
+  @IsOptional()
+  @trimmed()
+  @IsString()
+  @MaxLength(VENDOR_MAX_LENGTH)
+  public vendor?: string | null;
 }
 
 /** The `POST /transactions/:id/void` body. `REQ-FIN-017` requires a non-empty reason. */

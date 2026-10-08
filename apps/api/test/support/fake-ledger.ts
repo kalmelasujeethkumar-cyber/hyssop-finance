@@ -93,6 +93,16 @@ export interface FakeTransactionRow {
    * reason from its own reason rows.
    */
   expenseReasonId: string | null;
+  /**
+   * The optional structured vendor (`REQ-EXP-006`), or `null` for income and for an expense
+   * recorded without one.
+   *
+   * It mirrors the real nullable column rather than being derived, for the same reason
+   * `expenseReasonId` is not derived from `categoryId`: a suite that wants to prove the income
+   * refusal or the correction path supplies the value it is testing, and one that does not care
+   * gets `null` from `transactionFixture`.
+   */
+  vendor: string | null;
   status: 'ACTIVE' | 'VOIDED';
   voidReason: string | null;
   voidedAt: Date | null;
@@ -215,6 +225,9 @@ export class FakeLedger {
       contributionPeriodId: row.contributionPeriodId,
       categoryId: row.categoryId,
       expenseReasonId: row.expenseReasonId,
+      // The vendor is part of the same flat snapshot the repository writes, so a correction that
+      // changes it is auditable on the same terms as one that changes notes (`REQ-FIN-015`).
+      vendor: row.vendor,
       voidReason: row.voidReason,
       revision: row.revision,
     };
@@ -514,6 +527,9 @@ export class FakeTransactions {
       contributionPeriodId: input.contributionPeriodId ?? null,
       categoryId: input.categoryId ?? null,
       expenseReasonId: input.expenseReasonId ?? null,
+      // `?? null` mirrors the service, which stores `null` rather than `''` when no vendor is
+      // given, so an expense recorded without one reads here exactly as it does in the column.
+      vendor: input.vendor ?? null,
       status: 'ACTIVE',
       voidReason: null,
       voidedAt: null,
@@ -575,6 +591,10 @@ export class FakeTransactions {
       ...(changes.expenseReasonId === undefined
         ? {}
         : { expenseReasonId: changes.expenseReasonId }),
+      // `REQ-EXP-006`: the vendor is correctable and clearable, so `null` must be applied rather
+      // than skipped -- a double that ignored it would let a correction suite pass while the
+      // real repository stored the old value.
+      ...(changes.vendor === undefined ? {} : { vendor: changes.vendor }),
       // `null` is a meaningful correction, not an absent field: it is how a mis-keyed member
       // is detached, so it must be applied rather than skipped.
       ...(changes.memberId === undefined ? {} : { memberId: changes.memberId }),
@@ -1852,6 +1872,9 @@ export function transactionFixture(
     // names a reason alongside its category, because an expense without one is unrepresentable in
     // the database.
     expenseReasonId: null,
+    // `null` by default for the same reason: the default fixture is income, which never carries a
+    // vendor. An expense suite that is testing one supplies it through `overrides`.
+    vendor: null,
     status: 'ACTIVE',
     voidReason: null,
     voidedAt: null,

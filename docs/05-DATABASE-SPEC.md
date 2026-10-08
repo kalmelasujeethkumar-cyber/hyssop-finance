@@ -104,8 +104,9 @@ The optional, nullable `vendor TEXT NULL` column on `financial_transaction` stor
 - `vendor` is optional: `NULL` when the Admin provides no vendor, for new and existing rows alike.
 - No backfill: existing expense rows remain `NULL` until an Admin supplies a vendor.
 - Not unique and not immutable: like description and notes, the value may be changed (or cleared) through the validated correction workflow and is recorded in the before/after audit event.
+- Frozen once voided: `hy_financial_transaction_guard_update` freezes `vendor` alongside `description` and `notes`, so a correction that read an `ACTIVE` row and then wrote after a void won the race cannot rewrite who was paid on a record that is preserved evidence.
 - Trimmed and length-capped at the API boundary (`VENDOR_MAX_LENGTH`, see `06-API-SPEC.md`); it never holds a storage key, file path, or URL.
-- The change is an additive, reviewed migration (`20261007120000_expense_vendor`), preserving the locked invariants per the migration rules above.
+- The change is additive, through two reviewed migrations: `20261007120000_expense_vendor` adds the column and `20261008120000_expense_vendor_void_guard` adds it to the void freeze list, preserving the locked invariants per the migration rules above.
 
 ## Contribution periods
 
@@ -141,7 +142,7 @@ Every expense carries one reason from its own category (`expense_reason_id` on `
 - Void reason is trimmed and must be non-empty after validation.
 - Voiding is idempotent only for the same request key and target; a second void attempt with a different reason must be rejected clearly.
 - Updates increment `revision` and write an audit event containing the changed field names, previous values, new values, actor, action, and timestamp.
-- Transaction identity, reference, type, creator, and creation timestamp are immutable. Amount, payment method, business date, description, notes, and type-specific associations may be changed only through the validated correction command; for an expense the category and its reason are corrected together, never one without the other. Each change increments `revision` and must preserve the before/after audit record. Status and void fields change only through the void command.
+- Transaction identity, reference, type, creator, and creation timestamp are immutable. Amount, payment method, business date, description, notes, the optional vendor, and type-specific associations may be changed only through the validated correction command; for an expense the category and its reason are corrected together, never one without the other. Each change increments `revision` and must preserve the before/after audit record. Status and void fields change only through the void command.
 - Member `reference_id`, creation time, and financial-history links are immutable. Member edits use a `revision` optimistic-lock value and increment it atomically; a stale update is rejected.
 - All financial aggregation queries filter `status = 'ACTIVE'`.
 

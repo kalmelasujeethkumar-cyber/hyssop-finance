@@ -184,6 +184,7 @@ export class TransactionsService {
         ...(input.memberId === undefined ? {} : { memberId: input.memberId }),
         ...(input.categoryId === undefined ? {} : { categoryId: input.categoryId }),
         ...(input.expenseReasonId === undefined ? {} : { expenseReasonId: input.expenseReasonId }),
+        ...(input.vendor === undefined ? {} : { vendor: input.vendor }),
       },
       run: async (tx) => {
         const updated = await this.transactions.correctWithinTransaction(
@@ -345,6 +346,7 @@ export class TransactionsService {
     readonly memberId?: string | null;
     readonly categoryId?: string | null;
     readonly expenseReasonId?: string | null;
+    readonly vendor?: string | null;
   }> {
     const changes: {
       amountPaise?: bigint;
@@ -355,6 +357,7 @@ export class TransactionsService {
       memberId?: string | null;
       categoryId?: string | null;
       expenseReasonId?: string | null;
+      vendor?: string | null;
     } = {};
 
     if (input.amount !== undefined) {
@@ -375,6 +378,15 @@ export class TransactionsService {
 
     if (input.notes !== undefined) {
       changes.notes = input.notes;
+    }
+
+    // A vendor behaves like notes: a value is stored as given (already trimmed by the DTO), and
+    // an empty one clears the field rather than recording a vendor of nothing, which is what
+    // `docs/06-API-SPEC.md` means by "an expense correction may clear a stored vendor with an
+    // explicitly empty value". `undefined` is left out entirely, so a correction that never
+    // mentions the vendor cannot wipe one.
+    if (input.vendor !== undefined) {
+      changes.vendor = input.vendor === null || input.vendor.trim() === '' ? null : input.vendor;
     }
 
     if (current.transactionType === 'INCOME') {
@@ -408,12 +420,21 @@ export class TransactionsService {
       notes?: string;
       memberId?: string | null;
       categoryId?: string | null;
+      vendor?: string | null;
     },
   ): Promise<void> {
     if (input.categoryId !== undefined) {
       throw validationFailed('An income transaction cannot have a category.', {
         field: 'categoryId',
       });
+    }
+
+    // The mirror rule for the vendor, refused the same way. A vendor answers "whom did the
+    // church buy from", which is an expense question, and the create path never writes one on
+    // income -- so accepting it in a correction would be the only way for an income row to
+    // acquire one (`docs/06-API-SPEC.md`: income "never accept[s] the field").
+    if (input.vendor !== undefined) {
+      throw validationFailed('An income transaction cannot have a vendor.', { field: 'vendor' });
     }
 
     // The mirror rule for the reason, and refused the same way. A reason answers "what was this

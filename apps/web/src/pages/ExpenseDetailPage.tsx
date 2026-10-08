@@ -207,6 +207,7 @@ function ExpenseSummaryPanel({
         <Detail label="Expense reference" value={record.referenceId} />
         <Detail label="Category" value={categoryLabel} />
         <Detail label="Reason" value={reasonLabel} />
+        <Detail label="Vendor" value={record.vendor ?? '—'} />
         <Detail label="Amount" value={formatInr(record.amount)} emphasis />
         <Detail label="Business date" value={formatBusinessDate(record.businessDate)} />
         <Detail label="Payment method" value={PAYMENT_METHOD_LABELS[record.paymentMethod]} />
